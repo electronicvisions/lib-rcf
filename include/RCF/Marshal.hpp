@@ -255,7 +255,7 @@ namespace boost { namespace serialization {
 
 }} // namespace boost namespace serialization
 
-    BOOST_SERIALIZATION_SPLIT_FREE(RCF::ByteBuffer);
+    BOOST_SERIALIZATION_SPLIT_FREE(RCF::ByteBuffer)
 
 namespace RCF {
 #endif // RCF_USE_BOOST_SERIALIZATION
