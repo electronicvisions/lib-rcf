@@ -348,6 +348,8 @@ int test_main(int argc, char **argv)
 
 #ifdef RCF_USE_ZLIB
 
+        server.stop();
+
         // Test transport filters
         RCF::FilterServicePtr fsPtr( new RCF::FilterService() );
 
@@ -358,6 +360,8 @@ int test_main(int argc, char **argv)
             new RCF::ZlibStatelessCompressionFilterFactory() ));
 
         server.addService(fsPtr);
+
+        server.start();
 
         client.getClientStub().requestTransportFilters( 
             RCF::FilterPtr( new RCF::ZlibStatefulCompressionFilter() ) );

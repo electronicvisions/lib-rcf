@@ -2,14 +2,14 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2010, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3
-// Contact: jarl.lindrud <at> deltavsoft.com 
+// Version: 1.3.1
+// Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
@@ -566,13 +566,38 @@ namespace RCF {
         }
 
         // TODO: write many buffers in one go
-        
-        if (mSchannel)
+
+        static const std::size_t MergeBufferLen = 10*1000;
+        // SSL won't do more than ~16536 bytes in one message.
+        static const std::size_t MaxSchannelLen = 16000;
+        BOOST_STATIC_ASSERT((MergeBufferLen <= MaxSchannelLen));
+
+        if (mMergeBuffer.empty())
         {
-            // SSL won't do more than ~16536 bytes in one message.
+            mMergeBuffer.resize(MergeBufferLen);
+        }
+
+        std::size_t mergeLength = 0;
+
+        if (byteBuffers.size() > 1)
+        {
+            sliceByteBuffers(mMergeBufferList, byteBuffers, 0, mMergeBuffer.size());
+            if (mMergeBufferList.size() > 1)
+            {
+                copyByteBuffers(mMergeBufferList, &mMergeBuffer[0]);
+                mergeLength = lengthByteBuffers(mMergeBufferList);
+            }
+            mMergeBufferList.resize(0);
+        }
+        
+        if (mergeLength)
+        {
+            mWriteByteBufferOrig = ByteBuffer(&mMergeBuffer[0], mergeLength);
+        }
+        else if (mSchannel)
+        {
             const ByteBuffer & b = byteBuffers.front();
-            const std::size_t MaxChunk = 16000; 
-            mWriteByteBufferOrig = ByteBuffer( b, 0, RCF_MIN(b.getLength(), MaxChunk));
+            mWriteByteBufferOrig = ByteBuffer( b, 0, RCF_MIN(b.getLength(), MaxSchannelLen));
         }
         else
         {

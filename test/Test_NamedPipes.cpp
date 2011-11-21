@@ -170,10 +170,14 @@ int test_main(int, char**)
     {
         // SSPI impersonation - use our own credentials
 
+        server.stop();
+
         RCF::FilterServicePtr filterServicePtr(new RCF::FilterService());
         filterServicePtr->addFilterFactory( 
             RCF::FilterFactoryPtr( new RCF::NtlmFilterFactory()));
         server.addService(filterServicePtr);
+
+        server.start();
 
         RCF::tstring tUserName = RCF::getMyUserName();
         std::string userName(util::toString(tUserName));
@@ -187,7 +191,9 @@ int test_main(int, char**)
         std::string s = client.whatsMyWin32UserName();
         RCF_CHECK_EQ(s , userName);
 
+        server.stop();
         server.removeService(filterServicePtr);
+        server.start();
     }
 
 #endif

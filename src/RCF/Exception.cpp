@@ -2,14 +2,14 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2010, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3
-// Contact: jarl.lindrud <at> deltavsoft.com 
+// Version: 1.3.1
+// Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
@@ -144,7 +144,7 @@ namespace RCF {
         case RcfError_SslCertVerification           :   return "SSL certificate verification failure.";
         case RcfError_FiltersLocked                 :   return "Filters locked.";
         case RcfError_Pipe                          :   return "Pipe error.";
-        case RcfError_AnySerializerNotFound         :   return "boost::any serializer not registered for the given type. Type: %1.";
+        case RcfError_AnySerializerNotFound         :   return "Boost.Any serialization error: serializer not registered for the type \"%1\". Use SF::registerAny() to register a serializer.";
         case RcfError_ConnectionLimitExceeded       :   return "The server has reached its incoming connection limit.";
         case RcfError_DeserializationNullPointer    :   return "Null pointer deserialization error.";
         case RcfError_PipeNameTooLong               :   return "Pipe name too long. Pipe name: %1. Max length: %2.";
@@ -185,6 +185,7 @@ namespace RCF {
         case RcfError_ProtobufWriteInit             :   return "Failed to serialize Protocol Buffers object. Not all required fields were initialized. Type: %1.";
         case RcfError_ArraySizeMismatch             :   return "Array size mismatch while deserializing. Array size: %1. Array size from archive: %2.";
         case RcfError_WcharSizeMismatch             :   return "Unicode character size mismatch. Native wchar_t size: %1. wchar_t size from archive: %2.";
+        case RcfError_AnyTypeNotRegistered          :   return "Boost.Any serialization error: a type name has not been registered for the typeid \"%1\". Use SF::registerType() to register a type name.";
         
 
         // Errors that are no longer in use.

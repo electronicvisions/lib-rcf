@@ -510,8 +510,16 @@ int test_main(int argc, char **argv)
             }
 
             // Wait for all the extra server threads to go away.
-            Platform::OS::SleepMs(2*ThreadIdleTimeoutMs);
-
+            RCF::Timer idleTimer;
+            while (threadPoolPtr->getThreadCount() > ThreadCountInit)
+            {
+                Platform::OS::Sleep(1);
+                if (idleTimer.elapsed(2*ThreadIdleTimeoutMs))
+                {
+                    break;
+                }
+            }
+            
             RCF_CHECK_EQ(threadPoolPtr->getThreadCount() , ThreadCountInit);
         }
     }

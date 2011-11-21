@@ -2,14 +2,14 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2010, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3
-// Contact: jarl.lindrud <at> deltavsoft.com 
+// Version: 1.3.1
+// Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
@@ -141,6 +141,25 @@ namespace RCF {
             RCF::TypeInfo ti( typeid(T) );
             mObjPool[ti]->mMaxSize = 0;
             mObjPool[ti]->clear();
+        }
+
+        template<typename T>
+        bool isCachingEnabled(T *)
+        {
+            ReadLock lock(mObjPoolMutex);
+            if (!mObjPool.empty())
+            {
+                RCF::TypeInfo ti( typeid(T) );
+                ObjPool::iterator iter = mObjPool.find(ti);
+                if (iter != mObjPool.end())
+                {
+                    if (iter->second->mMaxSize > 0)
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         typedef boost::shared_ptr<std::vector<char> > VecPtr;

@@ -233,7 +233,10 @@ int test_main(int argc, char **argv)
         RCF_CHECK_EQ(client.getClientStub().getPingBackCount() , 0 );
 
         // Ping back service not added.
+        server.stop();
         server.removeService(pbsPtr);
+        server.start();
+
         client.getClientStub().setPingBackIntervalMs(2000);
 
         try
@@ -246,7 +249,9 @@ int test_main(int argc, char **argv)
         }
 
         // Ping back service added.
+        server.stop();
         server.addService(pbsPtr);
+        server.start();
         client.echo("", 2);
         RCF_CHECK_GT( client.getClientStub().getPingBackCount(), 0 );
 

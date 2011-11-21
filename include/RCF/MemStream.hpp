@@ -2,14 +2,14 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2010, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3
-// Contact: jarl.lindrud <at> deltavsoft.com 
+// Version: 1.3.1
+// Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
@@ -23,6 +23,8 @@
 #include <boost/cstdint.hpp> 
 
 #include <boost/noncopyable.hpp>
+
+#include <RCF/Config.hpp>
 
 namespace RCF {
 
@@ -54,13 +56,17 @@ namespace RCF {
         public std::basic_istream<char>
     {   
       public:   
-        mem_istream(const char * buffer = NULL, std::size_t bufferLen = 0);   
+        mem_istream(const char * buffer = NULL, std::size_t bufferLen = 0);
+        ~mem_istream();
         void reset(const char * buffer, std::size_t bufferLen);
            
       private:   
-        mem_streambuf mBuf;
-    };   
 
+#if RCF_MEM_ISTREAM_INLINE_STREAMBUF
+        mem_streambuf mBuf;
+#endif
+
+    };   
 
 } // namespace RCF
 

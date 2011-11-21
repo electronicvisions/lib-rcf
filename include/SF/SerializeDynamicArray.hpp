@@ -2,14 +2,14 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2010, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3
-// Contact: jarl.lindrud <at> deltavsoft.com 
+// Version: 1.3.1
+// Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
@@ -39,8 +39,10 @@ namespace SF {
         N &n_;
     };
 
+    // If T is fundamental.
     template<typename T, typename N>
-    inline void serializeFundamentalDynamicArray(
+    inline void serializeDynamicArray(
+        boost::mpl::true_ *,
         Archive &ar,
         DynamicArray<T,N> &da)
     {
@@ -51,10 +53,10 @@ namespace SF {
             bool bRet = ar.getIstream()->get( data );
             if (bRet)
             {
-                UInt32 nCount = e.getCount( data , typeid(T));
+                UInt32 nCount = e.getCount( data , (T *) NULL);
                 da.get() = new T[ nCount ];
                 da.length() = nCount;
-                e.toObject(data, da.get(), typeid(T), nCount );
+                e.toObject(data, da.get(), nCount );
             }
         }
         else if (ar.isWrite())
@@ -63,14 +65,16 @@ namespace SF {
             {
                 I_Encoding &e = ar.getOstream()->getEncoding();
                 DataPtr data;
-                e.toData(data, da.get(), typeid(T), da.length() );
+                e.toData(data, da.get(), da.length() );
                 ar.getOstream()->put(data);
             }
         }
     }
 
+    // If T is non-fundamental.
     template<typename T, typename N>
-    inline void serializeNonfundamentalDynamicArray(
+    inline void serializeDynamicArray(
+        boost::mpl::false_ *,
         Archive &ar,
         DynamicArray<T,N> &da)
     {
@@ -94,15 +98,8 @@ namespace SF {
     template<typename T, typename N>
     inline void serialize(Archive &ar, DynamicArray<T,N> &da)
     {
-        const bool isFundamental = RCF::IsFundamental<T>::value;
-        if (isFundamental)
-        {
-            serializeFundamentalDynamicArray(ar, da);
-        }
-        else
-        {
-            serializeNonfundamentalDynamicArray(ar, da);
-        }
+        typedef typename RCF::IsFundamental<T>::type FundamentalOrNot;
+        serializeDynamicArray( (FundamentalOrNot *) NULL, ar, da);
     }
 
     SF_NO_CTOR_T2( DynamicArray )

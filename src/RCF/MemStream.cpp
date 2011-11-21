@@ -2,14 +2,14 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2010, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3
-// Contact: jarl.lindrud <at> deltavsoft.com 
+// Version: 1.3.1
+// Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
@@ -80,16 +80,36 @@ namespace RCF {
 
     // mem_istream implementation
 
+#if RCF_MEM_ISTREAM_INLINE_STREAMBUF
+
     mem_istream::mem_istream(const char * buffer, std::size_t bufferLen) :
         std::basic_istream<char>(&mBuf),
         mBuf(const_cast<char *>(buffer), bufferLen)
     {   
     }
 
+    mem_istream::~mem_istream()
+    {
+    }
+
+#else
+
+    mem_istream::mem_istream(const char * buffer, std::size_t bufferLen) :
+    std::basic_istream<char>(new mem_streambuf(const_cast<char *>(buffer), bufferLen))
+    {   
+    }
+
+    mem_istream::~mem_istream()
+    {
+        delete static_cast<mem_streambuf *>(rdbuf());
+    }
+
+#endif
+
     void mem_istream::reset(const char * buffer, std::size_t bufferLen)
     {
         clear();
-        mBuf.reset(const_cast<char *>(buffer), bufferLen);
+        static_cast<mem_streambuf *>(rdbuf())->reset(const_cast<char *>(buffer), bufferLen);
     }
 
 } // namespace RCF

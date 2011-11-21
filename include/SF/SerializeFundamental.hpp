@@ -2,14 +2,14 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2010, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3
-// Contact: jarl.lindrud <at> deltavsoft.com 
+// Version: 1.3.1
+// Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
@@ -34,27 +34,26 @@ namespace SF {
     {
         typedef typename RCF::RemoveCv<T>::type U;
         BOOST_STATIC_ASSERT( RCF::IsFundamental<U>::value );
-        U *pu = const_cast<U *>(&t);
-        void *pvt = pu;
+        U * pt = const_cast<U *>(&t);
 
         if (ar.isRead())
         {
             I_Encoding &encoding = ar.getIstream()->getEncoding();
             DataPtr data;
             ar.getIstream()->get(data);
-            if (count > 1 && count != encoding.getCount(data,typeid(U)) )
+            if (count > 1 && count != encoding.getCount(data, pt) )
             {
                 // static array size mismatch
                 RCF::Exception e(RCF::_SfError_DataFormat());
-                RCF_THROW(e)(typeid(U).name())(count)(encoding.getCount(data,typeid(T)));
+                RCF_THROW(e)(typeid(U).name())(count)(encoding.getCount(data, pt));
             }
-            encoding.toObject(data, pvt, typeid(T), count );
+            encoding.toObject(data, pt, count);
         }
         else if (ar.isWrite())
         {
             I_Encoding &encoding = ar.getOstream()->getEncoding();
             DataPtr data;
-            encoding.toData(data, pvt, typeid(U), count );
+            encoding.toData(data, pt, count );
             ar.getOstream()->put(data);
         }
     }

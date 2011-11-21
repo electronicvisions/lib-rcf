@@ -2,14 +2,14 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2010, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3
-// Contact: jarl.lindrud <at> deltavsoft.com 
+// Version: 1.3.1
+// Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
@@ -429,9 +429,31 @@ namespace SF {
 
     UInt32 IStream::read_int(UInt32 &n)
     {
-        UInt32 bytesRead = read( reinterpret_cast<SF::Byte8 *>(&n), 4);
-        RCF::networkToMachineOrder( &n, 4, 1);
-        return bytesRead;
+        if (mRuntimeVersion < 9)
+        {
+            UInt32 bytesRead = read( reinterpret_cast<SF::Byte8 *>(&n), 4);
+            RCF::networkToMachineOrder( &n, 4, 1);
+            return bytesRead;
+        }
+        else
+        {
+            // Integers less than 128 are stored as a single byte.
+            Byte8 byte = 0;
+            boost::uint8_t ubyte = 0;
+            UInt32 bytesRead = read_byte(byte);
+            ubyte = byte;
+            if (ubyte < 128)
+            {
+                n = ubyte;
+            }
+            else
+            {
+                RCF_ASSERT(ubyte == 128);
+                bytesRead += read( reinterpret_cast<SF::Byte8 *>(&n), 4);
+                RCF::networkToMachineOrder( &n, 4, 1);
+            }
+            return bytesRead;
+        }
     }
 
     UInt32 IStream::read_byte(Byte8 &byte)
@@ -565,11 +587,11 @@ namespace SF {
         {
             attrSpec |= 1<<1;
         }
-        if (node.type.get() != NULL)
+        if (!node.type.empty())
         {
             attrSpec |= 1<<2;
         }
-        if (node.label.get() != NULL)
+        if (!node.label.empty())
         {
             attrSpec |= 1<<3;
         }
@@ -580,11 +602,11 @@ namespace SF {
         {
             write_int(node.id);
         }
-        if (node.type.get() != NULL)
+        if (!node.type.empty())
         {
             write(node.type.get(), node.type.length());
         }
-        if (node.label.get() != NULL)
+        if (!node.label.empty())
         {
             write(node.label.get(), node.label.length() );
         }
@@ -604,14 +626,42 @@ namespace SF {
     UInt32 OStream::write_int(UInt32 n)
     {
         BOOST_STATIC_ASSERT( sizeof(n) == 4 );
-        RCF::machineToNetworkOrder(&n, 4, 1);
-        mpOs->write( reinterpret_cast<char*>(&n), 4);
-        if (mpOs->fail())
+
+        if (mRuntimeVersion < 9)
         {
-            RCF::Exception e(RCF::_SfError_WriteFailure());
-            RCF_THROW(e)(n);
+            RCF::machineToNetworkOrder(&n, 4, 1);
+            mpOs->write( reinterpret_cast<char*>(&n), 4);
+            if (mpOs->fail())
+            {
+                RCF::Exception e(RCF::_SfError_WriteFailure());
+                RCF_THROW(e)(n);
+            }
+            return 4;
         }
-        return 4;
+        else
+        {
+            // Integers less than 128 are stored as a single byte.
+            if (0 <= n && n <= 127)
+            {
+                boost::uint8_t byte = static_cast<boost::uint8_t>(n);
+                write_byte(byte);
+                return 1;
+            }
+            else
+            {
+                boost::uint8_t byte = 128;
+                write_byte(byte);
+            
+                RCF::machineToNetworkOrder(&n, 4, 1);
+                mpOs->write( reinterpret_cast<char*>(&n), 4);
+                if (mpOs->fail())
+                {
+                    RCF::Exception e(RCF::_SfError_WriteFailure());
+                    RCF_THROW(e)(n);
+                }
+                return 5;
+            }
+        }
     }
 
     UInt32 OStream::write_byte(Byte8 byte)

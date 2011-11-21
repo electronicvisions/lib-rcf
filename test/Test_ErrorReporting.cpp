@@ -38,6 +38,11 @@ namespace Test_ErrorReporting {
         A(int which) : a1(17), a2(18.19), a3("twenty"), mWhich(which)
         {}
 
+        ~A()
+        {
+
+        }
+
         class MyException : public std::runtime_error
         {
         public:

@@ -2,14 +2,14 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2010, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3
-// Contact: jarl.lindrud <at> deltavsoft.com 
+// Version: 1.3.1
+// Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
@@ -72,5 +72,14 @@
     #endif
 
 #endif // RCF_USE_HASH_MAP
+
+// Whether or not to use inline streambuf optimization for mem_istream.
+#ifndef RCF_MEM_ISTREAM_INLINE_STREAMBUF
+#if defined(__SGI_STL_PORT) || defined(_STLPORT_VERSION)
+#define RCF_MEM_ISTREAM_INLINE_STREAMBUF 0
+#else
+#define RCF_MEM_ISTREAM_INLINE_STREAMBUF 1
+#endif
+#endif
 
 #endif // ! INCLUDE_RCF_CONFIG_HPP

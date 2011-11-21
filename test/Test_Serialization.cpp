@@ -1589,6 +1589,18 @@ namespace Test_Serialization {
         RCF_CHECK(v2 == w2);
     }
 
+    class AnyHolder
+    {
+    public:
+
+        boost::any mAny;
+
+        void serialize(SF::Archive & ar)
+        {
+             ar & mAny;
+        }
+    };
+
     template<typename IStream, typename OStream>
     void testBoostAny()
     {
@@ -1601,18 +1613,33 @@ namespace Test_Serialization {
 
         boost::any a1( int(1));
         boost::any a2( std::string("one"));
+        boost::any a3;
+
+        AnyHolder b1;
+        b1.mAny = int(2);
+
+        AnyHolder b2;
+        b2.mAny = std::string("two");
 
         std::ostringstream os;
-        SF::OBinaryStream(os) << a1 << a2;
+        SF::OBinaryStream(os) << a1 << a2 << a3 << b1 << b2;
 
-        boost::any b1;
-        boost::any b2;
+        boost::any a1_;
+        boost::any a2_;
+        boost::any a3_;
+        AnyHolder b1_;
+        AnyHolder b2_;
 
         std::istringstream is(os.str());
-        SF::IBinaryStream(is) >> b1 >> b2 ;
+        SF::IBinaryStream(is) >> a1_ >> a2_ >> a3_ >> b1_ >> b2_ ;
 
-        RCF_CHECK_EQ(boost::any_cast<int>(a1) , boost::any_cast<int>(b1));
-        RCF_CHECK_EQ(boost::any_cast<std::string>(a2) , boost::any_cast<std::string>(b2));
+        RCF_CHECK_EQ(boost::any_cast<int>(a1) , boost::any_cast<int>(a1_));
+        RCF_CHECK_EQ(boost::any_cast<std::string>(a2) , boost::any_cast<std::string>(a2_));
+
+        RCF_CHECK_EQ(boost::any_cast<int>(b1.mAny) , boost::any_cast<int>(b1_.mAny));
+        RCF_CHECK_EQ(boost::any_cast<std::string>(b2.mAny) , boost::any_cast<std::string>(b2_.mAny));
+
+        RCF_CHECK(a3.empty() && a3_.empty());
     }
 
     class X

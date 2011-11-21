@@ -2,14 +2,14 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2010, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3
-// Contact: jarl.lindrud <at> deltavsoft.com 
+// Version: 1.3.1
+// Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
@@ -255,7 +255,7 @@ namespace boost { namespace serialization {
 
 }} // namespace boost namespace serialization
 
-    BOOST_SERIALIZATION_SPLIT_FREE(RCF::ByteBuffer)
+    BOOST_SERIALIZATION_SPLIT_FREE(RCF::ByteBuffer);
 
 namespace RCF {
 #endif // RCF_USE_BOOST_SERIALIZATION
@@ -370,7 +370,10 @@ namespace RCF {
         {
             if (!mptPtr)
             {
-                mpT->~T();
+                if (mpT)
+                {
+                    mpT->~T();
+                }
             }
         }
 
@@ -580,11 +583,36 @@ namespace RCF {
                     deserialize(in, pt);
                     mPs.assign(pt);
                 }
-                else
+                else if (ver == 8)
                 {
                     // Deserialize as value.
                     mPs.allocate(mVec);
                     deserialize(in, *mPs);
+                }
+                else if (ver >= 9)
+                {
+                    // If BSer, deserialize through pointer.
+                    // If SF and caching disabled, deserialize through pointer.
+                    // If SF and caching enabled, use object cache and deserialize through value.
+
+                    int sp = in.getSerializationProtocol();
+                    if (    (sp == Sp_SfBinary || sp == Sp_SfText)
+                        &&  getObjectPool().isCachingEnabled( (T *) NULL ))
+                    {
+                        mPs.allocate(mVec);
+                        deserialize(in, *mPs);
+                    }
+                    else
+                    {
+                        T *pt = NULL;
+                        deserialize(in, pt);
+                        if (!pt)
+                        {
+                            RCF::Exception e(RCF::_RcfError_DeserializationNullPointer());
+                            RCF_THROW(e);
+                        }
+                        mPs.assign(pt);
+                    }
                 }
             }
             else
@@ -648,12 +676,37 @@ namespace RCF {
                     deserialize(in, pt);
                     mPs.assign(pt);
                 }
-                else
+                else if (ver == 8)
                 {
                     // Deserialize as value.
 
                     mPs.allocate(mVec);
                     deserialize(in, *mPs);
+                }
+                else if (ver >= 9)
+                {
+                    // If BSer, deserialize through pointer.
+                    // If SF and caching disabled, deserialize through pointer.
+                    // If SF and caching enabled, use object cache and deserialize through value.
+
+                    int sp = in.getSerializationProtocol();
+                    if (    (sp == Sp_SfBinary || sp == Sp_SfText)
+                        &&  getObjectPool().isCachingEnabled( (T *) NULL ))
+                    {
+                        mPs.allocate(mVec);
+                        deserialize(in, *mPs);
+                    }
+                    else
+                    {
+                        T *pt = NULL;
+                        deserialize(in, pt);
+                        if (!pt)
+                        {
+                            RCF::Exception e(RCF::_RcfError_DeserializationNullPointer());
+                            RCF_THROW(e);
+                        }
+                        mPs.assign(pt);
+                    }
                 }
             }
             else
@@ -951,9 +1004,13 @@ namespace RCF {
             {
                 serialize(out, &mT);
             }
-            else
+            else if (ver == 8)
             {
                 serialize(out, mT);
+            }
+            else if (ver >= 9)
+            {
+                serialize(out, &mT);
             }
         }
 
@@ -997,9 +1054,13 @@ namespace RCF {
             {
                 serialize(out, &mT);
             }
-            else
+            else if (ver == 8)
             {
                 serialize(out, mT);
+            }
+            else if (ver >= 9)
+            {
+                serialize(out, &mT);
             }
         }
 

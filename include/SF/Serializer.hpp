@@ -2,14 +2,14 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2010, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3
-// Contact: jarl.lindrud <at> deltavsoft.com 
+// Version: 1.3.1
+// Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
@@ -390,7 +390,8 @@ namespace SF {
     template<typename T>
     bool Serializer<T>::isDerived()
     {
-        if (*ppt && typeid(T) != typeid(**ppt))
+        static const bool isFundamental = RCF::IsFundamental<T>::value;
+        if (!isFundamental && *ppt && typeid(T) != typeid(**ppt))
         {
             if (!SF::Registry::getSingleton().isTypeRegistered( typeid(**ppt)))
             {

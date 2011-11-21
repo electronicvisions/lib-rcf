@@ -2,14 +2,14 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2010, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3
-// Contact: jarl.lindrud <at> deltavsoft.com 
+// Version: 1.3.1
+// Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
@@ -235,6 +235,7 @@ namespace RCF {
     static const int RcfError_ProtobufWriteInit                 = 116;
     static const int RcfError_ArraySizeMismatch                 = 117;
     static const int RcfError_WcharSizeMismatch                 = 118;
+    static const int RcfError_AnyTypeNotRegistered              = 119;
 
 
     static const int RcfError_User                              = 1001;
@@ -492,6 +493,9 @@ namespace RCF {
         unsigned int actual,
         unsigned int fromArchive)                           { return Error(RcfError_WcharSizeMismatch, numberToString(actual), numberToString(fromArchive)); }
 
+    inline Error _RcfError_AnyTypeNotRegistered(
+        const std::string typeidName)                       { return Error(RcfError_AnyTypeNotRegistered, typeidName); }
+
 
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -729,8 +733,8 @@ namespace RCF {
 
 #include <memory>
 #include <boost/type_traits.hpp>
-RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION( RCF::Error )
-RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION( std::vector<std::string> )
+RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION( RCF::Error );
+RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION( std::vector<std::string> );
 RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION( RCF::RemoteException )
 RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION( std::auto_ptr<RCF::RemoteException> )
 

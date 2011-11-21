@@ -9,9 +9,12 @@
 
 #include <RCF/util/AutoBuild.hpp>
 
+#include <SF/vector.hpp>
+
 RCF_BEGIN(I_X, "I_X")
 RCF_METHOD_R1(std::string, echo, const std::string &)
 RCF_METHOD_V0(void, echoUserData)
+RCF_METHOD_R1(std::vector<RCF::ByteBuffer>, echoBuffer, const std::vector<RCF::ByteBuffer> &)
 RCF_END(I_X)
 
 class X
@@ -27,6 +30,11 @@ public:
         RCF::RcfSession & session = RCF::getCurrentRcfSession();
         std::string userData = session.getRequestUserData();
         session.setResponseUserData(userData);
+    }
+
+    std::vector<RCF::ByteBuffer> echoBuffer(const std::vector<RCF::ByteBuffer> & byteBuffers)
+    {
+        return byteBuffers;
     }
 };
 
@@ -235,6 +243,29 @@ int test_main(int argc, char ** argv)
         }
         s1 = client.echo(s0);
         RCF_CHECK_EQ(s1 , s0);
+
+        // Test ByteBuffer's.
+        for (std::size_t i=0; i<10; ++i)
+        {
+            std::vector<RCF::ByteBuffer> v1;
+            v1.push_back(RCF::ByteBuffer(s0));
+            std::vector<RCF::ByteBuffer> v2 = client.echoBuffer(v1);
+            RCF_CHECK(v1 == v2);
+        }
+
+        std::string testMsg = "This is a small buffer.";
+        std::vector<RCF::ByteBuffer> v1;
+        for (std::size_t i=0; i<10; ++i)
+        {
+            v1.push_back(RCF::ByteBuffer(testMsg));
+        }
+
+        for (std::size_t i=0; i<10; ++i)
+        {
+            std::vector<RCF::ByteBuffer> v2 = client.echoBuffer(v1);
+            RCF_CHECK(v1.size() == v2.size());
+            RCF_CHECK(v1 == v2);
+        }
     }
 
     {

@@ -2,14 +2,14 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2010, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3
-// Contact: jarl.lindrud <at> deltavsoft.com 
+// Version: 1.3.1
+// Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
@@ -46,6 +46,10 @@ namespace RCF {
         mObjPoolMutex(WriterPriority),
         mBufferCountLimit(10) 
     {
+		mOsPool.reserve(10);
+		mVecPool.reserve(10);
+		mCbPool.reserve(10);
+		mRbPool.reserve(10);
     }
 
 #if defined(_MSC_VER) && _MSC_VER <= 1200

@@ -2,14 +2,14 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2010, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3
-// Contact: jarl.lindrud <at> deltavsoft.com 
+// Version: 1.3.1
+// Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
@@ -424,9 +424,7 @@ namespace RCF {
                 SECPKG_ATTR_REMOTE_CERT_CONTEXT,
                 (PVOID)&pRemoteCertContext);
 
-            mRemoteCert.reset( 
-                pRemoteCertContext, 
-                CertFreeCertificateContext);
+            mRemoteCert.reset( new CertContext(pRemoteCertContext) );
 
             // If we have a custom validation callback, call it.
             if (mCertValidationCallback)
@@ -456,7 +454,7 @@ namespace RCF {
         PCCERT_CONTEXT pCertContext         = NULL;
         if(mLocalCert)
         {
-            pCertContext                    = mLocalCert.get();
+            pCertContext                    = mLocalCert->getContext();
             schannelCred.cCreds             = 1;
             schannelCred.paCred             = &pCertContext;
         }
@@ -505,7 +503,7 @@ namespace RCF {
     }
 
     SchannelServerFilter::SchannelServerFilter(
-        boost::shared_ptr<const CERT_CONTEXT> localCert,
+        CertContextPtr localCert,
         DWORD enabledProtocols,
         ULONG contextRequirements) :
             SspiServerFilter(UNISP_NAME, RCF_T(""), BoolSchannel)
@@ -566,7 +564,11 @@ namespace RCF {
 
     PCCERT_CONTEXT SchannelClientFilter::getServerCertificate()
     {
-        return mRemoteCert.get();
+        if (mRemoteCert)
+        {
+            return mRemoteCert->getContext();
+        }
+        return NULL;
     }    
 
 #if defined(__MINGW32__) && (__GNUC__ <= 3)
@@ -624,19 +626,18 @@ namespace RCF {
 
         std::wstring wCertName = util::toWstring(certName);
 
-        mCertContextPtr.reset( 
-            CertFindCertificateInStore(
-                mPfxStore, 
-                X509_ASN_ENCODING, 
-                0,
-                dwFindType,
-                wCertName.c_str(),
-                NULL),
-            CertFreeCertificateContext);
+        PCCERT_CONTEXT pCertStore = CertFindCertificateInStore(
+            mPfxStore, 
+            X509_ASN_ENCODING, 
+            0,
+            dwFindType,
+            wCertName.c_str(),
+            NULL);
 
         dwErr = GetLastError();
+        RCF_VERIFY(pCertStore, RCF::Exception("CertFindCertificateInStore() failed"));
 
-        RCF_VERIFY(mCertContextPtr, RCF::Exception("CertFindCertificateInStore() failed"));
+        mCertContextPtr.reset( new CertContext(pCertStore) ); 
     }
 
     void PfxCertificate::addToStore(
@@ -664,7 +665,7 @@ namespace RCF {
 
         BOOL ret = CertAddCertificateContextToStore(
             hCertStore,
-            mCertContextPtr.get(),
+            mCertContextPtr->getContext(),
             CERT_STORE_ADD_USE_EXISTING,
             NULL);
 
@@ -719,27 +720,27 @@ namespace RCF {
 
         std::wstring wCertName(certName.begin(), certName.end());
 
-        mCertContextPtr.reset(
-            CertFindCertificateInStore(
-                mStore, 
-                X509_ASN_ENCODING, 
-                0,
-                dwFindType,
-                wCertName.c_str(),
-                NULL),
-            CertFreeCertificateContext);
+        PCCERT_CONTEXT pStoreCert = CertFindCertificateInStore(
+            mStore, 
+            X509_ASN_ENCODING, 
+            0,
+            dwFindType,
+            wCertName.c_str(),
+            NULL);
 
         dwErr = GetLastError();
 
-        // It's OK if certContextPtr is NULL - user will have to take appropriate action.
+        mCertContextPtr.reset( new CertContext(pStoreCert) );
+
+        // It's OK if pStoreCert is NULL - user will have to take appropriate action.
         // ...
     }
 
     void StoreCertificate::removeFromStore()
     {
-        if (mCertContextPtr)
+        if (mCertContextPtr && mCertContextPtr->getContext())
         {
-            BOOL ret = CertDeleteCertificateFromStore(mCertContextPtr.get());
+            BOOL ret = CertDeleteCertificateFromStore(mCertContextPtr->getContext());
             DWORD dwErr = GetLastError();
 
             RCF_VERIFY(
@@ -750,6 +751,7 @@ namespace RCF {
                     RCF::RcfSubsystem_Os, 
                     "CertDeleteCertificateFromStore() failed"));
 
+            mCertContextPtr->setHasBeenDeleted();
             mCertContextPtr.reset();
         }
     }

@@ -2,14 +2,14 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2010, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3
-// Contact: jarl.lindrud <at> deltavsoft.com 
+// Version: 1.3.1
+// Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
@@ -30,16 +30,34 @@ namespace SF {
             std::string which = 
                 SF::Registry::getSingleton().getTypeName(a.type());
 
+            if (which.empty() && !a.empty())
+            {
+                RCF_THROW(RCF::Exception(RCF::_RcfError_AnyTypeNotRegistered(a.type().name())));
+            }
+
             ar & which;
-            SF::Registry::getSingleton().getAnySerializer(which)
-                .serialize(ar, a);
+
+            if (!a.empty())
+            {
+                RCF_ASSERT(which.size() > 0);
+
+                SF::Registry::getSingleton().getAnySerializer(which)
+                    .serialize(ar, a);
+            }
         }
         else
         {
             std::string which;
             ar & which;
-            SF::Registry::getSingleton().getAnySerializer(which)
-                .serialize(ar, a);
+            if (which.empty())
+            {
+                a = boost::any();
+            }
+            else
+            {
+                SF::Registry::getSingleton().getAnySerializer(which)
+                    .serialize(ar, a);
+            }
         }
     }
 

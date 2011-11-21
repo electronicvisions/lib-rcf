@@ -2,14 +2,14 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2010, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3
-// Contact: jarl.lindrud <at> deltavsoft.com 
+// Version: 1.3.1
+// Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
@@ -33,41 +33,38 @@ namespace RCF {
 
 #ifdef RCF_USE_BOOST_ASIO
 
-    // Timeout handlers are stored in AsioMuxer. Things get a bit tricky because
-    // multiple threads can run cycle(), creating their own deadline timers. So 
-    // AsioMuxer is able to cache multiple timeout handlers, without causing memory
-    // allocations.
-
-     // TODO: for asio transports, eliminate the need for deadline timers in
-    // cycle() altogether.
+    class AsioMuxer;
+    typedef boost::shared_ptr<AsioMuxer> AsioMuxerPtr;
+    typedef boost::weak_ptr<AsioMuxer> AsioMuxerWeakPtr;
 
     class TimeoutHandler
     {
     public:
-        TimeoutHandler(AsioMuxer & asioMuxer);
+        TimeoutHandler(AsioMuxerWeakPtr asioMuxerWeakPtr);
         void operator()(boost::system::error_code ec);
-        void * allocate(std::size_t size);
-        void deallocate(void * pointer, std::size_t size);
-        AsioMuxer & mAsioMuxer;
+        AsioMuxerWeakPtr mAsioMuxerWeakPtr;
     };
 
-    void * asio_handler_allocate(std::size_t size, TimeoutHandler * pHandler)
+    class DummyHandler
     {
-        return pHandler->allocate(size);
-    }
+    public:
+        void operator()() {}
+    };
 
-    void asio_handler_deallocate(void * pointer, std::size_t size, TimeoutHandler * pHandler)
-    {
-        return pHandler->deallocate(pointer, size);
-    }
+    // Custom handler allocation, to avoid heap allocation.
+    void * asio_handler_allocate(std::size_t size, TimeoutHandler * pHandler);
+    void asio_handler_deallocate(void * pointer, std::size_t size, TimeoutHandler * pHandler);
+    void * asio_handler_allocate(std::size_t size, DummyHandler * pHandler);
+    void asio_handler_deallocate(void * pointer, std::size_t size, DummyHandler * pHandler);
 
-    class AsioMuxer
+    class AsioMuxer : public boost::enable_shared_from_this<AsioMuxer>
     {
     public:
         AsioMuxer() : 
             mIoService(), 
             mCycleTimer(mIoService)
         {
+            mIoService.reset();
         }
 
         ~AsioMuxer()
@@ -75,27 +72,20 @@ namespace RCF {
             mCycleTimer.mImpl.cancel();
         }
 
+        void startTimer()
+        {
+            mCycleTimer.mImpl.expires_from_now(
+                boost::posix_time::milliseconds(1000));
+
+            AsioMuxerWeakPtr thisWeakPtr = shared_from_this();
+            mCycleTimer.mImpl.async_wait( TimeoutHandler(thisWeakPtr) );
+        }
+
         void cycle(int timeoutMs)
         {
             RCF_ASSERT_GTEQ(timeoutMs , -1);
 
-            if (timeoutMs != -1)
-            {
-                mCycleTimer.mImpl.cancel();
-
-                mCycleTimer.mImpl.expires_from_now(
-                    boost::posix_time::milliseconds(timeoutMs));
-
-                mCycleTimer.mImpl.async_wait( TimeoutHandler(*this) );
-
-                mIoService.reset();
-                mIoService.run();
-            }
-            else
-            {
-                mIoService.reset();
-                mIoService.run_one();
-            }
+            mIoService.run_one();
         }
 
         void stopCycle()
@@ -103,57 +93,131 @@ namespace RCF {
             mIoService.stop();
         }
 
+        static void onTimer(
+            AsioMuxerWeakPtr thisWeakPtr, 
+            const boost::system::error_code& error)
+        {
+            AsioMuxerPtr thisPtr = thisWeakPtr.lock();
+
+            if (!error)
+            {
+                ThreadInfoPtr threadInfoPtr = getThreadInfoPtr();
+                if (threadInfoPtr)
+                {
+                    ThreadPool & threadPool = threadInfoPtr->getThreadPool();
+                    std::size_t threadCount = threadPool.getThreadCount();
+                    RCF_ASSERT(threadCount >= 1);
+                    for (std::size_t i=0; i<threadCount-1; ++i)
+                    {
+                        //thisPtr->mIoService.post( &dummyHandler );
+                        thisPtr->mIoService.post( DummyHandler() );
+                    }
+                }
+
+                thisPtr->mCycleTimer.mImpl.expires_from_now(
+                    boost::posix_time::milliseconds(1000));
+
+                thisPtr->mCycleTimer.mImpl.async_wait(TimeoutHandler(thisWeakPtr) );
+            }
+        }
+
+        AsioIoService mIoService;
+        AsioDeadlineTimer mCycleTimer;
+    };
+
+    class HandlerCache
+    {
+    public:
         typedef boost::shared_ptr< std::vector<char> > VecPtr;
         Mutex mHandlerMutex;
         std::vector<VecPtr> mHandlerFreeList;
         std::vector<VecPtr> mHandlerUsedList;
-
-        AsioIoService mIoService;
-
-        AsioDeadlineTimer mCycleTimer;
     };
 
-    TimeoutHandler::TimeoutHandler(AsioMuxer & asioMuxer) : mAsioMuxer(asioMuxer)
+    HandlerCache * gpTimeoutHandlerCache = NULL;
+    HandlerCache * gpDummyHandlerCache = NULL;
+
+    void initHandlerCache()
+    {
+        gpTimeoutHandlerCache = new HandlerCache(); 
+        gpDummyHandlerCache = new HandlerCache();
+    }
+
+    void deinitHandlerCache()
+    {
+        delete gpTimeoutHandlerCache; 
+        gpTimeoutHandlerCache = NULL; 
+        
+        delete gpDummyHandlerCache; 
+        gpDummyHandlerCache = NULL;
+    }
+
+    RCF_ON_INIT_DEINIT_NAMED(
+        initHandlerCache(); ,
+        deinitHandlerCache(); ,
+        HandlerCacheInit )
+
+    TimeoutHandler::TimeoutHandler(AsioMuxerWeakPtr asioMuxerWeakPtr) : 
+        mAsioMuxerWeakPtr(asioMuxerWeakPtr)
     {
     }
 
     void TimeoutHandler::operator()(boost::system::error_code ec)
     {
-        RCF_UNUSED_VARIABLE(ec);
-        mAsioMuxer.stopCycle();
+        AsioMuxer::onTimer(mAsioMuxerWeakPtr, ec);
     }
 
-    void * TimeoutHandler::allocate(std::size_t size)
+    void * asioHandlerAllocate(std::size_t size, HandlerCache * pHandlerCache)
     {
-        AsioMuxer::VecPtr vecPtr;
-        Lock lock(mAsioMuxer.mHandlerMutex);
-        if (mAsioMuxer.mHandlerFreeList.empty())
+        HandlerCache::VecPtr vecPtr;
+        Lock lock(pHandlerCache->mHandlerMutex);
+        if (pHandlerCache->mHandlerFreeList.empty())
         {
             vecPtr.reset( new std::vector<char>(size) );
         }
         else
         {
-            vecPtr = mAsioMuxer.mHandlerFreeList.back();
-            mAsioMuxer.mHandlerFreeList.pop_back();
+            vecPtr = pHandlerCache->mHandlerFreeList.back();
+            pHandlerCache->mHandlerFreeList.pop_back();
         }
 
-        mAsioMuxer.mHandlerUsedList.push_back(vecPtr);
+        pHandlerCache->mHandlerUsedList.push_back(vecPtr);
         return & (*vecPtr)[0];
     }
 
-    void TimeoutHandler::deallocate(void * pointer, std::size_t size)
+    void asioHandlerDeallocate(void * pointer, std::size_t size, HandlerCache * pHandlerCache)
     {
-        Lock lock(mAsioMuxer.mHandlerMutex);
-        for (std::size_t i=0; i<mAsioMuxer.mHandlerUsedList.size(); ++i)
+        Lock lock(pHandlerCache->mHandlerMutex);
+        for (std::size_t i=0; i<pHandlerCache->mHandlerUsedList.size(); ++i)
         {
-            AsioMuxer::VecPtr vecPtr = mAsioMuxer.mHandlerUsedList[i];
+            HandlerCache::VecPtr vecPtr = pHandlerCache->mHandlerUsedList[i];
             std::vector<char> & vec  = *vecPtr;
             if ( & vec[0]  == pointer )
             {
-                mAsioMuxer.mHandlerUsedList.erase( mAsioMuxer.mHandlerUsedList.begin() + i);
-                mAsioMuxer.mHandlerFreeList.push_back(vecPtr);
+                pHandlerCache->mHandlerUsedList.erase( pHandlerCache->mHandlerUsedList.begin() + i);
+                pHandlerCache->mHandlerFreeList.push_back(vecPtr);
             }
         }
+    }
+
+    void * asio_handler_allocate(std::size_t size, TimeoutHandler * pHandler)
+    {
+        return asioHandlerAllocate(size, gpTimeoutHandlerCache);
+    }
+
+    void asio_handler_deallocate(void * pointer, std::size_t size, TimeoutHandler * pHandler)
+    {
+        asioHandlerDeallocate(pointer, size, gpTimeoutHandlerCache);
+    }
+
+    void * asio_handler_allocate(std::size_t size, DummyHandler * pHandler)
+    {
+        return asioHandlerAllocate(size, gpDummyHandlerCache);
+    }
+
+    void asio_handler_deallocate(void * pointer, std::size_t size, DummyHandler * pHandler)
+    {
+        asioHandlerDeallocate(pointer, size, gpDummyHandlerCache);
     }
 
 #endif
@@ -302,6 +366,7 @@ namespace RCF {
         if (muxerType == Mt_Asio && !mAsioMuxerPtr)
         {
             mAsioMuxerPtr.reset( new AsioMuxer() );
+            mAsioMuxerPtr->startTimer();
         }
 #endif
 
@@ -656,6 +721,11 @@ namespace RCF {
     {
         touch();
         mThreadPool.notifyBusy();
+    }
+
+    ThreadPool & ThreadInfo::getThreadPool()
+    {
+        return mThreadPool;
     }
 
 } // namespace RCF

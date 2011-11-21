@@ -2,14 +2,14 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2010, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3
-// Contact: jarl.lindrud <at> deltavsoft.com 
+// Version: 1.3.1
+// Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
@@ -64,7 +64,6 @@ namespace RCF {
 
     RcfServer::RcfServer() :
         mStubMapMutex(WriterPriority),
-        mServicesMutex(WriterPriority),
         mServerThreadsStopFlag(RCF_DEFAULT_INIT),
         mStarted(RCF_DEFAULT_INIT),
         mThreadPoolPtr( new ThreadPool(1, "RCF Server") ),
@@ -75,7 +74,6 @@ namespace RCF {
 
     RcfServer::RcfServer(const I_Endpoint &endpoint) :
         mStubMapMutex(WriterPriority),
-        mServicesMutex(WriterPriority),
         mServerThreadsStopFlag(RCF_DEFAULT_INIT),
         mStarted(RCF_DEFAULT_INIT),
         mThreadPoolPtr( new ThreadPool(1, "RCF Server") ),
@@ -87,7 +85,6 @@ namespace RCF {
 
     RcfServer::RcfServer(ServicePtr servicePtr) :
         mStubMapMutex(WriterPriority),
-        mServicesMutex(WriterPriority),
         mServerThreadsStopFlag(RCF_DEFAULT_INIT),
         mStarted(RCF_DEFAULT_INIT),
         mThreadPoolPtr( new ThreadPool(1, "RCF Server") ),
@@ -99,7 +96,6 @@ namespace RCF {
 
     RcfServer::RcfServer(ServerTransportPtr serverTransportPtr) :
         mStubMapMutex(WriterPriority),
-        mServicesMutex(WriterPriority),
         mServerThreadsStopFlag(RCF_DEFAULT_INIT),
         mStarted(RCF_DEFAULT_INIT),
         mThreadPoolPtr( new ThreadPool(1, "RCF Server") ),
@@ -120,7 +116,7 @@ namespace RCF {
     {
         RCF_LOG_2()(typeid(*servicePtr).name()) << "RcfServer - adding service.";
 
-        WriteLock lock(mServicesMutex);
+        RCF_ASSERT(!mStarted && "Services cannot be added or removed while server is running.");
 
         if (
             std::find(
@@ -178,7 +174,6 @@ namespace RCF {
                 mSessionTimeoutServicePtr = sessionTimeoutServicePtr;
             }
 
-            lock.unlock();
             servicePtr->onServiceAdded(*this);
 
             Lock lock(mStartStopMutex);
@@ -197,7 +192,7 @@ namespace RCF {
     {
         RCF_LOG_2()(typeid(*servicePtr).name()) << "Removing service.";
 
-        WriteLock lock(mServicesMutex);
+        RCF_ASSERT(!mStarted && "Services cannot be added or removed while server is running.");
 
         std::vector<ServicePtr>::iterator iter =
             std::find(mServices.begin(), mServices.end(), servicePtr);
@@ -253,8 +248,6 @@ namespace RCF {
             {
                 mSessionTimeoutServicePtr.reset();
             }
-
-            lock.unlock();
 
             stopService(servicePtr, true);
             servicePtr->onServiceRemoved(*this);
@@ -332,29 +325,23 @@ namespace RCF {
 
             // open the server
 
-            std::vector<ServicePtr> services;
+            for (std::size_t i=0; i<mServices.size(); ++i)
             {
-                ReadLock lock(mServicesMutex);
-                services = mServices;
-            }
-
-            for (std::size_t i=0; i<services.size(); ++i)
-            {
-                resolveServiceThreadPools(services[i]);
+                resolveServiceThreadPools(mServices[i]);
             }
 
             // notify all services
             std::for_each(
-                services.begin(),
-                services.end(),
+                mServices.begin(),
+                mServices.end(),
                 boost::bind(&I_Service::onServerStart, _1, boost::ref(*this)));
 
             // spawn internal worker threads
             if (spawnThreads)
             {
                 std::for_each(
-                    services.begin(),
-                    services.end(),
+                    mServices.begin(),
+                    mServices.end(),
                     boost::bind(&RcfServer::startService, boost::cref(*this), _1));
             }
 
@@ -400,7 +387,6 @@ namespace RCF {
     {
         // Cycle each task of each service, once.
 
-        ReadLock lock(mServicesMutex);
         for (std::size_t i=0; i<mServices.size(); ++i)
         {
             TaskEntries & taskEntries = mServices[i]->mTaskEntries;
@@ -473,10 +459,6 @@ namespace RCF {
             // set stop flag
             mServerThreadsStopFlag = true;
 
-            // WriteLock here, so that we can flush out any threads in cycle().
-            WriteLock lock(mServicesMutex);
-
-            // notify and optionally join all internal worker threads
             std::for_each(
                 mServices.rbegin(),
                 mServices.rend(),
@@ -1137,7 +1119,6 @@ namespace RCF {
 
     FilterPtr RcfServer::createFilter(int filterId)
     {
-        ReadLock lock(mServicesMutex);
         if (mFilterServicePtr)
         {
             FilterFactoryPtr filterFactoryPtr = 
@@ -1191,25 +1172,21 @@ namespace RCF {
 
     PingBackServicePtr RcfServer::getPingBackServicePtr()
     {
-        ReadLock lock(mServicesMutex);
         return mPingBackServicePtr;
     }
 
     FileTransferServicePtr RcfServer::getFileTransferServicePtr()
     {
-        ReadLock lock(mServicesMutex);
         return mFileTransferServicePtr;
     }
 
     ObjectFactoryServicePtr RcfServer::getObjectFactoryServicePtr()
     {
-        ReadLock lock(mServicesMutex);
         return mObjectFactoryServicePtr;
     }
 
     SessionTimeoutServicePtr RcfServer::getSessionTimeoutServicePtr()
     {
-        ReadLock lock(mServicesMutex);
         return mSessionTimeoutServicePtr;
     }
 

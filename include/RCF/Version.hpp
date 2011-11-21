@@ -2,14 +2,14 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2010, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3
-// Contact: jarl.lindrud <at> deltavsoft.com 
+// Version: 1.3.1
+// Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
@@ -68,6 +68,11 @@ namespace RCF {
     //      - BSer: remote exceptions serialized through raw pointer rather than auto_ptr.
     //      - Error response messages contain two custom args, rather than one.
     // Released in 1.3
+
+    // 2011-06-02   - version number 9
+    //      - Only do non-polymorphic marshaling of reference parameters, if using SF and object caching is enabled for the marshaling type. Otherwise polymorphic marshaling, as in version 7 and earlier.
+    //      - Optimize SF serialization of 32 bit integers < 128, to a single byte.
+
 
     // Inherent runtime version - can't be changed.
     RCF_EXPORT boost::uint32_t  getInherentRuntimeVersion();

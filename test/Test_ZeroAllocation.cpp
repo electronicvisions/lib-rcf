@@ -325,6 +325,13 @@ int test_main(int argc, char **argv)
             {
                 // Check that return value, value, cref, ref and outref marshaling don't cause allocations.
 
+                // Enable server side caching of std::string.
+                RCF::ObjectPool & pool = RCF::getObjectPool();
+
+                pool.enableCaching<std::string>( 
+                    10, 
+                    boost::bind(&clearString, _1));
+
                 std::string s0;
                 std::string s1;
                 std::string s2;
@@ -343,6 +350,7 @@ int test_main(int argc, char **argv)
                 }
                 gExpectAllocations = true;
 
+                pool.disableCaching<std::string>();
             }
 
             // Can't compile calls to ObjectPool::enableCaching<>, with vc6.

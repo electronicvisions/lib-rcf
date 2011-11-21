@@ -117,12 +117,18 @@ namespace Test_SspiFilter {
             RCF::tstring myUserName = RCF::getMyUserName();
             return myUserName;
         }
+
+        RCF::ByteBuffer echoBuffer(RCF::ByteBuffer byteBuffer)
+        {
+            return byteBuffer;
+        }
     };
 
     RCF_BEGIN(I_Echo, "I_Echo")
         RCF_METHOD_R1(tstring, echo, const tstring &)
         RCF_METHOD_R0(tstring, getUserName)
         RCF_METHOD_R0(tstring, getWin32PipeUserName)
+        RCF_METHOD_R1(RCF::ByteBuffer, echoBuffer, RCF::ByteBuffer)
     RCF_END(I_Echo)
 
     typedef boost::function1<
@@ -693,6 +699,15 @@ int test_main(int argc, char **argv)
         // encrypted
         client.getClientStub().requestTransportFilters( RCF::FilterPtr(
             new RCF::NtlmFilter()));
+
+        s = client.echo(s0);
+
+        {
+            std::string s("just a test message");
+            RCF::ByteBuffer b1(s);
+            RCF::ByteBuffer b2 = client.echoBuffer(b1);
+            RCF_CHECK(b1 == b2);
+        }
 
         s = RCF_T("");
         s = client.echo(s0);

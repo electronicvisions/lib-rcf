@@ -2,14 +2,14 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2010, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3
-// Contact: jarl.lindrud <at> deltavsoft.com 
+// Version: 1.3.1
+// Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
@@ -48,12 +48,12 @@ once_flag tss_data_once = RCF_BOOST_ONCE_INIT;
 
 extern "C" void cleanup_slots(void* p)
 {
-    tss_slots* slots = static_cast<tss_slots*>(p);
-    for (tss_slots::size_type i = 0; i < slots->size(); ++i)
+    tss_slots* tlSlots = static_cast<tss_slots*>(p);
+    for (tss_slots::size_type i = 0; i < tlSlots->size(); ++i)
     {
         mutex::scoped_lock lock(tss_data->mutex_);
-        (*tss_data->cleanup_handlers[i])((*slots)[i]);
-        (*slots)[i] = 0;
+        (*tss_data->cleanup_handlers[i])((*tlSlots)[i]);
+        (*tlSlots)[i] = 0;
     }
 }
 
@@ -92,28 +92,28 @@ tss_slots* get_slots(bool alloc);
 
 void __cdecl tss_thread_exit()
 {
-    tss_slots* slots = get_slots(false);
-    if (slots)
-        cleanup_slots(slots);
+    tss_slots* tlSlots = get_slots(false);
+    if (tlSlots)
+        cleanup_slots(tlSlots);
 }
 #endif
 
 tss_slots* get_slots(bool alloc)
 {
-    tss_slots* slots = 0;
+    tss_slots* tlSlots = 0;
 
 #if defined(BOOST_HAS_WINTHREADS)
-    slots = static_cast<tss_slots*>(
+    tlSlots = static_cast<tss_slots*>(
         TlsGetValue(tss_data->native_key));
 #elif defined(BOOST_HAS_PTHREADS)
-    slots = static_cast<tss_slots*>(
+    tlSlots = static_cast<tss_slots*>(
         pthread_getspecific(tss_data->native_key));
 #elif defined(BOOST_HAS_MPTASKS)
-    slots = static_cast<tss_slots*>(
+    tlSlots = static_cast<tss_slots*>(
         MPGetTaskStorageValue(tss_data->native_key));
 #endif
 
-    if (slots == 0 && alloc)
+    if (tlSlots == 0 && alloc)
     {
         ::std::auto_ptr<tss_slots> temp(new tss_slots);
 
@@ -130,10 +130,10 @@ tss_slots* get_slots(bool alloc)
             return 0;
 #endif
 
-        slots = temp.release();
+        tlSlots = temp.release();
     }
 
-    return slots;
+    return tlSlots;
 }
 
 } // namespace boost
@@ -160,29 +160,29 @@ namespace detail {
 
 void* tss::get() const
 {
-    tss_slots* slots = get_slots(false);
+    tss_slots* tlSlots = get_slots(false);
 
-    if (!slots)
+    if (!tlSlots)
         return 0;
 
-    if (m_slot >= slots->size())
+    if (m_slot >= tlSlots->size())
         return 0;
 
-    return (*slots)[m_slot];
+    return (*tlSlots)[m_slot];
 }
 
 void tss::set(void* value)
 {
-    tss_slots* slots = get_slots(true);
+    tss_slots* tlSlots = get_slots(true);
 
-    if (!slots)
+    if (!tlSlots)
         throw thread_resource_error();
 
-    if (m_slot >= slots->size())
+    if (m_slot >= tlSlots->size())
     {
         try
         {
-            slots->resize(m_slot + 1);
+            tlSlots->resize(m_slot + 1);
         }
         catch (...)
         {
@@ -190,7 +190,7 @@ void tss::set(void* value)
         }
     }
 
-    (*slots)[m_slot] = value;
+    (*tlSlots)[m_slot] = value;
 }
 
 void tss::cleanup(void* value)

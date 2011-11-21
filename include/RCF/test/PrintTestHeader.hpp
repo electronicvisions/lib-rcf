@@ -2,14 +2,14 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2010, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3
-// Contact: jarl.lindrud <at> deltavsoft.com 
+// Version: 1.3.1
+// Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
@@ -92,6 +92,7 @@ inline void printTestHeader(const char *file)
 #endif
 
     std::cout << "RCF_MAX_METHOD_COUNT: " << RCF_MAX_METHOD_COUNT << std::endl;
+    std::cout << "RCF_MEM_ISTREAM_INLINE_STREAMBUF: " << RCF_MEM_ISTREAM_INLINE_STREAMBUF << std::endl;
 
 #ifdef RCF_MULTI_THREADED
     std::cout << "RCF_MULTI_THREADED" << std::endl;

@@ -2,14 +2,14 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2010, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3
-// Contact: jarl.lindrud <at> deltavsoft.com 
+// Version: 1.3.1
+// Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
@@ -27,6 +27,7 @@
 
 #include <RCF/Exception.hpp>
 #include <RCF/InitDeinit.hpp>
+#include <RCF/RecursionLimiter.hpp>
 #include <RCF/Tools.hpp>
 #include <RCF/UsingOpenSsl.hpp>
 
@@ -154,6 +155,9 @@ namespace RCF {
         unsigned int                    mBioBufferSize;
 
         OpenSslEncryptionFilter &       mOpenSslEncryptionFilter;
+
+        RecursionState<int, int>        mRecursionState;
+        bool                            mUseRecursionLimiter;
     };
 
     const FilterDescription & OpenSslEncryptionFilter::sGetFilterDescription()
@@ -292,7 +296,8 @@ namespace RCF {
             mHandshakeOk(RCF_DEFAULT_INIT),
             mVerifyFunctor(verifyFunctor),
             mErr(RCF_DEFAULT_INIT),
-            mOpenSslEncryptionFilter(openSslEncryptionFilter)
+            mOpenSslEncryptionFilter(openSslEncryptionFilter),
+            mUseRecursionLimiter(sslRole == SslClient)
     {
         init();
     }
@@ -353,6 +358,7 @@ namespace RCF {
     void OpenSslEncryptionFilterImpl::onReadWriteCompleted(
         std::size_t bytesTransferred)
     {
+        mByteBuffers.resize(0);
         mPostByteBuffer.clear();
 
         if (bytesTransferred == 0 && mReadRequested == 0 && mPreState == Reading)
@@ -373,7 +379,17 @@ namespace RCF {
             {
                 if (mPreState == Writing && BIO_ctrl_pending(mIoBio.get()) > 0)
                 {
-                    transferData();
+                    if (mUseRecursionLimiter)
+                    {
+                        applyRecursionLimiter(
+                            mRecursionState, 
+                            &OpenSslEncryptionFilterImpl::transferData, 
+                            *this);
+                    }
+                    else
+                    {
+                        transferData();
+                    }
                 }
                 else
                 {
@@ -460,7 +476,18 @@ namespace RCF {
         {
             // initiate io requests on underlying filters
             mRetry = true;
-            transferData();
+            
+            if (mUseRecursionLimiter)
+            {
+                applyRecursionLimiter(
+                    mRecursionState, 
+                    &OpenSslEncryptionFilterImpl::transferData, 
+                    *this);
+            }
+            else
+            {
+                transferData();
+            }
         }
         else if (0 < bioRet && bioRet <= static_cast<int>(mPreByteBuffer.getLength()))
         {
@@ -470,7 +497,18 @@ namespace RCF {
             {
                 // TODO: maybe this is not always true
                 RCF_ASSERT_GT(BIO_ctrl_pending(mIoBio.get()) , 0);
-                transferData();
+                
+                if (mUseRecursionLimiter)
+                {
+                    applyRecursionLimiter(
+                        mRecursionState, 
+                        &OpenSslEncryptionFilterImpl::transferData, 
+                        *this);
+                }
+                else
+                {
+                    transferData();
+                }
             }
             else
             {
@@ -517,8 +555,7 @@ namespace RCF {
             // NB: completion routine will call BIO_nread(mIoBio, postBufferLen)
             mByteBuffers.resize(0);
             mByteBuffers.push_back( ByteBuffer(mPostBuffer, mPostBufferLen));
-            mOpenSslEncryptionFilter.mpPostFilter->write(mByteBuffers);
-            mByteBuffers.resize(0);
+            mOpenSslEncryptionFilter.mpPostFilter->write(mByteBuffers);            
         }
     }
 

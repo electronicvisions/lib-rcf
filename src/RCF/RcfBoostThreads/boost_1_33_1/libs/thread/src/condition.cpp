@@ -2,14 +2,14 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2010, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3
-// Contact: jarl.lindrud <at> deltavsoft.com 
+// Version: 1.3.1
+// Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
@@ -73,7 +73,7 @@ condition_impl::~condition_impl()
 
 void condition_impl::notify_one()
 {
-    unsigned signals = 0;
+    unsigned signalCount = 0;
 
     int res = 0;
     res = WaitForSingleObject(reinterpret_cast<HANDLE>(m_mutex), INFINITE);
@@ -90,7 +90,7 @@ void condition_impl::notify_one()
 
         ++m_waiting;
         --m_blocked;
-        signals = 1;
+        signalCount = 1;
     }
     else
     {
@@ -103,7 +103,7 @@ void condition_impl::notify_one()
                 m_blocked -= m_gone;
                 m_gone = 0;
             }
-            signals = m_waiting = 1;
+            signalCount = m_waiting = 1;
             --m_blocked;
         }
         else
@@ -116,16 +116,16 @@ void condition_impl::notify_one()
     res = ReleaseMutex(reinterpret_cast<HANDLE>(m_mutex));
     assert(res);
 
-    if (signals)
+    if (signalCount)
     {
-        res = ReleaseSemaphore(reinterpret_cast<HANDLE>(m_queue), signals, 0);
+        res = ReleaseSemaphore(reinterpret_cast<HANDLE>(m_queue), signalCount, 0);
         assert(res);
     }
 }
 
 void condition_impl::notify_all()
 {
-    unsigned signals = 0;
+    unsigned signalCount = 0;
 
     int res = 0;
     res = WaitForSingleObject(reinterpret_cast<HANDLE>(m_mutex), INFINITE);
@@ -140,7 +140,7 @@ void condition_impl::notify_all()
             return;
         }
 
-        m_waiting += (signals = m_blocked);
+        m_waiting += (signalCount = m_blocked);
         m_blocked = 0;
     }
     else
@@ -154,7 +154,7 @@ void condition_impl::notify_all()
                 m_blocked -= m_gone;
                 m_gone = 0;
             }
-            signals = m_waiting = m_blocked;
+            signalCount = m_waiting = m_blocked;
             m_blocked = 0;
         }
         else
@@ -167,9 +167,9 @@ void condition_impl::notify_all()
     res = ReleaseMutex(reinterpret_cast<HANDLE>(m_mutex));
     assert(res);
 
-    if (signals)
+    if (signalCount)
     {
-        res = ReleaseSemaphore(reinterpret_cast<HANDLE>(m_queue), signals, 0);
+        res = ReleaseSemaphore(reinterpret_cast<HANDLE>(m_queue), signalCount, 0);
         assert(res);
     }
 }
@@ -419,7 +419,7 @@ condition_impl::~condition_impl()
 
 void condition_impl::notify_one()
 {
-    unsigned signals = 0;
+    unsigned signalCount = 0;
 
     OSStatus lStatus = noErr;
     lStatus = safe_enter_critical_region(m_mutex, kDurationForever,
@@ -449,7 +449,7 @@ void condition_impl::notify_one()
                 m_blocked -= m_gone;
                 m_gone = 0;
             }
-            signals = m_waiting = 1;
+            signalCount = m_waiting = 1;
             --m_blocked;
         }
         else
@@ -461,18 +461,18 @@ void condition_impl::notify_one()
         lStatus = MPExitCriticalRegion(m_mutex);
         assert(lStatus == noErr);
 
-        while (signals)
+        while (signalCount)
         {
             lStatus = MPSignalSemaphore(m_queue);
             assert(lStatus == noErr);
-            --signals;
+            --signalCount;
         }
     }
 }
 
 void condition_impl::notify_all()
 {
-    unsigned signals = 0;
+    unsigned signalCount = 0;
 
     OSStatus lStatus = noErr;
     lStatus = safe_enter_critical_region(m_mutex, kDurationForever,
@@ -488,7 +488,7 @@ void condition_impl::notify_all()
             return;
         }
 
-        m_waiting += (signals = m_blocked);
+        m_waiting += (signalCount = m_blocked);
         m_blocked = 0;
     }
     else
@@ -502,7 +502,7 @@ void condition_impl::notify_all()
                 m_blocked -= m_gone;
                 m_gone = 0;
             }
-            signals = m_waiting = m_blocked;
+            signalCount = m_waiting = m_blocked;
             m_blocked = 0;
         }
         else
@@ -514,11 +514,11 @@ void condition_impl::notify_all()
         lStatus = MPExitCriticalRegion(m_mutex);
         assert(lStatus == noErr);
 
-        while (signals)
+        while (signalCount)
         {
             lStatus = MPSignalSemaphore(m_queue);
             assert(lStatus == noErr);
-            --signals;
+            --signalCount;
         }
     }
 }

@@ -2,14 +2,14 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2010, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3
-// Contact: jarl.lindrud <at> deltavsoft.com 
+// Version: 1.3.1
+// Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
@@ -81,11 +81,6 @@ namespace RCF {
             unsigned int timeoutMs = generateTimeoutMs(endTimeMs);
             timeoutMs = clientStub.generatePollingTimeout(timeoutMs);
 
-            if (timeoutMs == 0)
-            {
-                return -2;
-            }
-
             DWORD dwRet = MsgWaitForMultipleObjects(
                 1, 
                 handles, 
@@ -97,9 +92,9 @@ namespace RCF {
             {
                 clientStub.onPollingTimeout();
 
-                if (generateTimeoutMs(endTimeMs) != 0)
+                if (generateTimeoutMs(endTimeMs) == 0)
                 {
-                    continue;
+                    return -2;
                 }
             }
             else if (dwRet == WAIT_OBJECT_0)
