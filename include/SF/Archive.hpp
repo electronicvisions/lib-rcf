@@ -51,6 +51,7 @@ namespace SF {
         Archive(Direction dir, OStream *stream);
 
         Archive &   operator&(Flag flag);
+        Archive &   operator&(boost::uint32_t flag);
         bool        isRead() const;
         bool        isWrite() const;
         IStream *   getIstream() const;
