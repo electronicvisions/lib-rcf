@@ -18,7 +18,7 @@
 
 #ifdef RCF_USE_PROTOBUF
 
-#include <RCF\protobuf\RcfMessages.pb.h>
+#include <RCF/protobuf/RcfMessages.pb.h>
 
 namespace RCF {
 

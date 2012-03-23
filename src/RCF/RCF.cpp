@@ -169,7 +169,7 @@
 #endif
 
 #ifdef RCF_USE_PROTOBUF
-#include <RCF\protobuf\RcfMessages.pb.cc>
+#include <RCF/protobuf/RcfMessages.pb.cc>
 #endif
 
 // Don't support UTF-8 conversion on mingw or borland. mingw doesn't have std::wstring,
