@@ -45,7 +45,14 @@ namespace SF {
 
     Archive & Archive::operator&(boost::uint32_t flag)
     {
-        setFlag(flag);
+        //kh: the fix below needs boost threads and makes
+        // SF + std::string compilable but code then crashes
+        // _DEV denotes that this fix is not working jet
+        #ifdef RCF_USE_ESTER_FIXES_DEV
+            setFlag(static_cast<SF::Archive::Flag>(flag));
+        #else
+            setFlag(flag);
+        #endif
         return *this;
     }
 
