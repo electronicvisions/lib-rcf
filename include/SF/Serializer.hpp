@@ -250,13 +250,13 @@ namespace SF {
         if (ar.isRead())
         {
             boost::int32_t n = 0;
-            ar & n;
+            ar & static_cast<SF::Archive::Flag>(n);
             t = T(n);
         }
         else /* if (ar.isWrite())) */
         {
             boost::int32_t n = t;
-            ar & n;
+            ar & static_cast<SF::Archive::Flag>(n);
         }
     }
 

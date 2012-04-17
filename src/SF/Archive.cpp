@@ -43,12 +43,6 @@ namespace SF {
         return *this;
     }
 
-    Archive & Archive::operator&(boost::uint32_t flag)
-    {
-            setFlag(static_cast<SF::Archive::Flag>(flag));
-        return *this;
-    }
-
     bool Archive::isRead() const
     {
         return mDir == READ;
