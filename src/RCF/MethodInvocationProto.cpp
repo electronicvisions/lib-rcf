@@ -293,6 +293,7 @@ namespace RCF {
     {
         Exception e("Protocol Buffer support not enabled.");
         RCF_THROW(e);
+        return ByteBuffer(); // ECM: gcc, shut up!
     }
 
     void MethodInvocationRequest::encodeToMessageProto(
@@ -315,6 +316,7 @@ namespace RCF {
 
         Exception e("Protocol Buffer support not enabled.");
         RCF_THROW(e);
+        return 0; // ECM: gcc, shut up!
     }
 
     std::size_t MethodInvocationRequest::decodeFromMessageProto(
@@ -328,6 +330,7 @@ namespace RCF {
 
         Exception e("Protocol Buffer support not enabled.");
         RCF_THROW(e);
+        return 0; // ECM: gcc, shut up!
     }
 
     void MethodInvocationRequest::encodeResponseProto(
@@ -350,6 +353,7 @@ namespace RCF {
 
         Exception e("Protocol Buffer support not enabled.");
         RCF_THROW(e);
+        return 0; // ECM: gcc, shut up!
     }
 
     class Protobufs {};

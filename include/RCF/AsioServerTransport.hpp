@@ -328,7 +328,6 @@ namespace RCF {
         std::size_t                 mWriteBufferRemaining;
         SessionPtr                  mSessionPtr;
         std::vector<FilterPtr>      mTransportFilters;
-        AsioIoService &             mIoService;
 
         AsioServerTransport &       mTransport;
 
@@ -349,6 +348,8 @@ namespace RCF {
         AsioSessionStateWeakPtr     mReflecteeWeakPtr;
         AsioSessionStatePtr         mReflecteePtr;
         bool                        mReflecting;
+
+        AsioIoService &             mIoService;
 
         AsioSessionStateWeakPtr     mWeakThisPtr;
 
