@@ -61,7 +61,11 @@ namespace Platform {
             template<typename T> bool timed_wait(T &t, int timeoutMs)
             {
                 boost::xtime xt;
+#if BOOST_VERSION >= 105000
+                boost::xtime_get(&xt, boost::TIME_UTC_);
+#else
                 boost::xtime_get(&xt, boost::TIME_UTC);
+#endif
                 xt.sec += timeoutMs / 1000;
                 xt.nsec += 1000*(timeoutMs - 1000*(timeoutMs / 1000));
                 return mCondition.timed_wait(t, xt);

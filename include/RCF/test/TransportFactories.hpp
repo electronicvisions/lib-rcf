@@ -101,12 +101,20 @@ namespace Platform {
 #if defined(RCF_USE_BOOST_THREADS)
             using boost::xtime;
             using boost::xtime_get;
+#if BOOST_VERSION >= 105000
+            using boost::TIME_UTC_;
+#else
             using boost::TIME_UTC;
+#endif
             using boost::thread;
 #else
             using RCF::RcfBoostThreads::boost::xtime;
             using RCF::RcfBoostThreads::boost::xtime_get;
+#if BOOST_VERSION >= 105000
+            using RCF::RcfBoostThreads::boost::TIME_UTC_;
+#else
             using RCF::RcfBoostThreads::boost::TIME_UTC;
+#endif
             using RCF::RcfBoostThreads::boost::thread;
 #endif
 

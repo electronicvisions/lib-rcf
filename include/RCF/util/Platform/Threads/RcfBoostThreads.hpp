@@ -56,7 +56,11 @@ namespace Platform {
             template<typename T> bool timed_wait(const T &t, int timeoutMs)
             {
                 RCF::RcfBoostThreads::boost::xtime xt;
+#if BOOST_VERSION >= 105000
+                RCF::RcfBoostThreads::boost::xtime_get(&xt, RCF::RcfBoostThreads::boost::TIME_UTC_);
+#else
                 RCF::RcfBoostThreads::boost::xtime_get(&xt, RCF::RcfBoostThreads::boost::TIME_UTC);
+#endif
                 xt.sec += timeoutMs / 1000;
                 xt.nsec += 1000*(timeoutMs - 1000*(timeoutMs / 1000));
                 return mCondition.timed_wait(t, xt);
