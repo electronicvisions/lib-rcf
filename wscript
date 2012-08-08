@@ -11,7 +11,7 @@ def configure(cfg):
     cfg.load('boost')
     cfg.check_boost(lib='serialization system thread', uselib_store='BOOST4RCF')
 
-    cfg.env.CXXFLAGS_RCF = [
+    cfg.env.CXXFLAGS_RCFUSE = [
             '-g',
             '-O0',
             '-DRCF_USE_BOOST_ASIO',
@@ -21,14 +21,24 @@ def configure(cfg):
             '-Wno-deprecated',
             '-fPIC'
     ]
-    cfg.env.INCLUDES_RCF = [ 'include' ]
+    cfg.env.INCLUDES_RCFUSE   = [ 'include' ]
+    cfg.env.LIB_RCFUSE        = [ 'z' ]
 
 def build(bld):
     bld(
             features        = 'cxx cxxshlib',
-            target          = 'librcf',
+            target          = 'rcf',
             source          = 'src/RCF/RCF.cpp',
-            use             = 'RCF',
+            use             = 'RCFCOMMON RCFUSE zlib',
+            export_includes = 'include',
+            install_path    = 'lib',
+    )
+
+    bld(
+            features        = 'cxx cxxshlib',
+            target          = 'sf',
+            source          = 'src/SF/SF.cpp',
+            use             = 'RCFUSE',
             export_includes = 'include',
             install_path    = 'lib',
     )
