@@ -1,0 +1,34 @@
+#!/usr/bin/env python
+import sys, os
+
+def options(opt):
+    opt.load('gxx')
+    opt.load('boost')
+
+def configure(cfg):
+    cfg.check_waf_version(mini='1.6.10') # ECM: bleeding EDGE!!1!
+    cfg.load('gxx')
+    cfg.load('boost')
+    cfg.check_boost(lib='serialization system thread', uselib_store='BOOST4RCF')
+
+    cfg.env.CXXFLAGS_RCF = [
+            '-g',
+            '-O0',
+            '-DRCF_USE_BOOST_ASIO',
+            '-DRCF_USE_BOOST_THREADS',
+            '-DRCF_USE_ZLIB',
+            '-DRCF_USE_BOOST_SERIALIZATION', # forced by gnu++0x
+            '-Wno-deprecated',
+            '-fPIC'
+    ]
+    cfg.env.INCLUDES_RCF = [ 'include' ]
+
+def build(bld):
+    bld(
+            features        = 'cxx cxxshlib',
+            target          = 'librcf',
+            source          = 'src/RCF/RCF.cpp',
+            use             = 'RCF',
+            export_includes = 'include',
+            install_path    = 'lib',
+    )
