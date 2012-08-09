@@ -9,6 +9,7 @@ def configure(cfg):
     cfg.check_waf_version(mini='1.6.10') # ECM: bleeding EDGE!!1!
     cfg.load('gxx')
     cfg.load('boost')
+
     cfg.check_boost(lib='serialization system thread', uselib_store='BOOST4RCF')
 
     cfg.env.CXXFLAGS_RCFUSE = [
@@ -22,14 +23,14 @@ def configure(cfg):
             '-fPIC'
     ]
     cfg.env.INCLUDES_RCFUSE   = [ 'include' ]
-    cfg.env.LIB_RCFUSE        = [ 'z' ]
+    cfg.env.LIB_RCFUSE        = [ 'z', 'pthread' ]
 
 def build(bld):
     bld(
             features        = 'cxx cxxshlib',
             target          = 'rcf',
             source          = 'src/RCF/RCF.cpp',
-            use             = 'RCFCOMMON RCFUSE zlib',
+            use             = 'RCFUSE BOOST4RCF',
             export_includes = 'include',
             install_path    = 'lib',
     )
@@ -38,7 +39,7 @@ def build(bld):
             features        = 'cxx cxxshlib',
             target          = 'sf',
             source          = 'src/SF/SF.cpp',
-            use             = 'RCFUSE',
+            use             = 'RCFUSE BOOST4RCF',
             export_includes = 'include',
             install_path    = 'lib',
     )
