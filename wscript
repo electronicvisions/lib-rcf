@@ -26,12 +26,13 @@ def configure(cfg):
     cfg.env.LIB_RCFUSE        = [ 'z', 'pthread' ]
 
 def build(bld):
+    inc = bld.path.find_dir('include').abspath()
     bld(
             features        = 'cxx cxxshlib',
             target          = 'rcf',
             source          = 'src/RCF/RCF.cpp',
             use             = 'RCFUSE BOOST4RCF',
-            export_includes = 'include',
+            export_includes = inc,
             install_path    = 'lib',
     )
 
@@ -40,6 +41,6 @@ def build(bld):
             target          = 'sf',
             source          = 'src/SF/SF.cpp',
             use             = 'RCFUSE BOOST4RCF',
-            export_includes = 'include',
+            export_includes = inc,
             install_path    = 'lib',
     )
