@@ -2,12 +2,12 @@
 import sys, os
 
 def options(opt):
-    opt.load('gxx')
+    opt.load('g++')
     opt.load('boost')
 
 def configure(cfg):
     cfg.check_waf_version(mini='1.6.10') # ECM: bleeding EDGE!!1!
-    cfg.load('gxx')
+    cfg.load('g++')
     cfg.load('boost')
 
     cfg.check_boost(lib='serialization system thread', uselib_store='BOOST4RCF')
@@ -24,6 +24,7 @@ def configure(cfg):
     ]
     cfg.env.INCLUDES_RCFUSE   = [ 'include' ]
     cfg.env.LIB_RCFUSE        = [ 'z', 'pthread' ]
+    cfg.env.RPATH_RCF         = [ os.path.abspath('lib'), ]
 
 def build(bld):
     inc = bld.path.find_dir('include').abspath()
