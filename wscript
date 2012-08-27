@@ -26,6 +26,21 @@ def configure(cfg):
     cfg.env.LIB_RCFUSE        = [ 'z', 'pthread' ]
     cfg.env.RPATH_RCF         = [ os.path.abspath('lib'), ]
 
+    # just for SF
+    cfg.check_boost(lib='system thread', uselib_store='BOOST4RCFSF')
+    cfg.env.CXXFLAGS_RCFUSESF = [
+            '-g',
+            '-O0',
+            '-DRCF_USE_BOOST_ASIO',
+            '-DRCF_USE_BOOST_THREADS',
+            '-DRCF_USE_ZLIB',
+            '-DRCF_USE_SF_SERIALIZATION', # ECM: What about c++0x?
+            '-Wno-deprecated',
+            '-fPIC'
+    ]
+    cfg.env.INCLUDES_RCFUSESF   = [ 'include' ]
+    cfg.env.LIB_RCFUSESF        = [ 'z', 'pthread' ]
+
 def build(bld):
     inc = bld.path.find_dir('include').abspath()
     bld(
@@ -40,8 +55,10 @@ def build(bld):
     bld(
             features        = 'cxx cxxshlib',
             target          = 'sf',
-            source          = 'src/SF/SF.cpp',
-            use             = 'RCFUSE BOOST4RCF',
+            idx             = 123, # ECM: same source file...
+            cxxflags        = '-fPIC',
+            source          = 'src/RCF/RCF.cpp',
+            use             = 'RCFUSESF BOOST4RCFSF',
             export_includes = inc,
             install_path    = 'lib',
     )
