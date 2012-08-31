@@ -20,7 +20,6 @@ def configure(cfg):
             '-DRCF_USE_ZLIB',
             '-DRCF_USE_BOOST_SERIALIZATION', # forced by gnu++0x
             '-Wno-deprecated',
-            '-fPIC'
     ]
     cfg.env.INCLUDES_RCFUSE   = [ 'include' ]
     cfg.env.LIB_RCFUSE        = [ 'z', 'pthread' ]
@@ -36,7 +35,6 @@ def configure(cfg):
             '-DRCF_USE_ZLIB',
             '-DRCF_USE_SF_SERIALIZATION', # ECM: What about c++0x?
             '-Wno-deprecated',
-            '-fPIC'
     ]
     cfg.env.INCLUDES_RCFUSESF   = [ 'include' ]
     cfg.env.LIB_RCFUSESF        = [ 'z', 'pthread' ]
@@ -56,7 +54,6 @@ def build(bld):
             features        = 'cxx cxxshlib',
             target          = 'sf',
             idx             = 123, # ECM: same source file...
-            cxxflags        = '-fPIC',
             source          = 'src/RCF/RCF.cpp',
             use             = 'RCFUSESF BOOST4RCFSF',
             export_includes = inc,
