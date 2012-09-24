@@ -12,42 +12,40 @@ def configure(cfg):
 
     cfg.check_boost(lib='serialization system thread', uselib_store='BOOST4RCF')
 
-    cfg.env.CXXFLAGS_RCFUSE = [
-            '-g',
-            '-O0',
-            '-DRCF_USE_BOOST_ASIO',
-            '-DRCF_USE_BOOST_THREADS',
-            '-DRCF_USE_ZLIB',
-            '-DRCF_USE_BOOST_SERIALIZATION', # forced by gnu++0x
-            '-Wno-deprecated',
+    cfg.env.DEFINES_RCFUSE = [
+            'RCF_USE_BOOST_ASIO',
+            'RCF_USE_BOOST_THREADS',
+            'RCF_USE_ZLIB',
+            'RCF_USE_BOOST_SERIALIZATION', # forced by gnu++0x
     ]
-    cfg.env.INCLUDES_RCFUSE   = [ 'include' ]
     cfg.env.LIB_RCFUSE        = [ 'z', 'pthread' ]
     cfg.env.RPATH_RCF         = [ os.path.abspath('lib'), ]
 
     # just for SF
     cfg.check_boost(lib='system thread', uselib_store='BOOST4RCFSF')
-    cfg.env.CXXFLAGS_RCFUSESF = [
-            '-g',
-            '-O0',
-            '-DRCF_USE_BOOST_ASIO',
-            '-DRCF_USE_BOOST_THREADS',
-            '-DRCF_USE_ZLIB',
-            '-DRCF_USE_SF_SERIALIZATION', # ECM: What about c++0x?
-            '-Wno-deprecated',
+    cfg.env.DEFINES_RCFUSESF = [
+            'RCF_USE_BOOST_ASIO',
+            'RCF_USE_BOOST_THREADS',
+            'RCF_USE_ZLIB',
+            'RCF_USE_SF_SERIALIZATION', # ECM: What about c++0x?
     ]
-    cfg.env.INCLUDES_RCFUSESF   = [ 'include' ]
     cfg.env.LIB_RCFUSESF        = [ 'z', 'pthread' ]
 
 def build(bld):
     inc = bld.path.find_dir('include').abspath()
+    flags = { "cxxflags"  : ['-g', '-O0', '-Wno-deprecated'],
+              "linkflags" : ['-Wl,-z,defs'],
+              "includes"  : [inc],
+              }
+
     bld(
             features        = 'cxx cxxshlib',
             target          = 'rcf',
             source          = 'src/RCF/RCF.cpp',
-            use             = 'RCFUSE BOOST4RCF',
+            use             = 'BOOST4RCF RCFUSE',
             export_includes = inc,
             install_path    = 'lib',
+            **flags
     )
 
     bld(
@@ -55,7 +53,8 @@ def build(bld):
             target          = 'sf',
             idx             = 123, # ECM: same source file...
             source          = 'src/RCF/RCF.cpp',
-            use             = 'RCFUSESF BOOST4RCFSF',
+            use             = 'BOOST4RCFSF RCFUSESF',
             export_includes = inc,
             install_path    = 'lib',
+            **flags
     )
