@@ -1,0 +1,86 @@
+#! /usr/bin/env python
+# encoding: utf-8
+
+# [2012-10-01 13:57:31]
+# author Kai Husmann
+
+APPNAME = "TestingRCF_Serializers"
+VERSION = "2.0a"
+
+top = '.'
+out = 'build'
+
+import sys, os
+
+
+def options(ctx):
+#    ctx.recurse("../../lib-rcf")
+    ctx.recurse("../")
+
+    ctx.load("compiler_cxx")
+    ctx.load("boost")
+
+    ctx.add_option('--with-sf-ser', action='store_true', default=False,
+        help='Using SF Serialization')
+
+    ctx.add_option('--with-boost-ser', action='store_true', default=False,
+        help='Using Boost Serialization')
+
+    ctx.add_option('--with-proto-ser', action='store_true', default=False,
+        help='Using Protobuf Serialization')
+
+    ctx.add_option('--define-ndebug', action='store_true', default=False,
+        help='Define NDEBUG, disabling asserts.')
+
+    ctx.add_option('--undefine-debug', action='store_true', default=False,
+        help='Do not set define DEBUG, disabling various debug code/output')
+
+
+def configure(ctx):
+
+    print("→ Configuring RCF Serializers Test " + ctx.path.abspath())
+
+    ctx.load("compiler_cxx")
+
+    # bleeding edge..
+    ctx.env.CXX="/usr/bin/g++-4.7"
+    ctx.env.append_unique('CXXFLAGS', [
+        '-Wall',
+        '-Wno-deprecated',
+        '-std=c++11']
+    )
+
+    # check for google protoc
+    # sudo apt-get install protobuf-compiler libprotobuf-dev 
+    #ctx.find_program('protoc', var='PROTOC')
+
+    # load options:
+    ctx.env.serSF   = ctx.options.with_sf_ser
+    ctx.env.ndebug  = ctx.options.define_ndebug
+
+    # XXX how to negate? "!" did not work..
+    ctx.env.ddebug  = (False == ctx.options.undefine_debug )
+    
+    if (ctx.env.ndebug):
+        ctx.env.append_unique('CXXFLAGS','-DNDEBUG')
+    if (ctx.env.ddebug):
+        ctx.env.append_unique('CXXFLAGS', '-DDEBUG')
+
+    #ctx.recurse("../../lib-rcf")
+    ctx.recurse("../")
+
+
+def build(ctx):
+    ctx.recurse("../")
+
+    ctx.program(target  =   'testRCF',
+                source  =   'Test_Functionality.cpp',
+                use     =   'sf',
+    )
+
+    if (ctx.env.serSF):
+        ctx.program(    target   = 'testSF',
+                        source  = ['Test_RCF_SF_Seriz.cpp'],
+                        use      = 'sf',
+        )
+

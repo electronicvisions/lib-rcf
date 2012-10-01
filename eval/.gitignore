@@ -1,0 +1,7 @@
+build
+.lock-waf_*
+
+lib/*.so
+
+Session.vim
+clipboard

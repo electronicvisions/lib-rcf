@@ -1,0 +1,15 @@
+===== Evaluation =====
+
+This Project is to evaluate RCF Serialization (as for now - but further evaluation might be added..)
+
+It's wscript if a TOP script not intended to be included elsewhere.
+However it includes "../" (aka rcf-lib) and solely depends on that (and c++11).
+
+  $ waf configure --with-sf-ser # --undefine-debug --define-ndebug
+  $ waf
+  $ cd lib;./createLibrary.sh;cd ..
+  $ export LD_LIBRARY_PATH=./lib
+  $ # and start the test...
+  $ ./testSF
+
+TODO: plotting not fully supported jet..
