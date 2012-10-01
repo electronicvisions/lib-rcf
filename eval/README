@@ -10,6 +10,7 @@ However it includes "../" (aka rcf-lib) and solely depends on that (and c++11).
   $ cd lib;./createLibrary.sh;cd ..
   $ export LD_LIBRARY_PATH=./lib
   $ # and start the test...
-  $ ./testSF
+  $ ./testSF # standart test packet is 32 Kib but it can be specified: ./testSF [KiB]
+  $ ./testSF 1024 # takes about 10 Minutes with --undefine-debug
 
 TODO: plotting not fully supported jet..
