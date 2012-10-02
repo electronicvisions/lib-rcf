@@ -1,4 +1,5 @@
-build
+build/
+.waf*
 .lock-waf_*
 
 lib/*.so
