@@ -44,11 +44,6 @@ def configure(ctx):
 
     # bleeding edge..
     ctx.env.CXX="/usr/bin/g++-4.7"
-    ctx.env.append_unique('CXXFLAGS', [
-        '-Wall',
-        '-Wno-deprecated',
-        '-std=c++11']
-    )
 
     # check for google protoc
     # sudo apt-get install protobuf-compiler libprotobuf-dev 
@@ -61,26 +56,31 @@ def configure(ctx):
     # XXX how to negate? "!" did not work..
     ctx.env.ddebug  = (False == ctx.options.undefine_debug )
     
-    if (ctx.env.ndebug):
-        ctx.env.append_unique('CXXFLAGS','-DNDEBUG')
-    if (ctx.env.ddebug):
-        ctx.env.append_unique('CXXFLAGS', '-DDEBUG')
 
     #ctx.recurse("../../lib-rcf")
     ctx.recurse("../")
 
 
 def build(ctx):
+    flags = { 'cxxflags': [ '-g', '-O0', '-Wall', '-Wno-deprecated', '-std=c++11'] }
+    if (ctx.env.ndebug):
+        flags['cxxflags'].append('-DNDEBUG')
+    if (ctx.env.ddebug):
+        flags['cxxflags'].append('-DDEBUG')
+
+
     ctx.recurse("../")
 
     ctx.program(target  =   'testRCF',
                 source  =   'Test_Functionality.cpp',
                 use     =   'sf',
+                **flags
     )
 
     if (ctx.env.serSF):
         ctx.program(    target   = 'testSF',
                         source  = ['Test_RCF_SF_Seriz.cpp'],
                         use      = 'sf',
+                        **flags
         )
 
