@@ -16,6 +16,9 @@
 #ifndef INCLUDE_RCF_EXCEPTION_HPP
 #define INCLUDE_RCF_EXCEPTION_HPP
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 #include <memory>
 #include <sstream>
 #include <stdexcept>
@@ -738,4 +741,5 @@ RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION( std::vector<std::string> )
 RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION( RCF::RemoteException )
 RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION( std::auto_ptr<RCF::RemoteException> )
 
+#pragma GCC diagnostic pop
 #endif // ! INCLUDE_RCF_EXCEPTION_HPP

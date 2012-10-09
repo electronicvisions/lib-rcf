@@ -18,7 +18,15 @@
 
 #include <fstream>
 #include <map>
+#ifdef __DEPRECATED
+#define __MY__DEPRECATED __DEPRECATED
+#undef __DEPRECATED
+#endif
 #include <strstream>
+#ifdef __MY__DEPRECATED
+#define __DEPRECATED __MY__DEPRECATED
+#undef __MY__DEPRECATED
+#endif
 #include <string>
 #include <vector>
 
