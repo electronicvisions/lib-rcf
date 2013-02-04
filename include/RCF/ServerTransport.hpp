@@ -16,6 +16,9 @@
 #ifndef INCLUDE_RCF_SERVERTRANSPORT_HPP
 #define INCLUDE_RCF_SERVERTRANSPORT_HPP
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 #include <memory>
 #include <string>
 #include <vector>
@@ -157,4 +160,5 @@ namespace RCF {
 
 } // namespace RCF
 
+#pragma GCC diagnostic pop
 #endif // ! INCLUDE_RCF_SERVERTRANSPORT_HPP

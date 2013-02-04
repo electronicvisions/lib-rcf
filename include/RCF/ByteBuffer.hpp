@@ -16,7 +16,11 @@
 #ifndef INCLUDE_RCF_BYTEBUFFER_HPP
 #define INCLUDE_RCF_BYTEBUFFER_HPP
 
+// ECM: strstream stuff :/
+#define _BACKWARD_BACKWARD_WARNING_H 1
 #include <strstream>
+#undef _BACKWARD_BACKWARD_WARNING_H
+
 #include <string>
 #include <vector>
 

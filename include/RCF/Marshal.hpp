@@ -16,6 +16,9 @@
 #ifndef INCLUDE_RCF_MARSHAL_HPP
 #define INCLUDE_RCF_MARSHAL_HPP
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 #include <RCF/ClientStub.hpp>
 #include <RCF/CurrentSerializationProtocol.hpp>
 #include <RCF/ObjectPool.hpp>
@@ -2190,4 +2193,5 @@ namespace RCF {
 
 } // namespace RCF
 
+#pragma GCC diagnostic pop
 #endif // ! INCLUDE_RCF_MARSHAL_HPP

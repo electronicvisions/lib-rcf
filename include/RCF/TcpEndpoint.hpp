@@ -16,6 +16,9 @@
 #ifndef INCLUDE_RCF_TCPENDPOINT_HPP
 #define INCLUDE_RCF_TCPENDPOINT_HPP
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 #include <string>
 #include <memory>
 
@@ -88,4 +91,5 @@ namespace RCF {
 
 RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION(RCF::TcpEndpoint)
 
+#pragma GCC diagnostic pop
 #endif // ! INCLUDE_RCF_TCPENDPOINT_HPP

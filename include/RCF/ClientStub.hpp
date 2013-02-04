@@ -16,6 +16,9 @@
 #ifndef INCLUDE_RCF_CLIENTSTUB_HPP
 #define INCLUDE_RCF_CLIENTSTUB_HPP
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 #include <string>
 #include <vector>
 #include <memory>
@@ -667,4 +670,5 @@ namespace SF {
 
 #endif
 
+#pragma GCC diagnostic pop
 #endif // ! INCLUDE_RCF_CLIENTSTUB_HPP
