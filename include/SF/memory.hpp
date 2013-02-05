@@ -23,7 +23,7 @@
 namespace SF {
 
     // serialize std::auto_ptr
-    SF_SERIALIZE_SIMPLE_SMARTPTR( std::auto_ptr );
+    SF_SERIALIZE_SIMPLE_SMARTPTR( std::auto_ptr )
 
 } // namespace SF
 

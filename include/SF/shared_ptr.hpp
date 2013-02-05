@@ -31,9 +31,9 @@ namespace std { namespace tr1 {
 
 namespace SF {
 
-    SF_SERIALIZE_REFCOUNTED_SMARTPTR( boost::shared_ptr );
+    SF_SERIALIZE_REFCOUNTED_SMARTPTR( boost::shared_ptr )
 
-    SF_SERIALIZE_REFCOUNTED_SMARTPTR( std::tr1::shared_ptr );
+    SF_SERIALIZE_REFCOUNTED_SMARTPTR( std::tr1::shared_ptr )
 
 } // namespace SF
 
