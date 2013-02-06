@@ -16,7 +16,9 @@
 #ifndef INCLUDE_RCF_SERVERTRANSPORT_HPP
 #define INCLUDE_RCF_SERVERTRANSPORT_HPP
 
+#if defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6))
 #pragma GCC diagnostic push
+#endif
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 #include <memory>
@@ -160,5 +162,7 @@ namespace RCF {
 
 } // namespace RCF
 
+#if defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6))
 #pragma GCC diagnostic pop
+#endif
 #endif // ! INCLUDE_RCF_SERVERTRANSPORT_HPP
