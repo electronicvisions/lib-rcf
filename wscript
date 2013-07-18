@@ -14,8 +14,6 @@ def configure(cfg):
 
     cfg.check_boost(lib='system thread', uselib_store='BOOST4RCF')
     cfg.check_boost(lib='serialization system thread', uselib_store='BOOST4RCF_WSERIALIZATION')
-    # TODO: check if deprecated?
-    cfg.env.RPATH_RCF = [ os.path.abspath('lib'), ]
 
     DEFINES_common = [
         'RCF_USE_BOOST_ASIO',
