@@ -38,6 +38,11 @@ def build(bld):
               'use'       : [], #['RCFUSE'],
     }
 
+    bld(
+        target          = 'rcf_inc',
+        export_includes = inc
+    )
+
     # TODO: ugly target names, but for backwards compatibility
     for i,s in enumerate(['rcf', 'sf', 'rcfsf']):
         flags = copy.deepcopy(common_flags)
