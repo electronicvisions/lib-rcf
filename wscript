@@ -14,6 +14,7 @@ def configure(cfg):
 
     cfg.check_boost(lib='system thread', uselib_store='BOOST4RCF')
     cfg.check_boost(lib='serialization system thread', uselib_store='BOOST4RCF_WSERIALIZATION')
+    cfg.check_boost(lib='filesystem serialization system thread', uselib_store='BOOST4RCF_WSERIALIZATION_WFS')
 
     DEFINES_common = [
         'RCF_USE_BOOST_ASIO',
@@ -35,6 +36,7 @@ def build(bld):
     common_flags = { "cxxflags"  : ['-g', '-O0', '-Wno-deprecated'],
               'linkflags' : ['-Wl,-z,defs'],
               'includes'  : [inc],
+              'defines'   : [],
               'use'       : [], #['RCFUSE'],
     }
 
@@ -44,7 +46,7 @@ def build(bld):
     )
 
     # TODO: ugly target names, but for backwards compatibility
-    for i,s in enumerate(['rcf', 'sf', 'rcfsf']):
+    for i,s in enumerate(['rcf', 'sf', 'rcfsf', 'rcf_fs']):
         flags = copy.deepcopy(common_flags)
         if s == 'sf': # pure sf
             flags['use'].append('BOOST4RCF')
@@ -52,6 +54,10 @@ def build(bld):
         if s == 'rcf': # pure boost
             flags['use'].append('BOOST4RCF_WSERIALIZATION')
             flags['use'].append('RCFBOOST')
+        if s == 'rcf_fs': # pure boost with filesystem support
+            flags['use'].append('BOOST4RCF_WSERIALIZATION_WFS')
+            flags['use'].append('RCFBOOST')
+            flags['defines'] += ['RCF_USE_BOOST_FILESYSTEM', 'BOOST_FILESYSTEM_DEPRECATED']
         if s == 'rcfsf': # both
             flags['use'].append('BOOST4RCF_WSERIALIZATION')
             flags['use'].append('RCFBOOSTSF')

@@ -32,9 +32,22 @@
 
 #include <boost/filesystem/path.hpp>
 
+#if !defined(BOOST_FILESYSTEM_VERSION)
+#	error BOOST_FILESYSTEM_VERSION undefined!
+#endif
+
+#if BOOST_FILESYSTEM_VERSION == 3
+#	define NSFILESYSTEM namespace filesystem3
+#elif BOOST_FILESYSTEM_VERSION == 2
+#	define NSFILESYSTEM namespace filesystem2
+#else
+#	error unsupported boost filesystem version
+#endif
+
 #ifdef RCF_USE_SF_SERIALIZATION
 
-namespace boost { namespace filesystem {
+namespace boost {
+NSFILESYSTEM {
 
     RCF_EXPORT void serialize(SF::Archive &ar, path &p);
 } }
@@ -43,7 +56,8 @@ namespace boost { namespace filesystem {
 
 #ifdef RCF_USE_BOOST_SERIALIZATION
 
-namespace boost { namespace filesystem {
+namespace boost {
+NSFILESYSTEM {
 
     template<typename Archive>
     void serialize(Archive & ar, path & p, const unsigned int)

@@ -1411,10 +1411,10 @@ namespace RCF {
                                 RCF_LOG_3()(waitMs)
                                     << "ClientStub::uploadFiles() - waiting for next window.";
 
-                                Sleep(waitMs);
+                                Platform::OS::Sleep(waitMs);
                                 while (!windowTimer.elapsed(mTransferWindowS*1000))
                                 {
-                                    Sleep(100);
+                                    Platform::OS::Sleep(100);
                                 }
                             }
                         }
@@ -1619,7 +1619,7 @@ namespace RCF {
                     // be thrown.
                     //Platform::OS::Sleep(1 + adviseWaitMs / 1000);
                     //Platform::OS::SleepMs(adviseWaitMs);
-                    Sleep(adviseWaitMs);
+                    Platform::OS::Sleep(adviseWaitMs);
                     adviseWaitMs = 0;
                 }
 

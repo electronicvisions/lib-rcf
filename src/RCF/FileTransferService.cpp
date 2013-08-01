@@ -31,6 +31,7 @@
 #include <boost/filesystem/convenience.hpp>
 #include <boost/filesystem/operations.hpp>
 
+#ifdef RCF_USE_SF_SERIALIZATION
 namespace boost {
     namespace filesystem {
 
@@ -51,6 +52,7 @@ namespace boost {
 
     }
 }
+#endif
 
 namespace RCF {
 
