@@ -339,7 +339,6 @@ namespace RCF {
     private:
 
         friend class FileTransferService;
-        friend class PingBackService;
 
         FileDownloadInfoPtr                     mDownloadInfoPtr;
         FileUploadInfoPtr                       mUploadInfoPtr;
