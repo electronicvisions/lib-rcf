@@ -33,7 +33,7 @@
 
 #ifdef RCF_USE_SF_SERIALIZATION
 namespace boost {
-    namespace filesystem {
+    NSFILESYSTEM {
 
         void serialize(SF::Archive &ar, path &p)
         {
