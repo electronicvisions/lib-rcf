@@ -68,6 +68,6 @@ def build(bld):
                 idx             = i,
                 source          = 'src/RCF/RCF.cpp',
                 export_includes = inc,
-                install_path    = 'lib',
+                install_path    = '${PREFIX}/lib',
                 **flags
         )
