@@ -20,6 +20,7 @@ def configure(cfg):
         'RCF_USE_BOOST_ASIO',
         'RCF_USE_BOOST_THREADS',
         'RCF_USE_ZLIB',
+        'RCF_NO_AUTO_INIT_DEINIT',
     ]
     cfg.env.DEFINES_RCFSF      = DEFINES_common + [ 'RCF_USE_SF_SERIALIZATION' ]
     cfg.env.DEFINES_RCFBOOST   = DEFINES_common + [ 'RCF_USE_BOOST_SERIALIZATION' ]
