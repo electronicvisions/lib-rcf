@@ -49,8 +49,8 @@
 #define SOCKET int
 #endif
 
-#ifndef INVALID_SOCKET
-#define INVALID_SOCKET -1
+#ifndef RCF_INVALID_SOCKET
+#define RCF_INVALID_SOCKET -1
 #endif
 
 // Solaris doesn't define INADDR_NONE, for some reason

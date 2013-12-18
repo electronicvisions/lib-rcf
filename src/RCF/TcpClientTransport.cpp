@@ -331,7 +331,7 @@ namespace RCF {
     {
         e = Exception();
 
-        RCF_ASSERT_EQ(mFd , INVALID_SOCKET);
+        RCF_ASSERT_EQ(mFd , RCF_INVALID_SOCKET);
         mFd = mRemoteAddr.createSocket();
         Platform::OS::BsdSockets::setblocking(mFd, false);
 
