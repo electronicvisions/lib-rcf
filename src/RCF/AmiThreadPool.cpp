@@ -28,7 +28,7 @@
 typedef
 BOOL
 (PASCAL FAR * LPFN_CONNECTEX) (
-                               IN SOCKET s,
+                               IN RCF_SOCKET s,
                                IN const struct sockaddr FAR *name,
                                IN int namelen,
                                IN PVOID lpSendBuffer OPTIONAL,
@@ -422,7 +422,7 @@ namespace RCF {
                         maxFd = fd;
                     }
                     
-                    SOCKET sock = static_cast<SOCKET>(fd); 
+                    RCF_SOCKET sock = static_cast<RCF_SOCKET>(fd); 
                     FD_SET( sock , &fdSet);
                 }                
             }

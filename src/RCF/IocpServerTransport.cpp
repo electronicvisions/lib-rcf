@@ -86,7 +86,7 @@ namespace RCF {
             (hDevice)(static_cast<__int64>(CompKey));
     }
 
-    void Iocp::AssociateSocket(SOCKET hSocket, ULONG_PTR CompKey)
+    void Iocp::AssociateSocket(RCF_SOCKET hSocket, ULONG_PTR CompKey)
     {
         AssociateDevice((HANDLE) hSocket, CompKey);
     }

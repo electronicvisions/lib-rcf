@@ -45,8 +45,8 @@
 #define O_BINARY 0
 #endif
 
-#ifndef SOCKET
-#define SOCKET int
+#ifndef RCF_SOCKET
+#define RCF_SOCKET int
 #endif
 
 #ifndef RCF_INVALID_SOCKET
@@ -120,7 +120,7 @@ namespace Platform {
                 return ::close(fd); 
             }
 
-            inline void setblocking(SOCKET fd, bool bBlocking)                  
+            inline void setblocking(RCF_SOCKET fd, bool bBlocking)                  
             { 
                 int arg = bBlocking ? 0 : 1; 
                 ::ioctl(fd, FIONBIO, &arg); 

@@ -665,7 +665,7 @@ namespace RCF {
         // associate listener socket to iocp
         if (mAcceptorFd != -1)
         {
-            mpIocp->AssociateSocket( (SOCKET) mAcceptorFd, 0);
+            mpIocp->AssociateSocket( (RCF_SOCKET) mAcceptorFd, 0);
             TcpIocpSessionState::create(*this)->accept();
         }
     }

@@ -34,7 +34,7 @@ namespace RCF {
 
             fd_set fdSet;
             FD_ZERO(&fdSet);
-            FD_SET( static_cast<SOCKET>(fd), &fdSet);
+            FD_SET( static_cast<RCF_SOCKET>(fd), &fdSet);
             
             unsigned int timeoutMs = generateTimeoutMs(endTimeMs);
             timeoutMs = clientStub.generatePollingTimeout(timeoutMs);
@@ -296,7 +296,7 @@ namespace RCF {
             timeval tv = {0,0};
             fd_set readFds;
             FD_ZERO(&readFds);
-            FD_SET( static_cast<SOCKET>(fd), &readFds);
+            FD_SET( static_cast<RCF_SOCKET>(fd), &readFds);
 
             int ret = Platform::OS::BsdSockets::select(
                 fd+1,

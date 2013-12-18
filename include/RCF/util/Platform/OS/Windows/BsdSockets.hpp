@@ -49,8 +49,8 @@
 typedef
 BOOL
 (PASCAL FAR * LPFN_ACCEPTEX)(
-    IN SOCKET sListenSocket,
-    IN SOCKET sAcceptSocket,
+    IN RCF_SOCKET sListenSocket,
+    IN RCF_SOCKET sAcceptSocket,
     IN PVOID lpOutputBuffer,
     IN DWORD dwReceiveDataLength,
     IN DWORD dwLocalAddressLength,

@@ -223,7 +223,7 @@ namespace RCF {
 
         fd_set fdSet;
         FD_ZERO(&fdSet);
-        FD_SET( static_cast<SOCKET>(mFd), &fdSet);
+        FD_SET( static_cast<RCF_SOCKET>(mFd), &fdSet);
         timeval timeout;
         timeout.tv_sec = timeoutMs/1000;
         timeout.tv_usec = 1000*(timeoutMs%1000);

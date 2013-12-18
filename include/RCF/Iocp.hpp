@@ -40,7 +40,7 @@ namespace RCF {
             ULONG_PTR CompKey);
 
         void AssociateSocket(
-            SOCKET hSocket,
+            RCF_SOCKET hSocket,
             ULONG_PTR CompKey);
 
         void PostStatus(

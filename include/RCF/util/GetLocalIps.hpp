@@ -31,7 +31,7 @@ namespace util {
         int ret = gethostname(&hostname[0], hostname.size());
         int err = Platform::OS::BsdSockets::GetLastError();
         RCF_VERIFY(
-            ret != SOCKET_ERROR, 
+            ret != RCF_SOCKET_ERROR, 
             RCF::Exception(0, err, RCF::RcfSubsystem_Os))(ret)(err);
         hostent *phe = gethostbyname(&hostname[0]);
         err = Platform::OS::BsdSockets::GetLastError();

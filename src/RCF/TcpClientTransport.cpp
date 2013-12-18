@@ -38,7 +38,7 @@
 typedef
 BOOL
 (PASCAL FAR * LPFN_CONNECTEX) (
-    IN SOCKET s,
+    IN RCF_SOCKET s,
     IN const struct sockaddr FAR *name,
     IN int namelen,
     IN PVOID lpSendBuffer OPTIONAL,

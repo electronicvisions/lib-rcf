@@ -261,7 +261,7 @@ namespace RCF {
             unsigned int timeoutMs = generateTimeoutMs(endTimeMs);
             fd_set fdSet;
             FD_ZERO(&fdSet);
-            FD_SET( static_cast<SOCKET>(mSock), &fdSet);
+            FD_SET( static_cast<RCF_SOCKET>(mSock), &fdSet);
             timeval timeout;
             timeout.tv_sec = timeoutMs/1000;
             timeout.tv_usec = 1000*(timeoutMs%1000);
