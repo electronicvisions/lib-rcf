@@ -12,6 +12,7 @@ def configure(cfg):
     cfg.load('g++')
     cfg.load('boost')
 
+    cfg.check_cfg(package='zlib', uselib_store='ZLIB')
     cfg.check_boost(lib='system thread', uselib_store='BOOST4RCF')
     cfg.check_boost(lib='serialization system thread', uselib_store='BOOST4RCF_WSERIALIZATION')
     cfg.check_boost(lib='filesystem serialization system thread', uselib_store='BOOST4RCF_WSERIALIZATION_WFS')
