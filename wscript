@@ -12,7 +12,8 @@ def configure(cfg):
     cfg.load('g++')
     cfg.load('boost')
 
-    cfg.check_cfg(package='zlib', uselib_store='ZLIB')
+    cfg.check_cfg(package='zlib', args='--libs --cflags')
+    cfg.check_cxx(lib='pthread')
     cfg.check_boost(lib='system thread', uselib_store='BOOST4RCF')
     cfg.check_boost(lib='serialization system thread', uselib_store='BOOST4RCF_WSERIALIZATION')
     cfg.check_boost(lib='filesystem serialization system thread', uselib_store='BOOST4RCF_WSERIALIZATION_WFS')
@@ -27,11 +28,6 @@ def configure(cfg):
     cfg.env.DEFINES_RCFBOOST   = DEFINES_common + [ 'RCF_USE_BOOST_SERIALIZATION' ]
     cfg.env.DEFINES_RCFBOOSTSF = DEFINES_common + [ 'RCF_USE_BOOST_SERIALIZATION', 'RCF_USE_SF_SERIALIZATION' ]
 
-    LIB_common = [ 'z', 'pthread' ]
-    cfg.env.LIB_RCFSF = LIB_common
-    cfg.env.LIB_RCFBOOST = LIB_common
-    cfg.env.LIB_RCFBOOSTSF = LIB_common
-
 
 def build(bld):
     inc = bld.path.find_dir('include').abspath()
@@ -39,7 +35,7 @@ def build(bld):
               'linkflags' : ['-Wl,-z,defs'],
               'includes'  : [inc],
               'defines'   : [],
-              'use'       : [], #['RCFUSE'],
+              'use'       : [ 'ZLIB', 'PTHREAD' ],
     }
 
     bld(
