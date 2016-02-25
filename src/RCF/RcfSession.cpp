@@ -150,7 +150,7 @@ namespace RCF {
     bool RcfSession::hasDefaultServerStub()
     {
         Lock lock(mMutex);
-        return mDefaultStubEntryPtr;
+        return static_cast<bool>(mDefaultStubEntryPtr);
     }
 
     StubEntryPtr RcfSession::getDefaultStubEntryPtr()
