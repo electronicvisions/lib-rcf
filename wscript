@@ -3,13 +3,13 @@ import os, copy
 
 
 def options(opt):
-    opt.load('g++')
+    opt.load('compiler_cxx')
     opt.load('boost')
 
 
 def configure(cfg):
     cfg.check_waf_version(mini='1.6.10') # ECM: bleeding EDGE!!1! (needed for multiple boost checks below)
-    cfg.load('g++')
+    cfg.load('compiler_cxx')
     cfg.load('boost')
 
     cfg.check_cfg(package='zlib', args='--libs --cflags')

@@ -42,9 +42,6 @@ def configure(ctx):
 
     ctx.load("compiler_cxx")
 
-    # bleeding edge..
-    ctx.env.CXX="/usr/bin/g++-4.7"
-
     # check for google protoc
     # sudo apt-get install protobuf-compiler libprotobuf-dev 
     #ctx.find_program('protoc', var='PROTOC')
