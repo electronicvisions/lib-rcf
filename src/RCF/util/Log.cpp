@@ -651,7 +651,7 @@ namespace util {
         mArgs->rdbuf()->pubseekoff(0, std::ios::beg, std::ios::out);
     }
 
-    VariableArgMacroFunctor::~VariableArgMacroFunctor()
+    VariableArgMacroFunctor::~VariableArgMacroFunctor() noexcept(false)
     {}
 
     VariableArgMacroFunctor & VariableArgMacroFunctor::init(

@@ -1278,7 +1278,7 @@ namespace RCF {
     class I_Parameters
     {
     public:
-        virtual ~I_Parameters() {}
+        virtual ~I_Parameters() noexcept(false) {}
         virtual void read(SerializationProtocolIn &in) = 0;
         virtual void write(SerializationProtocolOut &out) = 0;
         virtual bool enrolFutures(RCF::ClientStub *pClientStub) = 0;

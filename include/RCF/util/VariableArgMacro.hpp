@@ -35,7 +35,7 @@ namespace util {
     public:
 
         VariableArgMacroFunctor();
-        virtual ~VariableArgMacroFunctor();
+        virtual ~VariableArgMacroFunctor() noexcept(false);
 
         VariableArgMacroFunctor &init(
             const std::string &label,

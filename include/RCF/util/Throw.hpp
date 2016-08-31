@@ -141,7 +141,9 @@ namespace util {
             mLogLevel(logLevel)
         {}
 
-        ~ThrowFunctor()
+        // ECM (2016-08-30): This destructor throws... we have to change the
+        // parent class too.
+        ~ThrowFunctor() noexcept(false)
         {
             // dtor gets called repeatedly by borland, believe it or not
             if (!mThrown)
