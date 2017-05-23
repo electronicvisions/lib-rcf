@@ -31,8 +31,8 @@ def configure(cfg):
 
 def build(bld):
     inc = bld.path.find_dir('include').abspath()
-    common_flags = { "cxxflags"  : ['-g', '-O0', '-Wno-deprecated'],
-              'linkflags' : ['-Wl,-z,defs'],
+    common_flags = { "cxxflags"  : [],
+              'linkflags' : [],
               'includes'  : [inc],
               'defines'   : [],
               'use'       : [ 'ZLIB', 'PTHREAD' ],
