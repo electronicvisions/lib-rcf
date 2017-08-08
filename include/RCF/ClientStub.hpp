@@ -369,6 +369,9 @@ namespace RCF {
     private:
 
         template<typename T>
+        friend class Future;
+
+        template<typename T>
         friend class FutureImpl;
 
         template<
