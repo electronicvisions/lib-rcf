@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -22,18 +25,18 @@ namespace SF {
     Archive::Archive(Direction dir, IStream *stream) :
         mDir(dir),
         mIstream(stream),
-        mOstream(RCF_DEFAULT_INIT),
+        mOstream(),
         mLabel(),
-        mFlags(RCF_DEFAULT_INIT)
+        mFlags()
     {
     }
 
     Archive::Archive(Direction dir, OStream *stream) :
         mDir(dir),
-        mIstream(RCF_DEFAULT_INIT),
+        mIstream(),
         mOstream(stream),
         mLabel(),
-        mFlags(RCF_DEFAULT_INIT)
+        mFlags()
     {
     }
 

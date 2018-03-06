@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -26,15 +29,9 @@
 
 #include <boost/version.hpp>
 
-#if !defined(BOOST_WINDOWS)
-#if BOOST_VERSION < 103600
-#error Need Boost 1.36.0 or later for Unix domain socket support.
-#endif
-#endif
-
 namespace RCF {
 
-    class RCF_EXPORT NamedPipeEndpoint : public I_Endpoint
+    class RCF_EXPORT NamedPipeEndpoint : public Endpoint
     {
     public:
 
@@ -48,18 +45,10 @@ namespace RCF {
 
         std::string asString() const;
 
-#ifdef RCF_USE_SF_SERIALIZATION
-
-        void serialize(SF::Archive & ar);
-
-#endif
-
     private:
         tstring mPipeName;
     };
 
 } // namespace RCF
-
-RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION(RCF::NamedPipeEndpoint)
 
 #endif // ! INCLUDE_RCF_NAMEDPIPEENDPOINT_HPP

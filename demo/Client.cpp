@@ -7,10 +7,12 @@
 
 #include "MyService.hpp"
 
-#include <RCF/TcpEndpoint.hpp>
+#include <RCF/RCF.hpp>
 
 int main()
 {
+    RCF::RcfInitDeinit rcfInit;
+
     try
     {
         // Setup a vector of strings.
@@ -40,6 +42,7 @@ int main()
     {
         std::cout << "Caught exception:\n";
         std::cout << e.getError().getErrorString() << std::endl;
+        return 1;
     }
 
     return 0;

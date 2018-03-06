@@ -2,47 +2,58 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
 #include <RCF/UnixLocalClientTransport.hpp>
 
+#include <RCF/Exception.hpp>
+#include <RCF/TimedBsdSockets.hpp>
+#include <RCF/Tools.hpp>
 #include <RCF/UnixLocalEndpoint.hpp>
 
 namespace RCF {
 
-    UnixLocalClientTransport::UnixLocalClientTransport(const UnixLocalClientTransport &rhs) : 
-        BsdClientTransport(rhs),
-        mRemoteAddr(rhs.mRemoteAddr),
-        mFileName(rhs.mFileName)
+    UnixLocalClientTransport::UnixLocalClientTransport(
+        const UnixLocalClientTransport &rhs) : 
+            BsdClientTransport(rhs),
+            mRemoteAddr(rhs.mRemoteAddr),
+            mFileName(rhs.mFileName)
     {}
 
-    UnixLocalClientTransport::UnixLocalClientTransport(const std::string &fileName) :
-        BsdClientTransport(),
-        mRemoteAddr(),
-        mFileName(fileName)
+    UnixLocalClientTransport::UnixLocalClientTransport(
+        const std::string &fileName) :
+            BsdClientTransport(),
+            mRemoteAddr(),
+            mFileName(fileName)
     {
         memset(&mRemoteAddr, 0, sizeof(mRemoteAddr));
     }
 
-    UnixLocalClientTransport::UnixLocalClientTransport(const sockaddr_un &remoteAddr) :
-        BsdClientTransport(),
-        mRemoteAddr(remoteAddr),
-        mFileName()
+    UnixLocalClientTransport::UnixLocalClientTransport(
+        const sockaddr_un &remoteAddr) :
+            BsdClientTransport(),
+            mRemoteAddr(remoteAddr),
+            mFileName()
     {}
 
-    UnixLocalClientTransport::UnixLocalClientTransport(int fd, const std::string & fileName) :
-        BsdClientTransport(fd),
-        mRemoteAddr(),
-        mFileName(fileName)
+    UnixLocalClientTransport::UnixLocalClientTransport(
+        UnixLocalSocketPtr socketPtr, 
+        const std::string & fileName) :
+            BsdClientTransport(socketPtr),
+            mRemoteAddr(),
+            mFileName(fileName)
     {
         memset(&mRemoteAddr, 0, sizeof(mRemoteAddr));
     }
@@ -59,6 +70,11 @@ namespace RCF {
         RCF_DTOR_END
     }
 
+    TransportType UnixLocalClientTransport::getTransportType()
+    {
+        return Tt_UnixNamedPipe;
+    }
+
     ClientTransportAutoPtr UnixLocalClientTransport::clone() const
     {
         return ClientTransportAutoPtr( new UnixLocalClientTransport(*this) );
@@ -69,13 +85,9 @@ namespace RCF {
         // close the current connection
         implClose();
 
-        mFd = static_cast<int>( ::socket(AF_UNIX, SOCK_STREAM, 0) );
-        int err = Platform::OS::BsdSockets::GetLastError();
-        RCF_VERIFY(
-            mFd != -1,
-            Exception(
-                _RcfError_Socket(), err, RcfSubsystem_Os, "socket() failed"));
-        Platform::OS::BsdSockets::setblocking(mFd, false);
+        RCF_ASSERT(!mAsync);
+
+        setupSocket();
 
         unsigned int startTimeMs = getCurrentTimeMs();
         mEndTimeMs = startTimeMs + timeoutMs;
@@ -84,8 +96,6 @@ namespace RCF {
             mClientProgressPtr,
             ClientProgress::Connect,
             mEndTimeMs);
-
-        err = 0;
 
         sockaddr_un remote;
         memset(&remote, 0, sizeof(remote));
@@ -107,6 +117,8 @@ namespace RCF {
             + strlen(remote.sun_path);
 //#endif
 
+        int err = 0;
+
         int ret = timedConnect(
             pollingFunctor,
             err,
@@ -118,18 +130,24 @@ namespace RCF {
         {
             implClose();
 
-            int rcfErr = (err == 0) ?
-                RcfError_ClientConnectTimeout :
-                RcfError_ClientConnectFail;
+            if (err == 0)
+            {
+                Exception e( _RcfError_ClientConnectTimeout(
+                    timeoutMs, 
+                    mFileName));
 
-            Exception e( Error(rcfErr), err, RcfSubsystem_Os);
-            RCF_THROW(e)(timeoutMs)(mFileName);
+                RCF_THROW(e);
+            }
+            else
+            {
+                Exception e( _RcfError_ClientConnectFail(), err, RcfSubsystem_Os);
+                RCF_THROW(e)(mFileName);
+            }
         }
-
     }
 
     void UnixLocalClientTransport::implConnect(
-        I_ClientTransportCallback &clientStub, 
+        ClientTransportCallback &clientStub, 
         unsigned int timeoutMs)
     {
         implConnect(timeoutMs);
@@ -137,18 +155,111 @@ namespace RCF {
     }
 
     void UnixLocalClientTransport::implConnectAsync(
-        I_ClientTransportCallback &clientStub, 
+        ClientTransportCallback &clientStub, 
         unsigned int timeoutMs)
     {
-        RCF_ASSERT(0);
+        // TODO: sort this out
+        RCF_UNUSED_VARIABLE(timeoutMs);
 
-        // TODO: implement
-        // ...
+        RCF_ASSERT(mAsync);
+
+        implClose();
+        
+        mpClientStub = &clientStub;
+
+        setupSocket();
+
+        ASIO_NS::local::stream_protocol::endpoint endpoint( getPipeName() );
+
+        RecursiveLock lock(mOverlappedPtr->mMutex);
+
+        RCF_ASSERT(mLocalSocketPtr);
+
+        mOverlappedPtr->mOpType = Connect;
+
+        mLocalSocketPtr->async_connect( 
+            endpoint, 
+            AmiIoHandler(mOverlappedPtr));
     }
 
+    void UnixLocalClientTransport::setupSocket()
+    {
+        RCF::Exception e;
+        setupSocket(e);
+        if (e.bad())
+        {
+            RCF_THROW(e);
+        }
+    }
+
+    void UnixLocalClientTransport::setupSocket(Exception & e)
+    {
+        e = Exception();
+
+        RCF_ASSERT_EQ(mFd , INVALID_SOCKET);
+
+        mFd = static_cast<int>( ::socket(AF_UNIX, SOCK_STREAM, 0) );
+        int err = Platform::OS::BsdSockets::GetLastError();
+
+        RCF_VERIFY(
+            mFd != -1,
+            Exception(
+            _RcfError_Socket("socket()"), err, RcfSubsystem_Os));
+
+        Platform::OS::BsdSockets::setblocking(mFd, false);
+
+        if (mpIoService)
+        {
+            mAsioTimerPtr.reset( new AsioDeadlineTimer(*mpIoService) );
+            RCF_LOG_1()(mLocalSocketPtr.get()) << "Clearing mLocalSocketPtr";
+            mLocalSocketPtr.reset( new UnixLocalSocket(*mpIoService) );
+            mLocalSocketPtr->assign(ASIO_NS::local::stream_protocol(), mFd);
+            mFd = -1;
+        }
+    }
+
+    void UnixLocalClientTransport::associateWithIoService(AsioIoService & ioService)
+    {
+        if (mLocalSocketPtr)
+        {
+            RCF_ASSERT(mpIoService == & ioService);
+        }
+        else
+        {
+            mpIoService = &ioService;
+
+            mLocalSocketPtr.reset( new UnixLocalSocket(ioService) );
+            if (mFd != -1)
+            {
+                mLocalSocketPtr->assign(ASIO_NS::local::stream_protocol(), mFd);
+            }
+            mAsioTimerPtr.reset(new AsioDeadlineTimer(*mpIoService));
+            mFd = -1;
+        }
+    }
+
+    bool UnixLocalClientTransport::isAssociatedWithIoService()
+    {
+        return mpIoService ? true : false;
+    }
+    
     void UnixLocalClientTransport::implClose()
     {
-        if (mFd != -1)
+        if (mLocalSocketPtr)
+        {
+            if (mSocketOpsMutexPtr)
+            {
+                Lock lock(*mSocketOpsMutexPtr);
+                mLocalSocketPtr->close();
+            }
+            else
+            {
+                mLocalSocketPtr->close();
+            }
+
+            mLocalSocketPtr.reset();
+        }
+        else if (mFd != -1)
         {
             int ret = Platform::OS::BsdSockets::closesocket(mFd);
             int err = Platform::OS::BsdSockets::GetLastError();
@@ -156,10 +267,9 @@ namespace RCF {
             RCF_VERIFY(
                 ret == 0,
                 Exception(
-                    _RcfError_Socket(),
+                    _RcfError_Socket("closesocket()"),
                     err,
-                    RcfSubsystem_Os,
-                    "closesocket() failed"))
+                    RcfSubsystem_Os))
                 (mFd);
         }
 

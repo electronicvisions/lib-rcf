@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -21,29 +24,11 @@
 
 #include <boost/current_function.hpp>
 
-#include "DefaultInit.hpp"
 #include "VariableArgMacro.hpp"
 
-namespace util {
+namespace RCF {
 
     namespace detail {
-
-#if defined(_MSC_VER) && _MSC_VER == 1200 && (defined(__SGI_STL_PORT) || defined(_STLPORT_VERSION))
-
-        // for vc6 with stlport
-        inline bool uncaught_exception()
-        {
-            return false;
-        }
-
-#else
-
-        inline bool uncaught_exception()
-        {
-            return std::uncaught_exception();
-        }
-
-#endif
 
         class I_InvokeThrow
         {
@@ -63,9 +48,9 @@ namespace util {
             {
                 const_cast<E &>(mE).setContext(context);
 
-                if (LogManager::instance().isEnabled(logName, logLevel))
+                if (RCF::LogManager::instance().isEnabled(logName, logLevel))
                 {
-                    LogEntry entry(logName, logLevel, file, line, func);
+                    RCF::LogEntry entry(logName, logLevel, file, line, func);
 
                     entry
                         << "Exception thrown. "
@@ -95,9 +80,9 @@ namespace util {
 
             void invoke(const std::string &context, const std::string & args, int logName, int logLevel, const char * file, int line, const char * func)
             {
-                if (LogManager::instance().isEnabled(logName, logLevel))
+                if (RCF::LogManager::instance().isEnabled(logName, logLevel))
                 {
-                    LogEntry entry(logName, logLevel, file, line, func);
+                    RCF::LogEntry entry(logName, logLevel, file, line, func);
 
                     entry
                         << "Exception thrown. "
@@ -141,21 +126,19 @@ namespace util {
             mLogLevel(logLevel)
         {}
 
-        // ECM (2016-08-30): This destructor throws... we have to change the
-        // parent class too.
-        ~ThrowFunctor() noexcept(false)
+        ~ThrowFunctor()
         {
             // dtor gets called repeatedly by borland, believe it or not
             if (!mThrown)
             {
                 mThrown = true;
 
-                std::string args(mArgs->str(), static_cast<std::size_t>(mArgs->pcount()));
+                std::string args(mArgs->str(), static_cast<std::size_t>(mArgs->tellp()));
 
                 std::string context = mHeader->str();
                 context += args;
 
-                if (!util::detail::uncaught_exception())
+                if (!std::uncaught_exception())
                 {
                     mInvokeThrow->invoke(context, args, mLogName, mLogLevel, mFile, mLine, mFunc);
                 }
@@ -171,80 +154,43 @@ namespace util {
     };
 
 
-    #ifdef _MSC_VER
-    #pragma warning( push )
-    #pragma warning( disable : 4355 )  // warning C4355: 'this' : used in base member initializer list
-    #endif
-
-#ifndef __BORLANDC__
+#ifdef _MSC_VER
+#pragma warning( push )
+#pragma warning( disable : 4355 )  // warning C4355: 'this' : used in base member initializer list
+#endif
 
 #if defined(__GNUC__) && (__GNUC__ < 3 || (__GNUC__ == 3 && __GNUC_MINOR__ < 4))
-#define UTIL_THROW_GCC_33_HACK (const util::VariableArgMacro<util::ThrowFunctor> &)
+#define UTIL_THROW_GCC_33_HACK (const RCF::VariableArgMacro<RCF::ThrowFunctor> &)
 #else
 #define UTIL_THROW_GCC_33_HACK
 #endif
 
-    DECLARE_VARIABLE_ARG_MACRO( UTIL_THROW, ThrowFunctor );
-    #define UTIL_THROW(e, logName, logLevel)                                    \
-        while (true)                                                            \
-            UTIL_THROW_GCC_33_HACK                                              \
-            util::VariableArgMacro<util::ThrowFunctor>(e, logName, logLevel)    \
-                .init(                                                          \
-                    "",                                                         \
-                    "",                                                         \
-                    __FILE__,                                                   \
-                    __LINE__,                                                   \
-                    BOOST_CURRENT_FUNCTION)                                     \
-                .cast( (util::VariableArgMacro<util::ThrowFunctor> *) NULL)     \
-                .UTIL_THROW_A
+DECLARE_VARIABLE_ARG_MACRO( UTIL_THROW, ThrowFunctor );
+#define UTIL_THROW(e, logName, logLevel)                                    \
+    while (true)                                                            \
+        UTIL_THROW_GCC_33_HACK                                              \
+        RCF::VariableArgMacro<RCF::ThrowFunctor>(e, logName, logLevel)    \
+            .init(                                                          \
+                "",                                                         \
+                "",                                                         \
+                __FILE__,                                                   \
+                __LINE__,                                                   \
+                BOOST_CURRENT_FUNCTION)                                     \
+            .cast( (RCF::VariableArgMacro<RCF::ThrowFunctor> *) NULL)     \
+            .UTIL_THROW_A
 
 
 
-    #define UTIL_THROW_A(x)               UTIL_THROW_OP(x, B)
-    #define UTIL_THROW_B(x)               UTIL_THROW_OP(x, A)
-    #define UTIL_THROW_OP(x, next)        UTIL_THROW_A.notify_((x), #x).UTIL_THROW_ ## next
+#define UTIL_THROW_A(x)               UTIL_THROW_OP(x, B)
+#define UTIL_THROW_B(x)               UTIL_THROW_OP(x, A)
+#define UTIL_THROW_OP(x, next)        UTIL_THROW_A.notify_((x), #x).UTIL_THROW_ ## next
 
-    #ifdef _MSC_VER
-    #pragma warning( pop )
-    #endif
-
-#else
-
-    class BorlandThrowFunctor
-    {
-    public:
-        template<typename E>
-        BorlandThrowFunctor(const E &e, int logName, int logLevel, const char *file, int line)
-        {
-            if (LogManager::instance().isEnabled(logName, logLevel))
-            {
-                LogEntry(logName, logLevel, file, line, "")
-                    << "Exception thrown. "
-                    << e;
-            }
-
-            throw e;
-        }
-
-        BorlandThrowFunctor &inst()
-        {
-            return *this;
-        }
-
-        template<typename T>
-            BorlandThrowFunctor & operator()(const T &)
-        {
-            return *this;
-        }
-    };
-
-    #define UTIL_THROW(e, logName, logLevel)                                                            \
-        (::util::BorlandThrowFunctor(e, logName, logLevel, __FILE__, __LINE__).inst())
-
+#ifdef _MSC_VER
+#pragma warning( pop )
 #endif
 
-    #define UTIL_VERIFY(cond, e, logName, logLevel)       if (cond); else UTIL_THROW(e, logName, logLevel)
+#define UTIL_VERIFY(cond, e, logName, logLevel)       if (cond); else UTIL_THROW(e, logName, logLevel)
 
-} // namespace util
+} // namespace RCF
 
 #endif // ! INCLUDE_UTIL_THROW_HPP

@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -17,72 +20,28 @@
 #define INCLUDE_UTIL_ASSERT_HPP
 
 #include <cassert>
+#include <cstdio>
 #include <exception>
-#include <iostream>
 
 #include <boost/current_function.hpp>
 
-#include "Throw.hpp"
 #include "VariableArgMacro.hpp"
 
 #if defined(_MSC_VER) && !defined(NDEBUG)
 #include <crtdbg.h>
 #endif
 
-namespace util {
+#include <RCF/Export.hpp>
 
-    class AssertFunctor : public VariableArgMacroFunctor
+namespace RCF {
+
+    class RCF_EXPORT AssertFunctor : public VariableArgMacroFunctor
     {
     public:
 
-        AssertFunctor() : mExpr(NULL)
-        {
-        }
-
-        AssertFunctor(const char * expr) : mExpr(expr)
-        {
-        }
-
-#if defined(_MSC_VER) && !defined(NDEBUG)
-#pragma warning(push)
-#pragma warning(disable: 4995) // 'sprintf': name was marked as #pragma deprecated
-#pragma warning(disable: 4996) // 'sprintf': This function or variable may be unsafe.
-
-        ~AssertFunctor()
-        {
-            const char * msg = 
-                "%s\n"
-                "Values: %s\n"
-                "Function: %s";
-
-            std::string values(mArgs->str(), static_cast<std::size_t>(mArgs->pcount()));
-
-            char szBuffer[512] = {0};
-            sprintf(szBuffer, "%s(%d): Assert failed. Expression: %s.\n", mFile, mLine, mExpr);
-            OutputDebugStringA(szBuffer);
-            int ret = _CrtDbgReport(_CRT_ASSERT, mFile, mLine, "", msg, mExpr, values.c_str(), mFunc);
-            if (ret == 1)
-            {
-                DebugBreak();
-            }
-        }
-
-#pragma warning(pop)
-#else
-
-        ~AssertFunctor()
-        {
-            std::string values(mArgs->str(), static_cast<std::size_t>(mArgs->pcount()));
-            
-            std::cout 
-                << mFile << ":" << mLine 
-                << ": Assertion failed. " << mExpr 
-                << " . Values: " << values << std::endl;
-
-            assert(0 && "See line above for assertion details.");
-        }
-
-#endif
+        AssertFunctor();
+        AssertFunctor(const char * expr);
+        ~AssertFunctor();
 
         const char * mExpr;
     };
@@ -90,10 +49,7 @@ namespace util {
     class VarArgAbort
     {
     public:
-        VarArgAbort()
-        {
-            abort();
-        }
+        VarArgAbort();
 
         template<typename T>
         VarArgAbort &operator()(const T &)
@@ -106,7 +62,7 @@ namespace util {
 #if 0
 #define UTIL_ASSERT_DEBUG(cond, e, logName, logLevel)                       \
     if (cond) ;                                                             \
-    else util::VarArgAssert(__FILE__, __LINE__, #cond)
+    else RCF::VarArgAssert(__FILE__, __LINE__, #cond)
 #endif
 
 #ifdef _MSC_VER
@@ -115,24 +71,24 @@ namespace util {
 #endif
 
 #if defined(__GNUC__) && (__GNUC__ < 3 || (__GNUC__ == 3 && __GNUC_MINOR__ < 4))
-#define UTIL_ASSERT_DEBUG_GCC_33_HACK (const util::VariableArgMacro<util::ThrowFunctor> &)
+#define UTIL_ASSERT_DEBUG_GCC_33_HACK (const RCF::VariableArgMacro<RCF::ThrowFunctor> &)
 #else
 #define UTIL_ASSERT_DEBUG_GCC_33_HACK
 #endif
 
-    DECLARE_VARIABLE_ARG_MACRO( UTIL_ASSERT_DEBUG, util::AssertFunctor );
+    DECLARE_VARIABLE_ARG_MACRO( UTIL_ASSERT_DEBUG, RCF::AssertFunctor );
     #define UTIL_ASSERT_DEBUG(expr, e, logName, logLevel)                                    \
         if (expr);    \
         else\
             UTIL_ASSERT_DEBUG_GCC_33_HACK                                              \
-            util::VariableArgMacro<util::AssertFunctor>(#expr)    \
+            RCF::VariableArgMacro<RCF::AssertFunctor>(#expr)    \
                 .init(                                                          \
                     "",                                                         \
                     "",                                                         \
                     __FILE__,                                                   \
                     __LINE__,                                                   \
                     BOOST_CURRENT_FUNCTION)                                     \
-                .cast( (util::VariableArgMacro<util::AssertFunctor> *) NULL)     \
+                .cast( (RCF::VariableArgMacro<RCF::AssertFunctor> *) NULL)     \
                 .UTIL_ASSERT_DEBUG_A
 
 
@@ -152,7 +108,7 @@ namespace util {
 
     #define UTIL_ASSERT_RELEASE(cond, e, logName, logLevel)                     \
         if (cond) ;                                                             \
-        else util::VarArgAbort()
+        else RCF::VarArgAbort()
 
     #else
 
@@ -171,6 +127,6 @@ namespace util {
     #define UTIL_ASSERT UTIL_ASSERT_DEBUG
     #endif
 
-} // namespace util
+} // namespace RCF
 
 #endif //! INCLUDE_UTIL_ASSERT_HPP

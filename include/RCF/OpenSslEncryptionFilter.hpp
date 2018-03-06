@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -23,15 +26,17 @@
 #include <boost/noncopyable.hpp>
 #include <boost/shared_ptr.hpp>
 
-#include <RCF/AsyncFilter.hpp>
+#include <RCF/Certificate.hpp>
+#include <RCF/Filter.hpp>
 #include <RCF/Export.hpp>
 
 typedef struct ssl_st SSL;
 typedef struct ssl_ctx_st SSL_CTX;
+typedef struct x509_st X509;
 
 namespace RCF {
 
-    /// Enumeration describing the role in a SSL conversation that an endpoint is playing.
+    // Enumeration describing the role in a SSL conversation that an endpoint is playing.
     enum SslRole
     {
         SslServer,
@@ -41,29 +46,88 @@ namespace RCF {
     class OpenSslEncryptionFilter;
     class OpenSslEncryptionFilterImpl;
 
-    typedef boost::function1<bool, OpenSslEncryptionFilter&> VerifyFunctor;
+    typedef boost::function1<bool, Certificate *> CertificateValidationCb;
 
-    /// Filter implementing the SSL encryption protocol, through the OpenSSL library.
+    /// Use this class to load a certificate in .pem format. Only applicable to OpenSSL.
+    class RCF_EXPORT PemCertificate : public Certificate
+    {
+    public:
+
+        // *** SWIG BEGIN ***
+
+        /// Loads a .pem certificate, using the given file path and password.
+        PemCertificate(const std::string & pathToCert, const std::string & password = "");
+
+        // *** SWIG END ***
+
+    private:
+
+        friend class OpenSslEncryptionFilter;
+        friend class OpenSslEncryptionFilterFactory;
+
+        std::string mPathToCert;
+        std::string mPassword;
+    };
+
+    class OpenSslDll;
+    class OpenSslCryptoDll;
+
+    /// Represents an in-memory certificate, usually from a remote peer. Only applicable to OpenSSL.
+    class RCF_EXPORT X509Certificate : public Certificate
+    {
+    public:
+
+        // *** SWIG BEGIN ***
+
+        virtual CertificateImplementationType _getType()
+        {
+            return Cit_X509;
+        }
+
+        /// Gets the name of the certificate.
+        std::string getCertificateName();
+
+        /// Gets the name of the issuer of the certificate.
+        std::string getIssuerName();
+
+        // *** SWIG END ***
+
+        X509Certificate(X509 * pX509);
+
+        X509 * getX509();
+
+    private:
+        OpenSslDll &                    mSslDll;
+        OpenSslCryptoDll &              mCryptoDll;
+        X509 *                          mpX509;
+    };
+
+    typedef boost::shared_ptr<X509Certificate> X509CertificatePtr;
+
+    class ClientStub;
+
     class RCF_EXPORT OpenSslEncryptionFilter : public Filter, boost::noncopyable
     {
     public:
-        // TODO: should be private
-        static const FilterDescription *    spFilterDescription;
-        static const FilterDescription &    sGetFilterDescription();
-        const FilterDescription &           getFilterDescription() const;
+        int                         getFilterId() const;
 
     public:
 
         OpenSslEncryptionFilter(
-            const std::string &     certificateFile,
-            const std::string &     certificateFilePassword,
-            const std::string &     caCertificate = "",
-            const std::string &     ciphers = "",
-            VerifyFunctor           verifyFunctor = 0,
+            ClientStub *            pClientStub,
             SslRole                 sslRole = SslClient,
             unsigned int            bioBufferSize = 2048);
 
-        void        reset();
+        OpenSslEncryptionFilter(
+            const std::string &     certificateFile,
+            const std::string &     certificateFilePassword,
+            const std::string &     caCertificate,
+            const std::string &     ciphers,
+            CertificateValidationCb verifyFunctor,
+            SslRole                 sslRole = SslClient,
+            unsigned int            bioBufferSize = 2048);
+
+        void        resetState();
         void        read(const ByteBuffer &byteBuffer, std::size_t bytesRequested);
         void        write(const std::vector<ByteBuffer> &byteBuffers);
         void        onReadCompleted(const ByteBuffer &byteBuffer);
@@ -72,34 +136,24 @@ namespace RCF {
         SSL *       getSSL();
         SSL_CTX *   getCTX();
 
+        CertificatePtr getPeerCertificate();
+
     private:
         friend class OpenSslEncryptionFilterImpl;
         boost::shared_ptr<OpenSslEncryptionFilterImpl> mImplPtr;
     };
-
-    /// Filter factory for OpenSslEncryptionFilter.
-    class RCF_EXPORT OpenSslEncryptionFilterFactory : public FilterFactory
+    
+    class OpenSslEncryptionFilterFactory : public FilterFactory
     {
     public:
-        OpenSslEncryptionFilterFactory(
-            const std::string &     certificateFile,
-            const std::string &     certificateFilePassword,
-            const std::string &     caCertificate = "",
-            const std::string &     ciphers = "",
-            VerifyFunctor           verifyFunctor = 0,
-            bool                    serverRole = true);
+        OpenSslEncryptionFilterFactory();
 
-        FilterPtr                   createFilter();
-        const FilterDescription &   getFilterDescription();
+        FilterPtr                   createFilter(RcfServer & server);
+        int                         getFilterId();
 
     private:
-        std::string     mCertificateFile;
-        std::string     mCertificateFilePassword;
-        std::string     mCaCertificate;
-        std::string     mCiphers;
-        VerifyFunctor   mVerifyFunctor;
         SslRole         mRole;
-    };
+    };  
 
 
 } // namespace RCF

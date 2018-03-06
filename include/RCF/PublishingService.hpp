@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -24,6 +27,7 @@
 #include <RCF/ClientStub.hpp>
 #include <RCF/Export.hpp>
 #include <RCF/GetInterfaceName.hpp>
+#include <RCF/PeriodicTimer.hpp>
 #include <RCF/Service.hpp>
 #include <RCF/ThreadLibrary.hpp>
 #include <RCF/Timer.hpp>
@@ -33,112 +37,133 @@ namespace RCF {
     class                                           RcfServer;
     class                                           I_RcfClient;
     class                                           RcfSession;
-    class                                           I_ClientTransport;
+    class                                           ClientTransport;
     typedef boost::shared_ptr<I_RcfClient>          RcfClientPtr;
-    typedef boost::shared_ptr<I_ClientTransport>    ClientTransportPtr;
+    typedef boost::shared_ptr<ClientTransport>    ClientTransportPtr;
 
-    struct Publisher
+    class                                           PublisherBase;
+    typedef boost::shared_ptr<PublisherBase>        PublisherPtr;
+    typedef boost::weak_ptr<PublisherBase>          PublisherWeakPtr;
+
+    class                                           PublishingService;
+    
+    typedef boost::function2<bool, RcfSession &, const std::string &> OnSubscriberConnect;
+    typedef boost::function2<void, RcfSession &, const std::string &> OnSubscriberDisconnect;
+
+    class RCF_EXPORT PublisherParms
     {
-        Publisher(const std::string &name, RcfClientPtr rcfClientPtr) :
-            mName(name),
-            mMulticastRcfClientPtr(rcfClientPtr)
-        {}
-        std::string     mName;
-        RcfClientPtr    mMulticastRcfClientPtr;
+    public:
+
+        void setTopicName(const std::string & topicName);
+        std::string getTopicName() const;
+        void setOnSubscriberConnect(OnSubscriberConnect onSubscriberConnect);
+        void setOnSubscriberDisconnect(OnSubscriberDisconnect onSubscriberDisconnect);
+
+    private:
+
+        friend class PublishingService;
+
+        std::string             mTopicName;
+        OnSubscriberConnect     mOnSubscriberConnect;
+        OnSubscriberDisconnect  mOnSubscriberDisconnect;
     };
 
-    typedef boost::shared_ptr<Publisher> PublisherPtr;
 
-    /// Service for implementing the publish part of publish/subscribe functionality.
+    class RCF_EXPORT PublisherBase : boost::noncopyable
+    {
+    public:
+        PublisherBase(PublishingService & pubService, const PublisherParms & parms);
+        ~PublisherBase();
+
+        std::string     getTopicName();
+        std::size_t     getSubscriberCount();
+        void            close();
+
+    protected:
+
+        friend class PublishingService;
+
+        void init();
+
+        PublishingService &     mPublishingService;
+        PublisherParms          mParms;
+        bool                    mClosed;
+        std::string             mTopicName;
+        RcfClientPtr            mRcfClientPtr;
+    };
+
+    // Rename to Topic?
+    template<typename Interface>
+    class Publisher : public PublisherBase
+    {
+    public:
+
+        typedef typename Interface::RcfClientT RcfClientT;
+
+        Publisher(PublishingService & pubService, const PublisherParms & parms) :
+            PublisherBase(pubService, parms),
+            mpClient(NULL)
+        {
+            if (mTopicName.empty())
+            {
+                mTopicName = getInterfaceName<Interface>();
+            }
+
+            mRcfClientPtr.reset( new RcfClientT( ClientStub(mTopicName) ) );
+            mpClient = dynamic_cast<RcfClientT *>(mRcfClientPtr.get());
+
+            init();
+        }
+
+        RcfClientT & publish()
+        {
+            RCF_ASSERT(!mClosed);
+            return *mpClient;
+        }
+
+    private:
+
+        RcfClientT * mpClient;
+    };   
+
+    class I_RequestSubscription;
+    template<typename T> class RcfClient; 
+
     class RCF_EXPORT PublishingService :
         public I_Service,
         boost::noncopyable
     {
     public:
-        PublishingService(boost::uint32_t pingIntervalMs = 0);
+        PublishingService();
 
-        /// Obtains a reference to the requested publisher object.
-        /// \param Interface RCF interface of the publisher object.
-        /// \param publisherName Name of the publisher object.
-        /// \return Reference to the publisher object.
-
-#if !defined(_MSC_VER) || _MSC_VER > 1200
+        ~PublishingService();
 
         template<typename Interface>
-        bool beginPublish(const std::string &publisherName = "")
+        boost::shared_ptr< Publisher<Interface> > createPublisher(
+            const PublisherParms & parms)
         {
-            return beginPublish( (Interface *) 0, publisherName);
+            boost::shared_ptr< Publisher<Interface> > publisherPtr(
+                new Publisher<Interface>(*this, parms) );
+
+            std::string topicName = publisherPtr->getTopicName();
+
+            RCF_ASSERT(topicName.size() > 0);
+            Lock lock(mPublishersMutex);
+            mPublishers[topicName] = publisherPtr;
+            return publisherPtr;
         }
 
-        template<typename Interface>
-        typename Interface::RcfClientT &publish(
-            const std::string &publisherName = "")
-        {
-            return publish( (Interface *) NULL, publisherName);
-        }
+        void setPingIntervalMs(boost::uint32_t pingIntervalMs);
+        boost::uint32_t getPingIntervalMs() const;
 
-        template<typename Interface>
-        bool endPublish(const std::string &publisherName = "")
-        {
-            return endPublish( (Interface *) 0, publisherName);
-        }
 
-#endif
+    private:
 
-        /// Creates and stores a publisher object, i.e. a RcfClient<Interface> object with an underlying multicasting transport.
-        /// \param Interface RCF interface to publish.
-        /// \param publisherName Name through which this publisher will be accessed.
-        /// \return True if ok, false otherwise.
-        template<typename Interface>
-        bool beginPublish(Interface *, const std::string &publisherName_ = "")
-        {
-            const std::string &publisherName = (publisherName_ == "") ?
-                getInterfaceName((Interface *) NULL) :
-                publisherName_;
+        friend class RcfClient<I_RequestSubscription>;
+        friend class PublisherBase;
+        friend class PublishingServicePb;
+        friend class RcfSession;
 
-            typedef typename Interface::RcfClientT RcfClientT;
-            RcfClientPtr rcfClientPtr( new RcfClientT( ClientStub(publisherName)));
-            return beginPublishNamed(publisherName, rcfClientPtr);
-        }
-
-        // inline definition here for reasons of portability (vc6)
-        template<typename Interface>
-        typename Interface::RcfClientT &publish(
-            Interface *,
-            const std::string &publisherName_ = "")
-        {
-            const std::string &publisherName = (publisherName_ == "") ?
-                getInterfaceName( (Interface *) NULL) :
-                publisherName_;
-
-            return dynamic_cast<typename Interface::RcfClientT &>(
-                publishNamed(publisherName) );
-        }
-
-        /// Shuts down the given publisher object.
-        /// \param Interface RCF interface of the publisher object.
-        /// \param publisherName Name of the publisher object.
-        /// \return True if ok, false otherwise.
-        template<typename Interface>
-        bool endPublish(Interface *, const std::string &publisherName_ = "")
-        {
-            const std::string &publisherName = (publisherName_ == "") ?
-                getInterfaceName((Interface *) NULL) :
-                publisherName_;
-
-            return endPublishNamed(publisherName);
-        }
-
-        typedef boost::function2<void, RcfSession &, const std::string &> OnConnectCallback;
-        typedef boost::function2<void, RcfSession &, const std::string &> OnDisconnectCallback;
-
-        void            setOnConnectCallback(
-                            OnConnectCallback onConnectCallback);
-
-        void            setOnDisconnectCallback(
-                            OnDisconnectCallback onDisconnectCallback);
-
-        // remotely accessible
         boost::int32_t  RequestSubscription(
                             const std::string &subscriptionName);
 
@@ -151,41 +176,30 @@ namespace RCF {
 
         void            onServiceAdded(RcfServer &server);
         void            onServiceRemoved(RcfServer &server);
+        void            onServerStart(RcfServer &server);
         void            onServerStop(RcfServer &server);
-
-        bool            beginPublishNamed(
-                            const std::string &publisherName,
-                            RcfClientPtr rcfClientPtr);
-
-        I_RcfClient &   publishNamed(
-                            const std::string &publisherName);
-
-        bool            endPublishNamed(
-                            const std::string &publisherName);
 
         void            addSubscriberTransport(
                             RcfSession &session,
                             const std::string &publisherName,
                             ClientTransportAutoPtrPtr clientTransportAutoPtrPtr);
 
-        typedef std::map<std::string, PublisherPtr>     Publishers;
+        void            closePublisher(const std::string & name);
 
-        ReadWriteMutex                                  mPublishersMutex;
-        Publishers                                      mPublishers;
-        OnConnectCallback                               mOnConnectCallback;
-        OnDisconnectCallback                            mOnDisconnectCallback;
+        // TODO: should be weak_ptr here probably. ~Publisher() will need
+        // to clean them up ?
+        typedef std::map<std::string, PublisherWeakPtr>     Publishers;
 
+        Mutex                           mPublishersMutex;
+        Publishers                      mPublishers;
 
-
-        bool cycle(
-            int                         timeoutMs,
-            const volatile bool &       stopFlag);
-
-        void stop();
-
-        volatile bool                   mStopFlag;
-        Timer                           mLastRunTimer;
         boost::uint32_t                 mPingIntervalMs;
+        PeriodicTimer                   mPeriodicTimer;
+
+        virtual void onTimer();
+        void pingAllSubscriptions();
+        void harvestExpiredSubscriptions();
+
     };
 
     typedef boost::shared_ptr<PublishingService> PublishingServicePtr;

@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -26,7 +29,7 @@
 
 namespace RCF {
 
-    using boost::asio::local::stream_protocol;
+    using ASIO_NS::local::stream_protocol;
 
     class UnixLocalAcceptor : public AsioAcceptor
     {
@@ -60,152 +63,137 @@ namespace RCF {
     typedef stream_protocol::socket                 UnixLocalSocket;
     typedef boost::shared_ptr<UnixLocalSocket>      UnixLocalSocketPtr;
 
-    // UnixLocalSessionState
+    // UnixLocalNetworkSession
 
-    class UnixLocalSessionState : public AsioSessionState
+    UnixLocalNetworkSession::UnixLocalNetworkSession(
+        UnixLocalServerTransport & transport,
+        AsioIoService & ioService) :
+            AsioNetworkSession(transport, ioService),
+            mSocketPtr(new UnixLocalSocket(ioService))
+    {}
+
+    const RemoteAddress & UnixLocalNetworkSession::implGetRemoteAddress()
     {
-    public:
-        UnixLocalSessionState(
-            UnixLocalServerTransport & transport,
-            AsioIoService & ioService) :
-                AsioSessionState(transport, ioService),
-                mSocketPtr(new UnixLocalSocket(ioService))
-        {}
+        return mRemoteAddress;
+    }
 
-        const I_RemoteAddress & implGetRemoteAddress()
+    void UnixLocalNetworkSession::implRead(char * buffer, std::size_t bufferLen)
+    {
+        if ( !mSocketPtr )
         {
-            return mRemoteAddress;
+            RCF_LOG_4() << "UnixLocalNetworkSession - connection has been closed.";
+            return;
         }
 
-        void implRead(char * buffer, std::size_t bufferLen)
+        RCF_LOG_4()(bufferLen) 
+            << "UnixLocalNetworkSession - calling async_read_some().";
+
+        mSocketPtr->async_read_some(
+            ASIO_NS::buffer( buffer, bufferLen),
+            ReadHandler(sharedFromThis()));
+    }
+
+    void UnixLocalNetworkSession::implWrite(const std::vector<ByteBuffer> & buffers)
+    {
+        if ( !mSocketPtr )
         {
-            RCF_LOG_4()(bufferLen) 
-                << "UnixLocalSessionState - calling async_read_some().";
-
-            mThisPtr = sharedFromThis();
-
-            mSocketPtr->async_read_some(
-                boost::asio::buffer( buffer, bufferLen),
-                ReadHandler(*this));
+            RCF_LOG_4() << "UnixLocalNetworkSession - connection has been closed.";
+            return;
         }
 
-        void implWrite(const std::vector<ByteBuffer> & buffers)
+        RCF_LOG_4()(RCF::lengthByteBuffers(buffers))
+            << "UnixLocalNetworkSession - calling async_write_some().";
+
+        mBufs.mVecPtr->resize(0);
+        for (std::size_t i=0; i<buffers.size(); ++i)
         {
-            RCF_LOG_4()(RCF::lengthByteBuffers(buffers))
-                << "UnixLocalSessionState - calling async_write_some().";
+            ByteBuffer buffer = buffers[i];
 
-            mThisPtr = sharedFromThis();
-
-            mBufs.mVecPtr->resize(0);
-            for (std::size_t i=0; i<buffers.size(); ++i)
-            {
-                ByteBuffer buffer = buffers[i];
-
-                mBufs.mVecPtr->push_back( 
-                    boost::asio::buffer(buffer.getPtr(), buffer.getLength()) );
-            }
-
-            mSocketPtr->async_write_some(
-                mBufs,
-                WriteHandler(*this));
+            mBufs.mVecPtr->push_back( 
+                AsioConstBuffer(buffer.getPtr(), buffer.getLength()) );
         }
 
-        void implWrite(AsioSessionState &toBeNotified, const char * buffer, std::size_t bufferLen)
+        mSocketPtr->async_write_some(
+            mBufs,
+            WriteHandler(sharedFromThis()));
+    }
+
+    void UnixLocalNetworkSession::implAccept()
+    {
+        RCF_LOG_4()<< "UnixLocalNetworkSession - calling async_accept().";
+
+        UnixLocalAcceptor & unixLocalAcceptor = 
+            static_cast<UnixLocalAcceptor &>(mTransport.getAcceptor());
+
+        unixLocalAcceptor.mAcceptor.async_accept(
+            *mSocketPtr,
+            boost::bind(
+                &AsioNetworkSession::onAcceptCompleted,
+                sharedFromThis(),
+                ASIO_NS::placeholders::error));
+    }
+
+    bool UnixLocalNetworkSession::implOnAccept()
+    {
+        return true;
+    }
+
+    bool UnixLocalNetworkSession::implIsConnected()
+    {
+        int fd = mSocketPtr->native();
+        return isFdConnected(fd);
+    }
+
+    void UnixLocalNetworkSession::implClose()
+    {
+        mSocketPtr->close();
+    }
+
+    void UnixLocalNetworkSession::implCloseAfterWrite()
+    {
+        int fd = mSocketPtr->native();
+        const int BufferSize = 8*1024;
+        char buffer[BufferSize];
+        while (recv(fd, buffer, BufferSize, 0) > 0);
+#ifdef BOOST_WINDOWS
+        int ret = shutdown(fd, SD_BOTH);
+#else
+        int ret = shutdown(fd, SHUT_RDWR);
+#endif
+        RCF_UNUSED_VARIABLE(ret);
+
+        postRead();
+    }
+
+    ClientTransportAutoPtr UnixLocalNetworkSession::implCreateClientTransport()
+    {
+        std::auto_ptr<UnixLocalClientTransport> unixLocalClientTransport(
+            new UnixLocalClientTransport(mSocketPtr, mRemoteFileName));
+
+        return ClientTransportAutoPtr(unixLocalClientTransport.release());
+    }
+
+    void UnixLocalNetworkSession::implTransferNativeFrom(ClientTransport & clientTransport)
+    {
+        UnixLocalClientTransport *pUnixLocalClientTransport =
+            dynamic_cast<UnixLocalClientTransport *>(&clientTransport);
+
+        if (pUnixLocalClientTransport == NULL)
         {
-            boost::asio::async_write(
-                *mSocketPtr,
-                boost::asio::buffer(buffer, bufferLen),
-                boost::bind(
-                    &AsioSessionState::onWriteCompletion,
-                    toBeNotified.sharedFromThis(),
-                    boost::asio::placeholders::error,
-                    boost::asio::placeholders::bytes_transferred));
+            Exception e("incompatible client transport");
+            RCF_THROW(e)(typeid(clientTransport));
         }
 
-        void implAccept()
-        {
-            RCF_LOG_4()<< "UnixLocalSessionState - calling async_accept().";
+        UnixLocalClientTransport & unixLocalClientTransport = *pUnixLocalClientTransport;
+        unixLocalClientTransport.associateWithIoService(mIoService);
+        mSocketPtr = unixLocalClientTransport.releaseLocalSocket();
+        mRemoteFileName = unixLocalClientTransport.getPipeName();
+    }
 
-            UnixLocalAcceptor & unixLocalAcceptor = 
-                static_cast<UnixLocalAcceptor &>(*mTransport.getAcceptorPtr());
-
-            unixLocalAcceptor.mAcceptor.async_accept(
-                *mSocketPtr,
-                boost::bind(
-                    &AsioSessionState::onAccept,
-                    sharedFromThis(),
-                    boost::asio::placeholders::error));
-        }
-
-        bool implOnAccept()
-        {
-            return true;
-        }
-
-        int implGetNative() const
-        {
-            return mSocketPtr->native();
-        }
-
-        void implSetNative(int fd)
-        {
-            mSocketPtr->assign(
-                stream_protocol(),
-                fd);
-        }
-
-        boost::function0<void> implGetCloseFunctor()
-        {
-            return boost::bind(
-                &UnixLocalSessionState::closeSocket,
-                mSocketPtr);
-        }
-
-        void implClose()
-        {
-            mSocketPtr->close();
-        }
-
-        ClientTransportAutoPtr implCreateClientTransport()
-        {
-            int fd = implGetNative();
-
-            std::auto_ptr<UnixLocalClientTransport> unixLocalClientTransport(
-                new UnixLocalClientTransport(fd, mRemoteFileName));
-
-            return ClientTransportAutoPtr(unixLocalClientTransport.release());
-        }
-
-        void implTransferNativeFrom(I_ClientTransport & clientTransport)
-        {
-            UnixLocalClientTransport *pUnixLocalClientTransport =
-                dynamic_cast<UnixLocalClientTransport *>(&clientTransport);
-
-            if (pUnixLocalClientTransport == NULL)
-            {
-                Exception e("incompatible client transport");
-                RCF_THROW(e)(typeid(clientTransport));
-            }
-
-            UnixLocalClientTransport & unixLocalClientTransport = *pUnixLocalClientTransport;
-
-            // TODO: exception safety
-            mSocketPtr->assign(
-                stream_protocol(),
-                unixLocalClientTransport.releaseFd());
-
-            mRemoteFileName = unixLocalClientTransport.getPipeName();
-        }
-        static void closeSocket(UnixLocalSocketPtr socketPtr)
-        {
-            socketPtr->close();
-        }
-
-    private:
-        UnixLocalSocketPtr          mSocketPtr;
-        std::string                 mRemoteFileName;
-        NoRemoteAddress             mRemoteAddress;
-    };
+    int UnixLocalNetworkSession::getNativeHandle()
+    {
+        return static_cast<int>(mSocketPtr->native());
+    }
 
     // UnixLocalServerTransport
 
@@ -219,14 +207,19 @@ namespace RCF {
             mFileName(fileName)
     {}
 
+    TransportType UnixLocalServerTransport::getTransportType()
+    {
+        return Tt_UnixNamedPipe;
+    }
+
     ServerTransportPtr UnixLocalServerTransport::clone()
     {
         return ServerTransportPtr(new UnixLocalServerTransport(mFileName));
     }
 
-    AsioSessionStatePtr UnixLocalServerTransport::implCreateSessionState()
+    AsioNetworkSessionPtr UnixLocalServerTransport::implCreateNetworkSession()
     {
-        return AsioSessionStatePtr( new UnixLocalSessionState(*this, *mpIoService) );
+        return AsioNetworkSessionPtr( new UnixLocalNetworkSession(*this, *mpIoService) );
     }
 
     void UnixLocalServerTransport::implOpen()
@@ -234,7 +227,7 @@ namespace RCF {
     }
 
     ClientTransportAutoPtr UnixLocalServerTransport::implCreateClientTransport(
-        const I_Endpoint &endpoint)
+        const Endpoint &endpoint)
     {
         const UnixLocalEndpoint & unixLocalEndpoint = 
             dynamic_cast<const UnixLocalEndpoint &>(endpoint);
@@ -255,10 +248,8 @@ namespace RCF {
 
         if ( !mFileName.empty() )
         {
-            boost::shared_ptr<UnixLocalAcceptor> acceptorPtr(
+            mAcceptorPtr.reset(
                 new UnixLocalAcceptor(*mpIoService, mFileName));
-
-            mAcceptorPtr = acceptorPtr;
 
             startAccepting();
         }

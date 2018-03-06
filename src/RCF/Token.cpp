@@ -2,24 +2,25 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
 #include <RCF/Token.hpp>
 
-#ifdef RCF_USE_SF_SERIALIZATION
+#if RCF_FEATURE_SF==1
 #include <SF/Archive.hpp>
 #endif
-
-#include <iostream>
 
 namespace RCF {
 
@@ -27,7 +28,7 @@ namespace RCF {
     // Token
 
     Token::Token() :
-        mId(RCF_DEFAULT_INIT)
+        mId()
     {}
 
     bool operator<(const Token &lhs, const Token &rhs)
@@ -50,7 +51,7 @@ namespace RCF {
         return mId;
     }
    
-    std::ostream &operator<<(std::ostream &os, const Token &token)
+    RCF::MemOstream &operator<<(RCF::MemOstream &os, const Token &token)
     {
         os << "( id = " << token.getId() << " )";
         return os;
@@ -60,7 +61,7 @@ namespace RCF {
         mId(id)
     {}
 
-#ifdef RCF_USE_SF_SERIALIZATION
+#if RCF_FEATURE_SF==1
 
     void Token::serialize(SF::Archive &ar)
     {
@@ -71,10 +72,6 @@ namespace RCF {
 
     // TokenFactory
 
-#if defined(_MSC_VER) && _MSC_VER <= 1200
-#define for if (0) {} else for
-#endif
-
     TokenFactory::TokenFactory(int tokenCount) :
         mMutex(WriterPriority)
     {
@@ -83,32 +80,8 @@ namespace RCF {
             mTokenSpace.push_back( Token(i+1) );
         }
 
-#if defined(_MSC_VER) && _MSC_VER < 1310 && !(defined(__SGI_STL_PORT) || defined(_STLPORT_VERSION))
-
-        //for (std::size_t i = mTokenSpace.size() - 1; i >= 0; --i)
-        //{
-        //    mAvailableTokens.push_back(mTokenSpace[i]);
-        //}
-
-        std::for_each(
-            mTokenSpace.rbegin(),
-            mTokenSpace.rend(),
-            boost::bind(
-                &std::vector<Token>::push_back,
-                boost::ref(mAvailableTokens),
-                _1));
-
-#else
-
         mAvailableTokens.assign( mTokenSpace.rbegin(), mTokenSpace.rend() );
-
-#endif
-
     }
-
-#if defined(_MSC_VER) && _MSC_VER <= 1200
-#undef for
-#endif
 
     bool TokenFactory::requestToken(Token &token)
     {

@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -23,10 +26,10 @@ namespace SF {
 
     DataPtr::DataPtr() :
         ptr_(buffer_),
-        length_(RCF_DEFAULT_INIT),
-        allocatedLength_(RCF_DEFAULT_INIT),
-        whichDeleter_(RCF_DEFAULT_INIT),
-        pfn_deleter_(RCF_DEFAULT_INIT)
+        length_(),
+        allocatedLength_(),
+        whichDeleter_(),
+        pfn_deleter_()
     {}
 
     DataPtr::DataPtr(const T *sz) :
@@ -34,7 +37,7 @@ namespace SF {
         length_( length(sz) ),
         allocatedLength_(length_+1),
         whichDeleter_(0),
-        pfn_deleter_(RCF_DEFAULT_INIT)
+        pfn_deleter_()
     {
         // Weak attach
         RCF_ASSERT(ptr_);
@@ -44,8 +47,8 @@ namespace SF {
         ptr_( const_cast<T*>(sz) ),
         length_(length),
         allocatedLength_(length_),
-        whichDeleter_(RCF_DEFAULT_INIT),
-        pfn_deleter_(RCF_DEFAULT_INIT)
+        whichDeleter_(),
+        pfn_deleter_()
     {
         // Weak attach
         RCF_ASSERT(ptr_);
@@ -56,7 +59,7 @@ namespace SF {
         length_(rhs.length_),
         allocatedLength_(rhs.allocatedLength_),
         whichDeleter_(0),
-        pfn_deleter_(RCF_DEFAULT_INIT)
+        pfn_deleter_()
     {
         // Weak copy
     }

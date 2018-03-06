@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -94,6 +97,11 @@
 
 #include <boost/config.hpp>
 #include <boost/detail/workaround.hpp>
+
+#ifdef _MSC_VER
+#pragma warning( push )
+#pragma warning( disable: 4263 ) // warning C4263: 'int RcfBoost::boost::program_options::detail::utf8_codecvt_facet::do_length(const mbstate_t &,const char *,const char *,size_t) const' : member function does not override any base class virtual member function
+#endif
 
 #if defined(BOOST_NO_STDC_NAMESPACE)
 namespace std {
@@ -196,5 +204,9 @@ protected:
 };
 
 BOOST_UTF8_END_NAMESPACE
+
+#ifdef _MSC_VER
+#pragma warning( pop )
+#endif
 
 #endif // RCF_BOOST_UTF8_CODECVT_FACET_HPP

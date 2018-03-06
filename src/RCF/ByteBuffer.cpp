@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -18,25 +21,25 @@
 #include <RCF/Exception.hpp>
 #include <RCF/InitDeinit.hpp>
 #include <RCF/ThreadLibrary.hpp>
-#include <RCF/ThreadLocalCache.hpp>
+#include <RCF/ThreadLocalData.hpp>
 
 namespace RCF {
 
     const std::size_t ByteBuffer::npos = std::size_t(-1);
 
     ByteBuffer::ByteBuffer() :
-        mPv(RCF_DEFAULT_INIT),
-        mPvlen(RCF_DEFAULT_INIT),
-        mLeftMargin(RCF_DEFAULT_INIT),
-        mReadOnly(RCF_DEFAULT_INIT)
+        mPv(),
+        mPvlen(),
+        mLeftMargin(),
+        mReadOnly()
     {}
 
     ByteBuffer::ByteBuffer(std::size_t pvlen) :
         mSpvc(new std::vector<char>(pvlen)),
         mPv( mSpvc->empty() ? NULL : &mSpvc->front()),
         mPvlen(pvlen),
-        mLeftMargin(RCF_DEFAULT_INIT),
-        mReadOnly(RCF_DEFAULT_INIT)
+        mLeftMargin(),
+        mReadOnly()
         
     {}
 
@@ -45,7 +48,7 @@ namespace RCF {
         mSpos(),
         mPv( mSpvc->empty() ? NULL : const_cast<char*>(&mSpvc->front())),
         mPvlen(mSpvc->size()),
-        mLeftMargin(RCF_DEFAULT_INIT),
+        mLeftMargin(),
         mReadOnly(false)
     {}
 
@@ -54,7 +57,7 @@ namespace RCF {
         mSpos(),
         mPv( mSpvc->empty() ? NULL : const_cast<char*>(&mSpvc->front())),
         mPvlen(mSpvc->size()),
-        mLeftMargin(RCF_DEFAULT_INIT),
+        mLeftMargin(),
         mReadOnly(false)
     {}
 
@@ -65,7 +68,7 @@ namespace RCF {
             mSpos(),
             mPv( spvc->empty() ? NULL : const_cast<char*>(&spvc->front())),
             mPvlen(spvc->size()),
-            mLeftMargin(RCF_DEFAULT_INIT),
+            mLeftMargin(),
             mReadOnly(readOnly)
             
     {}
@@ -77,10 +80,21 @@ namespace RCF {
             mSprb(sprb),
             mPv( sprb->empty() ? NULL : const_cast<char*>(&(*sprb)[0]) ),
             mPvlen(sprb->size()),
-            mLeftMargin(RCF_DEFAULT_INIT),
+            mLeftMargin(),
             mReadOnly(readOnly)
-            
     {}
+
+    ByteBuffer::ByteBuffer(
+        MemOstreamPtr spos,
+        bool readOnly) :
+            mSpos(spos),
+            mSprb(),
+            mPv( spos->str() ),
+            mPvlen( spos->length() ),
+            mLeftMargin(),
+            mReadOnly(readOnly)
+    {}
+
 
     ByteBuffer::ByteBuffer(
         char *pv,
@@ -88,7 +102,7 @@ namespace RCF {
         bool readOnly) :
             mPv(pv),
             mPvlen(pvlen),
-            mLeftMargin(RCF_DEFAULT_INIT),
+            mLeftMargin(),
             mReadOnly(readOnly)
     {}
 
@@ -106,12 +120,12 @@ namespace RCF {
     ByteBuffer::ByteBuffer(
         char *pv,
         std::size_t pvlen,
-        boost::shared_ptr<std::ostrstream> spos,
+        boost::shared_ptr<RCF::MemOstream> spos,
         bool readOnly) :
             mSpos(spos),
             mPv(pv),
             mPvlen(pvlen),
-            mLeftMargin(RCF_DEFAULT_INIT),
+            mLeftMargin(),
             mReadOnly(readOnly)
     {}
 
@@ -119,7 +133,7 @@ namespace RCF {
         char *pv,
         std::size_t pvlen,
         std::size_t leftMargin,
-        boost::shared_ptr<std::ostrstream> spos,
+        boost::shared_ptr<RCF::MemOstream> spos,
         bool readOnly) :
             mSpos(spos),
             mPv(pv),
@@ -136,7 +150,7 @@ namespace RCF {
             mSpvc(spvc),          
             mPv(pv),
             mPvlen(pvlen),
-            mLeftMargin(RCF_DEFAULT_INIT),
+            mLeftMargin(),
             mReadOnly(readOnly)
     {}
 
@@ -161,7 +175,7 @@ namespace RCF {
             mSprb(sprb),
             mPv(pv),
             mPvlen(pvlen),
-            mLeftMargin(RCF_DEFAULT_INIT),
+            mLeftMargin(),
             mReadOnly(readOnly)
     {}
 
@@ -397,7 +411,7 @@ namespace RCF {
 
 } // namespace RCF
 
-#ifdef RCF_USE_SF_SERIALIZATION
+#if RCF_FEATURE_SF==1
 
 #include <RCF/ClientStub.hpp>
 #include <RCF/CurrentSerializationProtocol.hpp>
@@ -410,22 +424,6 @@ namespace SF {
 
     void serialize(SF::Archive &ar, RCF::ByteBuffer &byteBuffer)
     {
-        RCF::SerializationProtocolIn *pIn = NULL;
-        RCF::SerializationProtocolOut *pOut = NULL;
-
-        RCF::ClientStub * pClientStub = RCF::getCurrentClientStubPtr();
-        RCF::RcfSession * pRcfSession = RCF::getCurrentRcfSessionPtr();
-        if (pClientStub)
-        {
-            pIn = &pClientStub->getSpIn();
-            pOut = &pClientStub->getSpOut();
-        }
-        else if (pRcfSession)
-        {
-            pIn = &pRcfSession->getSpIn();
-            pOut = &pRcfSession->getSpOut();
-        }
-
         if (ar.isRead())
         {
             boost::uint32_t len = 0;
@@ -433,8 +431,9 @@ namespace SF {
 
             byteBuffer.clear();
 
+            // See if we have a remote call context.
             RCF::SerializationProtocolIn *pIn = 
-                RCF::getCurrentSerializationProtocolIn();
+                ar.getIstream()->getRemoteCallContext();
 
             if (pIn && len)
             {
@@ -442,7 +441,14 @@ namespace SF {
             }
             else if (len)
             {
-                byteBuffer = RCF::ByteBuffer(len);
+                if (byteBuffer.getLength() >= len)
+                {
+                    byteBuffer = RCF::ByteBuffer(byteBuffer, 0, len);
+                }
+                else
+                {
+                    byteBuffer = RCF::ByteBuffer(len);
+                }
 
                 SF::IStream &is = *ar.getIstream();
 
@@ -460,8 +466,9 @@ namespace SF {
             boost::uint32_t len = static_cast<boost::uint32_t>(byteBuffer.getLength());
             ar & len;
 
+            // See if we have a remote call context.
             RCF::SerializationProtocolOut *pOut = 
-                RCF::getCurrentSerializationProtocolOut();
+                ar.getOstream()->getRemoteCallContext();
 
             if (pOut && len)
             {
@@ -479,4 +486,4 @@ namespace SF {
 
 } // namespace SF
 
-#endif // RCF_USE_SF_SERIALIZATION
+#endif // RCF_FEATURE_SF==1

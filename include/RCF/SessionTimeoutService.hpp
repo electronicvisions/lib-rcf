@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,45 +22,36 @@
 #include <set>
 
 #include <RCF/Export.hpp>
+#include <RCF/PeriodicTimer.hpp>
 #include <RCF/Service.hpp>
 #include <RCF/Timer.hpp>
 
 namespace RCF {
 
-    class RcfSession;
-    typedef boost::shared_ptr<RcfSession> RcfSessionPtr;
-    typedef boost::weak_ptr<RcfSession> RcfSessionWeakPtr;
+    class NetworkSession;
+    typedef boost::shared_ptr<NetworkSession> NetworkSessionPtr;
+    typedef boost::weak_ptr<NetworkSession> NetworkSessionWeakPtr;
 
     class RCF_EXPORT SessionTimeoutService : public I_Service
     {
     public:
-        SessionTimeoutService(
-            boost::uint32_t sessionTimeoutMs,
-            boost::uint32_t reapingIntervalMs = 30*1000);
+        SessionTimeoutService();
 
     private:
 
-        void onServiceAdded(RcfServer &server);
-        void onServiceRemoved(RcfServer &server);
+        void onServerStart(RcfServer & server);
+        void onServerStop(RcfServer & server);
 
-        void stop();
-
-        bool cycle(
-            int timeoutMs,
-            const volatile bool &stopFlag);
+        void onTimer();
 
     private:
 
-        std::vector<RcfSessionWeakPtr>  mSessionsTemp;
+        std::vector<NetworkSessionWeakPtr>  mSessionsTemp;
 
         boost::uint32_t                 mSessionTimeoutMs;
-        RCF::Timer                      mLastRunTimer;
         boost::uint32_t                 mReapingIntervalMs;
-
-        bool                            mStopFlag;
-
         RcfServer *                     mpRcfServer;
-
+        PeriodicTimer                   mPeriodicTimer;
     };
 
     typedef boost::shared_ptr<SessionTimeoutService> SessionTimeoutServicePtr;

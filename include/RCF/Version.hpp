@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -16,17 +19,10 @@
 #ifndef INCLUDE_RCF_VERSION_HPP
 #define INCLUDE_RCF_VERSION_HPP
 
+#include <RCF/BuildVersion.hpp>
 #include <RCF/Export.hpp>
 
 #include <boost/cstdint.hpp>
-
-// RCF 0.9c - 903
-// RCF 0.9d - 9040
-// RCF 1.0 - 10000
-// RCF 1.1 - 11000
-// RCF 1.2 - 12000
-// RCF 1.3 - 13000
-#define RCF_VERSION 13000
 
 namespace RCF {
 
@@ -69,13 +65,25 @@ namespace RCF {
     //      - Error response messages contain two custom args, rather than one.
     // Released in 1.3
 
-    // 2011-06-02   - version number 9
+    // 2011-02-27   - version number 9
     //      - Only do non-polymorphic marshaling of reference parameters, if using SF and object caching is enabled for the marshaling type. Otherwise polymorphic marshaling, as in version 7 and earlier.
     //      - Optimize SF serialization of 32 bit integers < 128, to a single byte.
+    // Released in 1.3.1
 
+    // 2012-01-13   - version number 10
+    //      - Request and response headers include pointer tracking setting for SF archives.
+    //      - SF archive metadata includes pointer tracking setting.
+
+    // 2012-09-05   - version number 11
+    //      - FileInfo serialization includes last-modified timestamp. 
+
+    // 2013-09-01   - version number 12
+    //      - Request and response headers include out of band request and response.
+    //      - Request of transport filters done through out of band message.
+ 
 
     // Inherent runtime version - can't be changed.
-    RCF_EXPORT boost::uint32_t  getInherentRuntimeVersion();
+    RCF_EXPORT boost::uint32_t  getLibraryVersion();
 
     // Default runtime version.
     RCF_EXPORT boost::uint32_t  getDefaultRuntimeVersion();

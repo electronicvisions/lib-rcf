@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -22,10 +25,12 @@ namespace RCF {
 
     FileIoThreadPool::FileIoThreadPool() : 
         mSerializeFileIo(false),
-        mThreadPool(1, 10, "RCF Async File IO", 30*1000, false),
-        mStopFlag(false) 
-        
+        mThreadPool(1,10) 
     {
+        mThreadPool.setThreadName("RCF Async File IO");
+        mThreadPool.setThreadIdleTimeoutMs(30*1000);
+        mThreadPool.setReserveLastThread(false);
+
         mThreadPool.setTask( boost::bind(
             &FileIoThreadPool::ioTask,
             this));
@@ -59,8 +64,7 @@ namespace RCF {
         // Lazy start of the thread pool.
         if (!mThreadPool.isStarted())
         {
-            mStopFlag = false;
-            mThreadPool.start(mStopFlag);
+            mThreadPool.start();
         }
 
         if (    std::find(mOpsQueued.begin(), mOpsQueued.end(), opPtr) 
@@ -76,7 +80,7 @@ namespace RCF {
         else
         {
             mOpsQueued.push_back(opPtr);
-            mOpsCondition.notify_all();
+            mOpsCondition.notify_all(lock);
         }
     }
 
@@ -93,11 +97,11 @@ namespace RCF {
 
         {
             RCF::Lock lock(mOpsMutex);
-            while (mOpsQueued.empty() && !mStopFlag)
+            while (mOpsQueued.empty() && !mThreadPool.shouldStop())
             {
                 mOpsCondition.timed_wait(lock, 1000);
             }
-            if (mOpsQueued.empty() || mStopFlag)
+            if (mOpsQueued.empty() || mThreadPool.shouldStop())
             {
                 return false;
             }
@@ -107,7 +111,7 @@ namespace RCF {
             opPtr = mOpsInProgress.back();
         }
 
-        RCF::ThreadInfoPtr threadInfoPtr = RCF::getThreadInfoPtr();
+        RCF::ThreadInfoPtr threadInfoPtr = RCF::getTlsThreadInfoPtr();
         if (threadInfoPtr)
         {
             threadInfoPtr->notifyBusy();
@@ -123,7 +127,7 @@ namespace RCF {
         {
             RCF::Lock lock(mCompletionMutex);
             opPtr->mCompleted = true;
-            mCompletionCondition.notify_all();
+            mCompletionCondition.notify_all(lock);
         }
 
         return false;
@@ -132,8 +136,7 @@ namespace RCF {
     void FileIoThreadPool::stopIoTask()
     {
         RCF::Lock lock(mOpsMutex);
-        mStopFlag = true;
-        mOpsCondition.notify_all();
+        mOpsCondition.notify_all(lock);
     }
 
     FileIoRequest::FileIoRequest() :
@@ -150,17 +153,17 @@ namespace RCF {
         RCF_LOG_4() << "FileIoRequest::~FileIoRequest";
     }
 
-    bool FileIoRequest::initiated()
+    bool FileIoRequest::isInitiated()
     {
-        RCF_LOG_4() << "FileIoRequest::initiated";
+        RCF_LOG_4() << "FileIoRequest::isInitiated()";
 
         RCF::Lock lock(mFts.mCompletionMutex);
         return mInitiated;
     }
 
-    bool FileIoRequest::completed()
+    bool FileIoRequest::isCompleted()
     {
-        RCF_LOG_4() << "FileIoRequest::completed";
+        RCF_LOG_4() << "FileIoRequest::isCompleted";
 
         RCF::Lock lock(mFts.mCompletionMutex);
         return mCompleted;
@@ -168,17 +171,19 @@ namespace RCF {
 
     void FileIoRequest::complete()
     {
-        RCF_LOG_4() << "FileIoRequest::complete()";
+        RCF_LOG_4() << "FileIoRequest::complete() - entry";
 
         RCF::Lock lock(mFts.mCompletionMutex);
         while (!mCompleted)
         {
-            mFts.mCompletionCondition.wait(lock);
+            mFts.mCompletionCondition.timed_wait(lock, 1000);
         }
         mInitiated = false;
+
+        RCF_LOG_4() << "FileIoRequest::complete() - exit";
     }
 
-    void FileIoRequest::read(boost::shared_ptr<std::ifstream> finPtr, RCF::ByteBuffer buffer)
+    void FileIoRequest::initiateRead(boost::shared_ptr<std::ifstream> finPtr, RCF::ByteBuffer buffer)
     {
         RCF_LOG_4()(finPtr.get())((void*)buffer.getPtr())(buffer.getLength()) << "FileIoRequest::read()";
 
@@ -202,7 +207,7 @@ namespace RCF {
         }
     }
 
-    void FileIoRequest::write(boost::shared_ptr<std::ofstream> foutPtr, RCF::ByteBuffer buffer)
+    void FileIoRequest::initateWrite(boost::shared_ptr<std::ofstream> foutPtr, RCF::ByteBuffer buffer)
     {
         RCF_LOG_4()(foutPtr.get())((void*)buffer.getPtr())(buffer.getLength()) << "FileIoRequest::write()";
 
@@ -274,15 +279,21 @@ namespace RCF {
 
     static FileIoThreadPool * gpFileIoThreadPool = NULL;
 
+    void initFileIoThreadPool()
+    {
+        gpFileIoThreadPool = new FileIoThreadPool();
+    }
+
+    void deinitFileIoThreadPool()
+    {
+        delete gpFileIoThreadPool; 
+        gpFileIoThreadPool = NULL;
+    }
+
     FileIoThreadPool & getFileIoThreadPool()
     {
         FileIoThreadPool * pFileIoThreadPool = gpFileIoThreadPool;
         return *pFileIoThreadPool;
     }
-
-    RCF_ON_INIT_DEINIT_NAMED(
-        gpFileIoThreadPool = new FileIoThreadPool(), 
-        delete gpFileIoThreadPool; gpFileIoThreadPool = NULL, 
-        FileIoThreadPoolInit)
 
 } // namespace RCF

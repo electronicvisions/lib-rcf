@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -17,6 +20,8 @@
 
 #include <boost/bind.hpp>
 
+#include <RCF/AmiIoHandler.hpp>
+#include <RCF/AsioDeadlineTimer.hpp>
 #include <RCF/ClientStub.hpp>
 #include <RCF/InitDeinit.hpp>
 #include <RCF/TcpEndpoint.hpp>
@@ -25,53 +30,32 @@
 #include <RCF/TcpEndpoint.hpp>
 #include <RCF/Tools.hpp>
 
-#ifdef BOOST_WINDOWS
-#include <RCF/Iocp.hpp>
-#include <RCF/IocpServerTransport.hpp>
-#endif
-
 #include <RCF/RcfServer.hpp>
-
-// missing stuff in mingw and vc6 headers
-#if defined(__MINGW32__) || (defined(_MSC_VER) && _MSC_VER == 1200)
-
-typedef
-BOOL
-(PASCAL FAR * LPFN_CONNECTEX) (
-    IN RCF_SOCKET s,
-    IN const struct sockaddr FAR *name,
-    IN int namelen,
-    IN PVOID lpSendBuffer OPTIONAL,
-    IN DWORD dwSendDataLength,
-    OUT LPDWORD lpdwBytesSent,
-    IN LPOVERLAPPED lpOverlapped
-    );
-
-#define WSAID_CONNECTEX \
-    {0x25a207b9,0xddf3,0x4660,{0x8e,0xe9,0x76,0xe5,0x8c,0x74,0x06,0x3e}}
-
-#endif
 
 namespace RCF {
 
     TcpClientTransport::TcpClientTransport(const TcpClientTransport &rhs) :
         BsdClientTransport(rhs),
-        mRemoteAddr(rhs.mRemoteAddr)
+        mServerAddr(rhs.mServerAddr),
+        mConnectionAddr(rhs.mConnectionAddr)
     {}
 
     TcpClientTransport::TcpClientTransport(const IpAddress &remoteAddr) :
         BsdClientTransport(),
-        mRemoteAddr(remoteAddr)
+        mServerAddr(remoteAddr),
+        mConnectionAddr(remoteAddr)
     {}
 
     TcpClientTransport::TcpClientTransport(const std::string & ip, int port) :
         BsdClientTransport(),
-        mRemoteAddr(ip, port)
+        mServerAddr(ip, port),
+        mConnectionAddr(ip, port)
     {}
 
-    TcpClientTransport::TcpClientTransport(int fd) :
-        BsdClientTransport(fd)
-    {}
+    TcpClientTransport::TcpClientTransport(TcpSocketPtr socketPtr) : 
+        BsdClientTransport(socketPtr)
+    {
+    }
 
     TcpClientTransport::~TcpClientTransport()
     {
@@ -80,16 +64,22 @@ namespace RCF {
             {
                 close();
             }
+            mClosed = true;
         RCF_DTOR_END
     }
 
-    std::auto_ptr<I_ClientTransport> TcpClientTransport::clone() const
+    TransportType TcpClientTransport::getTransportType()
+    {
+        return Tt_Tcp;
+    }
+
+    std::auto_ptr<ClientTransport> TcpClientTransport::clone() const
     {
         return ClientTransportAutoPtr( new TcpClientTransport(*this) );
     }
 
     void TcpClientTransport::implConnect(
-        I_ClientTransportCallback &clientStub,
+        ClientTransportCallback &clientStub,
         unsigned int timeoutMs)
     {
         // TODO: replace throw with return, where possible
@@ -99,14 +89,36 @@ namespace RCF {
         // TODO: should be closed already?
         implClose();
 
-        if (!mRemoteAddr.isResolved())
+        // Are we going through a proxy?
+        ClientStub * pClientStub = static_cast<ClientStub *>(&clientStub);
+        if (pClientStub->getHttpProxy().size() > 0)
+        {
+            if (pClientStub->getHttpProxyPort() == 0)
+            {
+                RCF::Exception e( _RcfError_HttpProxyPort() );
+                RCF_THROW(e);
+            }
+
+            mConnectionAddr = IpAddress(
+                pClientStub->getHttpProxy(), 
+                pClientStub->getHttpProxyPort());
+        }
+        else
+        {
+            if (mConnectionAddr != mServerAddr)
+            {
+                mConnectionAddr = mServerAddr;
+            }
+        }
+
+        if (!mConnectionAddr.isResolved())
         {
             RCF::ExceptionPtr e;
-            mRemoteAddr.resolve(e);
+            mConnectionAddr.resolve(e);
             RCF_VERIFY(!e, *e);
         }
 
-        RCF_ASSERT(mRemoteAddr.isResolved());
+        RCF_ASSERT(mConnectionAddr.isResolved());
         setupSocket();
 
         unsigned int startTimeMs = getCurrentTimeMs();
@@ -121,12 +133,14 @@ namespace RCF {
 
         sockaddr * pSockAddr = NULL;
         Platform::OS::BsdSockets::socklen_t sockAddrSize = 0;
-        mRemoteAddr.getSockAddr(pSockAddr, sockAddrSize);
+        mConnectionAddr.getSockAddr(pSockAddr, sockAddrSize);
+
+        int fd = getNativeHandle();
 
         int ret = timedConnect(
             pollingFunctor,
             err,
-            mFd,
+            fd,
             pSockAddr,
             sockAddrSize);
 
@@ -138,133 +152,177 @@ namespace RCF {
             {
                 Exception e( _RcfError_ClientConnectTimeout(
                     timeoutMs, 
-                    mRemoteAddr.string()));
+                    mConnectionAddr.string()));
                 
                 RCF_THROW(e);
             }
             else
             {
                 Exception e( _RcfError_ClientConnectFail(), err, RcfSubsystem_Os);
-                RCF_THROW(e)(mRemoteAddr.string());
+                RCF_THROW(e)(mConnectionAddr.string());
             }
         }
 
-        mAssignedLocalIp = IpAddress(mFd, mRemoteAddr.getType());
+        mAssignedLocalIp = IpAddress(fd, mConnectionAddr.getType());
 
         clientStub.onConnectCompleted();
     }
 
-#ifdef BOOST_WINDOWS
-
-    void TcpClientTransport::dnsLookupTask(
+    void TcpClientTransport::doDnsLookup(
+        std::size_t index,
+        unsigned int timeoutMs,
         OverlappedAmiPtr overlappedPtr,
         IpAddress ipAddress)
     {
-        setWin32ThreadName( DWORD(-1), "RCF DNS Lookup Thread");
+        setWin32ThreadName("RCF DNS Lookup Thread");
 
+        // Resolving may take a while.
         RCF::ExceptionPtr e;
         ipAddress.resolve(e);
 
-        Lock lock(overlappedPtr->mMutex);
-
-        TcpClientTransport *pTcpClientTransport = 
-            static_cast<TcpClientTransport *>(overlappedPtr->mpTransport);
-
-        if (pTcpClientTransport)
+        RecursiveLock lock(overlappedPtr->mMutex);
+        if (index == overlappedPtr->mIndex && overlappedPtr->mpTransport)
         {
-            pTcpClientTransport->endDnsLookup(overlappedPtr, ipAddress, e);
-            getCurrentAmiNotification().run();
+            TcpClientTransport *pTcpClientTransport = 
+                static_cast<TcpClientTransport *>(overlappedPtr->mpTransport);
+
+            ++overlappedPtr->mIndex;
+
+            pTcpClientTransport->onDnsLookupCompleted(timeoutMs, ipAddress, e);
+            getTlsAmiNotification().run();
         }
     }
 
-    void TcpClientTransport::beginDnsLookup()
+    void doBlockingConnect(
+        int fd, 
+        sockaddr * pAddr, 
+        Platform::OS::BsdSockets::socklen_t addrSize, 
+        OverlappedAmiPtr overlappedAmiPtr)
     {
-        // Fire and forget.
-        Thread thread( boost::bind( 
-            &TcpClientTransport::dnsLookupTask, 
-            getOverlappedPtr(), 
-            mRemoteAddr));
+        // Set our thread name.
+        setWin32ThreadName("RCF AMI Blocking Connect Thread");
+
+        Platform::OS::BsdSockets::setblocking(fd, true);
+
+        int ret = Platform::OS::BsdSockets::connect(
+            fd, 
+            pAddr, 
+            addrSize);
+
+        int err = Platform::OS::BsdSockets::GetLastError();
+
+        Platform::OS::BsdSockets::setblocking(fd, false);
+
+        AmiIoHandler handler(overlappedAmiPtr);
+
+        // Invoke the handler.
+        if (ret == 0)
+        {
+            handler();
+        }
+        else
+        {
+            AsioErrorCode erc(err, ASIO_NS::error::system_category);
+            handler(erc);
+        }
     }
 
-    void TcpClientTransport::endDnsLookup(
-        OverlappedAmiPtr overlappedPtr, 
+
+    void TcpClientTransport::onDnsLookupCompleted(
+        unsigned int timeoutMs,
         IpAddress ipAddress, 
         ExceptionPtr e)
     {
-        mRemoteAddr = ipAddress;
+        mConnectionAddr = ipAddress;
 
         if (e)
         {
-            mClientStubCallbackPtr.onError(*e);
+            mpClientStub->onError(*e);
             return;
         }
-        else if (!mRemoteAddr.isResolved())
+        else if (!mConnectionAddr.isResolved())
         {
-            mClientStubCallbackPtr.onError(
-                Exception(_RcfError_DnsLookup(mRemoteAddr.string())));
+            mpClientStub->onError(
+                Exception(_RcfError_DnsLookup(mConnectionAddr.string())));
 
             return;
         }
-
-        // Can't call getOverlappedPtr() here because it will lock mOverlappedPtrMutex
-        // , after already locking overlappedPtr->mMutex farther up the stack 
-        // (dnsLookupTask(). We always lock those two mutexes the other way around.
-        overlappedPtr->mThisPtr = overlappedPtr;
-
-        using namespace boost::multi_index::detail;
-        scope_guard clearSelfReferenceGuard =
-            make_guard(clearSelfReference, boost::ref(overlappedPtr->mThisPtr));
 
         RCF::Exception eBind;
         setupSocket(eBind);
         if (eBind.bad())
         {
-            mClientStubCallbackPtr.onError(eBind);
+            mpClientStub->onError(eBind);
             return;
-        }
-
-        if (!mRegisteredForAmi)
-        {
-
-            RcfServer * preferred = mClientStubCallbackPtr.getAsyncDispatcher();
-            if (preferred)
-            {
-                I_ServerTransport & transport = preferred->getServerTransport();
-
-                IocpServerTransport & iocpTransport = 
-                    dynamic_cast<IocpServerTransport &>(transport);
-
-                iocpTransport.associateSocket(mFd);
-            }
-            else
-            {
-                gAmiThreadPoolPtr->mIocp.AssociateSocket(mFd, mFd);
-            }
-
-            mRegisteredForAmi = true;
         }
 
         sockaddr * pSockAddr = NULL;
         Platform::OS::BsdSockets::socklen_t sockAddrSize = 0;
-        mRemoteAddr.getSockAddr(pSockAddr, sockAddrSize);
+        mConnectionAddr.getSockAddr(pSockAddr, sockAddrSize);
 
-        RCF::Exception eConn = gAmiThreadPoolPtr->connect(
-            mFd, 
-            *pSockAddr, 
-            sockAddrSize, 
-            overlappedPtr);
+        ASIO_NS::ip::tcp::endpoint endpoint;
 
-        if (eConn.bad())
+        if (mConnectionAddr.getType() == IpAddress::V4)
         {
-            mClientStubCallbackPtr.onError(eConn);
-            return;
+            sockaddr_in * pSockAddrV4 = (sockaddr_in *) pSockAddr;
+            unsigned long addr = pSockAddrV4->sin_addr.s_addr;
+            addr = ntohl(addr);
+            unsigned short port = static_cast<unsigned short>(mConnectionAddr.getPort());
+
+            endpoint = ASIO_NS::ip::tcp::endpoint(
+                ASIO_NS::ip::address( ASIO_NS::ip::address_v4(addr)),
+                port);
+
+        }
+        else if (mConnectionAddr.getType() == IpAddress::V6)
+        {
+            sockaddr_in6 * pSockAddrV6 = (sockaddr_in6 *) pSockAddr;
+
+            ASIO_NS::ip::address_v6::bytes_type bytes;
+            memcpy(&bytes[0], pSockAddrV6->sin6_addr.s6_addr, 16);
+
+            endpoint = ASIO_NS::ip::tcp::endpoint(
+                ASIO_NS::ip::address(
+                    ASIO_NS::ip::address_v6(bytes)),
+                static_cast<unsigned short>(mConnectionAddr.getPort()));
+        }
+        else
+        {
+            RCF_ASSERT(0);
         }
 
-        clearSelfReferenceGuard.dismiss();
+        RecursiveLock lock(mOverlappedPtr->mMutex);
+
+        if (AmiThreadPool::getEnableMultithreadedBlockingConnects())
+        {
+            // Launch a temporary thread and run a blocking connect() call.
+
+            mOverlappedPtr->mOpType = Connect;
+
+            RCF::ThreadPtr doConnectThread( new RCF::Thread( boost::bind(
+                &doBlockingConnect,
+                static_cast<int>(mTcpSocketPtr->native()),
+                pSockAddr,
+                sockAddrSize,
+                mOverlappedPtr)));
+        }
+        else
+        {
+            // Use Boost.Asio async_connect().
+
+            mOverlappedPtr->mOpType = Connect;
+
+            mTcpSocketPtr->async_connect( 
+                endpoint, 
+                AmiIoHandler(mOverlappedPtr));
+        }
+
+        mAsioTimerPtr->expires_from_now( boost::posix_time::milliseconds(timeoutMs) );
+        mAsioTimerPtr->async_wait( AmiTimerHandler(mOverlappedPtr) );
     }
 
     void TcpClientTransport::implConnectAsync(
-        I_ClientTransportCallback &clientStub,
+        ClientTransportCallback &clientStub,
         unsigned int timeoutMs)
     {
         // TODO: sort this out
@@ -274,48 +332,51 @@ namespace RCF {
 
         implClose();
 
-        mClientStubCallbackPtr.reset(&clientStub);
+        mpClientStub = &clientStub;
 
-        if (!mRemoteAddr.isResolved())
+        // Are we going through a proxy?
+        ClientStub * pClientStub = static_cast<ClientStub *>(mpClientStub);
+        if (pClientStub->getHttpProxy().size() > 0)
         {
-            beginDnsLookup();
+            if (pClientStub->getHttpProxyPort() == 0)
+            {
+                RCF::Exception e( _RcfError_HttpProxyPort() );
+                RCF_THROW(e);
+            }
+
+            mConnectionAddr = IpAddress(
+                pClientStub->getHttpProxy(), 
+                pClientStub->getHttpProxyPort());
         }
         else
         {
-            endDnsLookup(getOverlappedPtr(), mRemoteAddr, ExceptionPtr());
+            if (mConnectionAddr != mServerAddr)
+            {
+                mConnectionAddr = mServerAddr;
+            }
+        }
+
+        if (!mConnectionAddr.isResolved())
+        {
+            // Fire and forget.
+
+            RecursiveLock lock(mOverlappedPtr->mMutex);
+
+            Thread thread( boost::bind( 
+                &TcpClientTransport::doDnsLookup, 
+                mOverlappedPtr->mIndex,
+                timeoutMs,
+                mOverlappedPtr, 
+                mConnectionAddr));
+        }
+        else
+        {
+            onDnsLookupCompleted(
+                timeoutMs,
+                mConnectionAddr, 
+                ExceptionPtr());
         }
     }
-
-#else
-
-    void TcpClientTransport::implConnectAsync(
-        I_ClientTransportCallback &clientStub,
-        unsigned int timeoutMs)
-    {
-        RCF_ASSERT(0);
-    }
-
-    void TcpClientTransport::endDnsLookup(
-        OverlappedAmiPtr overlappedPtr, 
-        IpAddress ipAddress, 
-        ExceptionPtr e)
-    {
-        RCF_ASSERT(0);
-    }
-
-    void TcpClientTransport::beginDnsLookup()
-    {
-        RCF_ASSERT(0);
-    }
-
-    void TcpClientTransport::dnsLookupTask(
-        OverlappedAmiPtr overlappedPtr,
-        IpAddress ipAddress)
-    {
-        RCF_ASSERT(0);
-    }
-
-#endif
 
     void TcpClientTransport::setupSocket()
     {
@@ -331,8 +392,9 @@ namespace RCF {
     {
         e = Exception();
 
-        RCF_ASSERT_EQ(mFd , RCF_INVALID_SOCKET);
-        mFd = mRemoteAddr.createSocket();
+        RCF_ASSERT_EQ(mFd , INVALID_SOCKET);
+
+        mFd = mConnectionAddr.createSocket();
         Platform::OS::BsdSockets::setblocking(mFd, false);
 
         // Bind to local interface, if one has been specified.
@@ -355,57 +417,117 @@ namespace RCF {
                 if (err == Platform::OS::BsdSockets::ERR_EADDRINUSE)
                 {
                     e = Exception(_RcfError_PortInUse(mLocalIp.getIp(), mLocalIp.getPort()), err, RcfSubsystem_Os, "bind() failed");
-                    //RCF_THROW(e)(mAcceptorFd);
                 }
                 else
                 {
                     e = Exception(_RcfError_SocketBind(mLocalIp.getIp(), mLocalIp.getPort()), err, RcfSubsystem_Os, "bind() failed");
-                    //RCF_THROW(e)(mAcceptorFd);
                 }
             }
         }
+
+        if (mpIoService)
+        {
+            mAsioTimerPtr.reset( new AsioDeadlineTimer(*mpIoService) );
+            mTcpSocketPtr.reset( new AsioSocket(*mpIoService) );
+            if (mConnectionAddr.getType() == IpAddress::V4)
+            {
+                mTcpSocketPtr->assign(ASIO_NS::ip::tcp::v4(), mFd);
+            }
+            else if (mConnectionAddr.getType() == IpAddress::V6)
+            {
+                mTcpSocketPtr->assign(ASIO_NS::ip::tcp::v6(), mFd);
+            }
+            else
+            {
+                RCF_ASSERT(0);
+            }
+
+            mFd = -1;
+        }
+    }
+
+    void TcpClientTransport::associateWithIoService(AsioIoService & ioService)
+    {
+        if (mTcpSocketPtr)
+        {
+            RCF_ASSERT(mpIoService == & ioService);
+        }
+        else
+        {
+            mpIoService = &ioService;
+
+            mTcpSocketPtr.reset( new TcpSocket(ioService) );
+            if (mFd != -1)
+            {
+                if (mConnectionAddr.getType() == IpAddress::V4)
+                {
+                    mTcpSocketPtr->assign(ASIO_NS::ip::tcp::v4(), mFd);
+                }
+                else if (mConnectionAddr.getType() == IpAddress::V6)
+                {
+                    mTcpSocketPtr->assign(ASIO_NS::ip::tcp::v6(), mFd);
+                }
+                else
+                {
+                    RCF_ASSERT(0);
+                }
+            }
+            mAsioTimerPtr.reset( new AsioDeadlineTimer(*mpIoService) );
+            mFd = -1;
+        }
+    }
+
+    bool TcpClientTransport::isAssociatedWithIoService()
+    {
+        return mpIoService ? true : false;
     }
 
     void TcpClientTransport::implClose()
     {
-        if (mFd != -1)
+        if (mTcpSocketPtr)
         {
-            if (mRegisteredForAmi && gAmiThreadPoolPtr.get())
+            if (mSocketOpsMutexPtr)
             {
-                gAmiThreadPoolPtr->cancelConnect(mFd);
+                Lock lock(*mSocketOpsMutexPtr);
+                mTcpSocketPtr->close();
+            }
+            else
+            {
+                mTcpSocketPtr->close();
             }
 
+            mTcpSocketPtr.reset();
+        }
+        else if (mFd != -1)
+        {
             int ret = Platform::OS::BsdSockets::closesocket(mFd);
             int err = Platform::OS::BsdSockets::GetLastError();
 
             RCF_VERIFY(
                 ret == 0,
                 Exception(
-                _RcfError_Socket(),
+                _RcfError_Socket("closesocket()"),
                 err,
-                RcfSubsystem_Os,
-                "closesocket() failed"))
+                RcfSubsystem_Os))
                 (mFd);
         }
 
         mFd = -1;
     }
 
-
-
     EndpointPtr TcpClientTransport::getEndpointPtr() const
     {
-        return EndpointPtr( new TcpEndpoint(mRemoteAddr) );
+        return EndpointPtr( new TcpEndpoint(mConnectionAddr) );
     }
 
     void TcpClientTransport::setRemoteAddr(const IpAddress &remoteAddr)
     {
-        mRemoteAddr = remoteAddr;
+        mConnectionAddr = remoteAddr;
     }
 
     IpAddress TcpClientTransport::getRemoteAddr() const
     {
-        return mRemoteAddr;
+        return mConnectionAddr;
     }
 
 } // namespace RCF

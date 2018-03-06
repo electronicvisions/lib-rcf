@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -18,14 +21,10 @@
 #include <RCF/InitDeinit.hpp>
 #include <RCF/util/Tchar.hpp>
 
-#ifdef RCF_USE_SF_SERIALIZATION
-#include <SF/Registry.hpp>
-#endif
-
-#if defined(BOOST_WINDOWS)
+#if RCF_FEATURE_NAMEDPIPE==1
 #include <RCF/Win32NamedPipeClientTransport.hpp>
 #include <RCF/Win32NamedPipeServerTransport.hpp>
-#else
+#elif RCF_FEATURE_LOCALSOCKET==1
 #include <RCF/UnixLocalServerTransport.hpp>
 #include <RCF/UnixLocalClientTransport.hpp>
 #endif
@@ -39,7 +38,7 @@ namespace RCF {
         mPipeName(pipeName)
     {}
 
-#if defined(BOOST_WINDOWS)
+#if RCF_FEATURE_NAMEDPIPE==1
 
     ServerTransportAutoPtr NamedPipeEndpoint::createServerTransport() const
     {
@@ -54,15 +53,15 @@ namespace RCF {
     }
 
 #else
-
+        
     ServerTransportAutoPtr NamedPipeEndpoint::createServerTransport() const
     {
-        return ServerTransportAutoPtr(new UnixLocalServerTransport(mPipeName));
+        return ServerTransportAutoPtr(new UnixLocalServerTransport(toAstring(mPipeName)));
     }
 
     ClientTransportAutoPtr NamedPipeEndpoint::createClientTransport() const
     {
-        return ClientTransportAutoPtr(new UnixLocalClientTransport(mPipeName));
+        return ClientTransportAutoPtr(new UnixLocalClientTransport(toAstring(mPipeName)));
     }
 
 #endif
@@ -74,29 +73,9 @@ namespace RCF {
 
     std::string NamedPipeEndpoint::asString() const
     {
-        std::ostringstream os;
-        os << "Named pipe endpoint \"" << util::toString(mPipeName) << "\"";
-        return os.str();
+        MemOstream os;
+        os << "pipe://" << RCF::toAstring(mPipeName);
+        return os.string();
     }
-
-#ifdef RCF_USE_SF_SERIALIZATION
-
-    void NamedPipeEndpoint::serialize(SF::Archive & ar)
-    {
-        serializeParent( (I_Endpoint*) 0, ar, *this);
-        ar & mPipeName;
-    }
-
-#endif
-
-    inline void initNamedPipeEndpointSerialization()
-    {
-#ifdef RCF_USE_SF_SERIALIZATION
-        SF::registerType( (NamedPipeEndpoint *) 0, "RCF::NamedPipeEndpoint");
-        SF::registerBaseAndDerived( (I_Endpoint *) 0, (NamedPipeEndpoint *) 0);
-#endif
-    }
-
-    RCF_ON_INIT_NAMED( initNamedPipeEndpointSerialization(), InitNamedPipeEndpointSerialization );
 
 } // namespace RCF

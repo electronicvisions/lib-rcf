@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -17,6 +20,10 @@
 #include <iostream>
 
 #include <RCF/test/Test.hpp>
+
+#include <RCF/CustomAllocator.hpp>
+
+#include <RCF/test/StackWalker.h>
 
 #ifdef NDEBUG
 #error CRT allocator hook only possible in debug builds.
@@ -37,6 +44,7 @@ int crtAllocationHook(
     const unsigned char *filename, // Can't be UNICODE
     int lineNumber)
 {
+    // Check for unexpected memory allocations.
     if (    gInstrumented
         &&  (allocType == _HOOK_ALLOC || allocType == _HOOK_REALLOC)
         && !gExpectAllocations)
@@ -45,12 +53,18 @@ int crtAllocationHook(
         // with thousands of failures.
 
         gInstrumented = false;
-        RCF_CHECK(gExpectAllocations);
-        std::cout << "Unexpected memory allocation." << std::endl;
 
         // If we do want to track further allocations, uncomment this.
         //gInstrumented = true;
 
+        std::cout << "***************************************" << std::endl;
+        std::cout << "Unexpected memory allocation. Call stack:" << std::endl;
+        
+        std::cout << StackTrace().toString() << std::endl;
+
+        std::cout << "***************************************" << std::endl;
+
+        RCF_CHECK(0 && "Unexpected memory allocation.");
     }
 
     if (allocType == _HOOK_ALLOC || allocType == _HOOK_REALLOC)

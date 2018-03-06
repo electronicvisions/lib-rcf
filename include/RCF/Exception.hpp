@@ -2,24 +2,22 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
 #ifndef INCLUDE_RCF_EXCEPTION_HPP
 #define INCLUDE_RCF_EXCEPTION_HPP
-
-#if defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6))
-#pragma GCC diagnostic push
-#endif
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 #include <memory>
 #include <sstream>
@@ -29,7 +27,6 @@
 
 #include <boost/shared_ptr.hpp>
 
-#include <RCF/util/DefaultInit.hpp>
 #include <RCF/Export.hpp>
 #include <RCF/Config.hpp>
 #include <RCF/Tools.hpp>
@@ -37,7 +34,7 @@
 
 #include <boost/version.hpp>
 
-#if defined(RCF_USE_BOOST_SERIALIZATION) && BOOST_VERSION > 103301
+#if RCF_FEATURE_BOOST_SERIALIZATION==1
 #include <boost/serialization/nvp.hpp>
 #include <boost/serialization/string.hpp>
 #include <boost/serialization/vector.hpp>
@@ -49,6 +46,8 @@ namespace SF {
 }
 
 namespace RCF {
+
+    RCF_EXPORT std::string toString(const std::exception &e);
 
     class RCF_EXPORT Error
     {
@@ -112,12 +111,11 @@ namespace RCF {
 
         std::string getErrorString() const;
 
-#ifdef RCF_USE_SF_SERIALIZATION
+#if RCF_FEATURE_SF==1
         void serialize(SF::Archive & ar);
-
 #endif
 
-#ifdef RCF_USE_BOOST_SERIALIZATION
+#if RCF_FEATURE_BOOST_SERIALIZATION==1
         template<typename Archive>
         void serialize(Archive & ar, const unsigned int)
         {
@@ -127,7 +125,7 @@ namespace RCF {
 
     private:
 
-        std::string getRawErrorString() const;
+        const char * getRawErrorString() const;
 
         int                             mErrorId;
         std::vector<std::string>        mArgs;
@@ -137,12 +135,12 @@ namespace RCF {
     // range 0-1000 reserved for RCF, remaining range can be used independently of RCF
 
     static const int RcfError_Ok                                =  0;
-    static const int RcfError_Unspecified                       =  1;
+    //static const int RcfError_Unspecified                       =  1;
     static const int RcfError_ServerMessageLength               =  2;
     static const int RcfError_ClientMessageLength               =  3;
     static const int RcfError_Serialization                     =  4;
     static const int RcfError_Deserialization                   =  5;
-    static const int RcfError_UserModeException                 =  6;
+    static const int RcfError_AppException                      =  6;
     static const int RcfError_UnknownEndpoint                   =  8;
     static const int RcfError_EndpointPassword                  =  9;
     static const int RcfError_EndpointDown                      = 10;
@@ -241,6 +239,63 @@ namespace RCF {
     static const int RcfError_ArraySizeMismatch                 = 117;
     static const int RcfError_WcharSizeMismatch                 = 118;
     static const int RcfError_AnyTypeNotRegistered              = 119;
+    static const int RcfError_CryptoApiError                    = 120;
+    static const int RcfError_ServerStubAccessDenied            = 121;
+    static const int RcfError_ApiError                          = 122;
+    static const int RcfError_HttpProxyPort                     = 123;
+    static const int RcfError_OpenSslError                      = 124;
+    static const int RcfError_ProtocolNotSupported              = 125;
+    static const int RcfError_ClearCommunicationNotAllowed      = 126;
+    static const int RcfError_ThreadingError                    = 127;
+    static const int RcfError_RcfNotInitialized                 = 128;
+    static const int RcfError_InvalidHttpMessage                = 129;
+    static const int RcfError_HttpRequestContentLength          = 130;
+    static const int RcfError_HttpResponseContentLength         = 131;
+    static const int RcfError_InvalidOpenSslCertificate         = 132;
+    static const int RcfError_InvalidSchannelCertificate        = 133;
+    static const int RcfError_HttpConnectFailed                 = 134;
+    static const int RcfError_SspiImpersonateNoSspi             = 135;
+    static const int RcfError_TransportProtocolNotSupported     = 136;
+    static const int RcfError_SslNotSupported                   = 137;
+    static const int RcfError_SessionObjectDoesNotExist         = 138;
+    static const int RcfError_UploadAlreadyCompleted            = 139;
+    static const int RcfError_FileIndex                         = 140;
+    static const int RcfError_ConcurrentCalls                   = 141;
+    static const int RcfError_ParseJsonRpcRequest               = 142;
+    static const int RcfError_DllLoad                           = 143;
+    static const int RcfError_DllFuncLoad                       = 144;
+    static const int RcfError_UnixDllLoad                       = 145;
+    static const int RcfError_UnixDllFuncLoad                   = 146;
+    static const int RcfError_PingBackInterval                  = 147;
+    static const int RcfError_FileOpenWrite                     = 148;
+    static const int RcfError_CustomCertValidation              = 149;
+    static const int RcfError_SupportedOnWindowsOnly            = 150;
+    static const int RcfError_NotSupportedOnWindows             = 151;
+    static const int RcfError_NotSupportedInThisBuild           = 152;
+    static const int RcfError_NoLongerSupported                 = 153;
+    static const int RcfError_SslCertVerificationCustom         = 154;
+    static const int RcfError_ServerCallbacksNotSupported       = 155;
+    static const int RcfError_ServerUnsupportedFeature          = 156;
+    static const int RcfError_SyncPublishError                  = 157;
+    static const int RcfError_DeserializeVectorBool             = 158;
+    static const int RcfError_HttpTunnelError                   = 159;
+    static const int RcfError_HttpSessionTimeout                = 160;
+    static const int RcfError_HttpRequestSessionIndex           = 161;
+    static const int RcfError_HttpResponseStatus                = 162;
+    static const int RcfError_HttpResponseSessionIndex          = 163;
+    static const int RcfError_HttpResponseSessionId             = 164;
+    static const int RcfError_NotHttpResponse                   = 165;
+    static const int RcfError_NotHttpPostRequest                = 166;
+    static const int RcfError_NotHttpRequest                    = 167;
+    static const int RcfError_NotSslHandshake                   = 168;
+    static const int RcfError_ClientStubParms                   = 169;
+    static const int RcfError_ServerStubParms                   = 170;
+    static const int RcfError_SessionObjectNotCreated           = 171;
+    static const int RcfError_MessageHeaderEncoding             = 172;
+    static const int RcfError_OnewayHttp                        = 173;
+    static const int RcfError_ProxyAuthRetry                    = 174;
+    static const int RcfError_ProxyCredentialsNeeded            = 175;
+    static const int RcfError_ProxyCredentialsInvalid           = 176;
 
 
     static const int RcfError_User                              = 1001;
@@ -264,20 +319,18 @@ namespace RCF {
     template<typename T>
     std::string numberToString(T t)
     {
-        std::ostringstream os;
+        MemOstream os;
         os << t;
-        return os.str();
+        return os.string();
     }
 
     RCF_EXPORT std::string getOsErrorString(int osError);
 
     inline Error _RcfError_Ok()                             { return Error(RcfError_Ok); }
-    inline Error _RcfError_Unspecified()                    { return Error(RcfError_Unspecified); }
+    //inline Error _RcfError_Unspecified()                    { return Error(RcfError_Unspecified); }
     inline Error _RcfError_ServerMessageLength()            { return Error(RcfError_ServerMessageLength); }
 
-    inline Error _RcfError_ClientMessageLength(
-        boost::uint32_t length,
-        std::size_t maxLength)                              { return Error(RcfError_ClientMessageLength, numberToString(length), numberToString(maxLength)); }
+    inline Error _RcfError_ClientMessageLength()            { return Error(RcfError_ClientMessageLength); }
 
     inline Error _RcfError_Serialization(
         const std::string & typeName, 
@@ -289,9 +342,9 @@ namespace RCF {
         const std::string & eType, 
         const std::string & eWhat)                          { return Error(RcfError_Deserialization, typeName, eType, eWhat); }
 
-    inline Error _RcfError_UserModeException(
+    inline Error _RcfError_AppException(
         const std::string & eType, 
-        const std::string & eWhat)                          { return Error(RcfError_UserModeException, eType, eWhat); }
+        const std::string & eWhat)                          { return Error(RcfError_AppException, eType, eWhat); }
 
     inline Error _RcfError_UnknownEndpoint()                { return Error(RcfError_UnknownEndpoint); }
     inline Error _RcfError_EndpointPassword()               { return Error(RcfError_EndpointPassword); }
@@ -323,14 +376,21 @@ namespace RCF {
         const std::string & interface_,
         int fnId)                                           { return Error(RcfError_NoServerStub, service, interface_, numberToString(fnId)); }
 
-    inline Error _RcfError_Sspi()                           { return Error(RcfError_Sspi); }
-    inline Error _RcfError_SspiInit()                       { return Error(RcfError_SspiInit); }
+    inline Error _RcfError_Sspi(
+        const std::string & funcName)                       { return Error(RcfError_Sspi, funcName); }
+
+    inline Error _RcfError_SspiInit(
+        const std::string & funcName)                       { return Error(RcfError_SspiInit, funcName); }
+
     inline Error _RcfError_ClientReadTimeout()              { return Error(RcfError_ClientReadTimeout); }
     inline Error _RcfError_ClientReadFail()                 { return Error(RcfError_ClientReadFail); }
     inline Error _RcfError_ClientWriteTimeout()             { return Error(RcfError_ClientWriteTimeout); }
     inline Error _RcfError_ClientWriteFail()                { return Error(RcfError_ClientWriteFail); }
     inline Error _RcfError_ClientConnectFail()              { return Error(RcfError_ClientConnectFail); }
-    inline Error _RcfError_Socket()                         { return Error(RcfError_Socket); }
+    
+    inline Error _RcfError_Socket(
+        const std::string & funcName)                       { return Error(RcfError_Socket, funcName); }
+    
     inline Error _RcfError_FnId(int fnId)                   { return Error(RcfError_FnId, numberToString(fnId)); }
     
     inline Error _RcfError_UnknownInterface(
@@ -345,10 +405,19 @@ namespace RCF {
 
     inline Error _RcfError_FilterMessage()                  { return Error(RcfError_FilterMessage); }
     inline Error _RcfError_UnfilterMessage()                { return Error(RcfError_UnfilterMessage); }
-    inline Error _RcfError_SspiCredentials()                { return Error(RcfError_SspiCredentials); }
-    inline Error _RcfError_SspiEncrypt()                    { return Error(RcfError_SspiEncrypt); }
-    inline Error _RcfError_SspiDecrypt()                    { return Error(RcfError_SspiDecrypt); }
-    inline Error _RcfError_SspiImpersonation()              { return Error(RcfError_SspiImpersonation); }
+
+    inline Error _RcfError_SspiCredentials(
+        const std::string & funcName)                       { return Error(RcfError_SspiCredentials, funcName); }
+
+    inline Error _RcfError_SspiEncrypt(
+        const std::string & funcName)                       { return Error(RcfError_SspiEncrypt, funcName); }
+
+    inline Error _RcfError_SspiDecrypt(
+        const std::string & funcName)                       { return Error(RcfError_SspiDecrypt, funcName); }
+
+    inline Error _RcfError_SspiImpersonation(
+        const std::string & funcName)                       { return Error(RcfError_SspiImpersonation, funcName); }
+
     inline Error _RcfError_SocketClose()                    { return Error(RcfError_SocketClose); }
     inline Error _RcfError_ZlibDeflate()                    { return Error(RcfError_ZlibDeflate); }
     inline Error _RcfError_ZlibInflate()                    { return Error(RcfError_ZlibInflate); }
@@ -389,7 +458,10 @@ namespace RCF {
         int tokenId)                                        { return Error(RcfError_DynamicObjectNotFound, numberToString(tokenId)); }
 
     inline Error _RcfError_VersionMismatch()                { return Error(RcfError_VersionMismatch); }
-    inline Error _RcfError_SslCertVerification()            { return Error(RcfError_SslCertVerification); }
+
+    inline Error _RcfError_SslCertVerification(
+        const std::string & openSslErr)                     { return Error(RcfError_SslCertVerification, openSslErr); }
+
     inline Error _RcfError_FiltersLocked()                  { return Error(RcfError_FiltersLocked); }
     inline Error _RcfError_Pipe()                           { return Error(RcfError_Pipe); }
 
@@ -406,7 +478,11 @@ namespace RCF {
     inline Error _RcfError_PingBack()                       { return Error(RcfError_PingBack); }
     inline Error _RcfError_NoPingBackService()              { return Error(RcfError_NoPingBackService); }
     inline Error _RcfError_NoDownload()                     { return Error(RcfError_NoDownload); }
-    inline Error _RcfError_FileOffset()                     { return Error(RcfError_FileOffset); }
+
+    inline Error _RcfError_FileOffset(
+        boost::uint64_t expectedPos,
+        boost::uint64_t actualPos)                          { return Error(RcfError_FileOffset, numberToString(expectedPos), numberToString(actualPos)); }
+
     inline Error _RcfError_NoUpload()                       { return Error(RcfError_NoUpload); }
 
     inline Error _RcfError_FileOpen(
@@ -464,8 +540,7 @@ namespace RCF {
     inline Error _RcfError_SspiAuthFailClient()             { return Error(RcfError_SspiAuthFailClient); }
 
     inline Error _RcfError_Win32ApiError(
-        const std::string & funcName,
-        int err)                                            { return Error(RcfError_Win32ApiError, funcName, numberToString(err), getOsErrorString(err)); }
+        const std::string & funcName)                       { return Error(RcfError_Win32ApiError, funcName); }
 
     inline Error _RcfError_SspiLengthField(
         int length,
@@ -501,6 +576,156 @@ namespace RCF {
     inline Error _RcfError_AnyTypeNotRegistered(
         const std::string typeidName)                       { return Error(RcfError_AnyTypeNotRegistered, typeidName); }
 
+    inline Error _RcfError_CryptoApiError(
+        const std::string & funcName)                       { return Error(RcfError_CryptoApiError, funcName); }
+
+    inline Error _RcfError_ServerStubAccessDenied()         { return Error(RcfError_ServerStubAccessDenied); }
+
+    inline Error _RcfError_ApiError(
+        const std::string & whichApi)                       { return Error(RcfError_ApiError, whichApi); }
+
+    inline Error _RcfError_HttpProxyPort()                  { return Error(RcfError_HttpProxyPort); }
+
+    inline Error _RcfError_OpenSslError(
+        const std::string & openSslErrors)                  { return Error(RcfError_OpenSslError, openSslErrors); }
+
+    inline Error _RcfError_ProtocolNotSupported()           { return Error(RcfError_ProtocolNotSupported); }
+
+    inline Error _RcfError_ClearCommunicationNotAllowed(
+        const std::string & protocolNames)                  { return Error(RcfError_ClearCommunicationNotAllowed, protocolNames); }
+
+    inline Error _RcfError_ThreadingError(
+        const std::string & functionName)                   { return Error(RcfError_ThreadingError, functionName); }
+
+    inline Error _RcfError_RcfNotInitialized()              { return Error(RcfError_RcfNotInitialized); }
+
+    inline Error _RcfError_InvalidHttpMessage()             { return Error(RcfError_InvalidHttpMessage); }
+
+    inline Error _RcfError_HttpRequestContentLength()       { return Error(RcfError_HttpRequestContentLength); }
+
+    inline Error _RcfError_HttpResponseContentLength(
+        const std::string & httpStatus,
+        const std::string & httpResponse)                   { return Error(RcfError_HttpResponseContentLength, httpStatus, httpResponse); }
+
+    inline Error _RcfError_InvalidOpenSslCertificate()      { return Error(RcfError_InvalidOpenSslCertificate); }
+    inline Error _RcfError_InvalidSchannelCertificate()     { return Error(RcfError_InvalidSchannelCertificate); }
+
+    inline Error _RcfError_HttpConnectFailed(
+        const std::string & httpStatus, 
+        const std::string & httpResponse)                   { return Error(RcfError_HttpConnectFailed, httpStatus, httpResponse); }
+
+    inline Error _RcfError_SspiImpersonateNoSspi()          { return Error(RcfError_SspiImpersonateNoSspi); }
+
+    inline Error _RcfError_TransportProtocolNotSupported(
+        const std::string& protocolName)                    { return Error(RcfError_TransportProtocolNotSupported, protocolName); }
+
+    inline Error _RcfError_SslNotSupported()                { return Error(RcfError_SslNotSupported); }
+
+    inline Error _RcfError_SessionObjectDoesNotExist(
+        const std::string & objectType)                     { return Error(RcfError_SessionObjectDoesNotExist, objectType); }
+
+    inline Error _RcfError_UploadAlreadyCompleted()         { return Error(RcfError_UploadAlreadyCompleted); }
+
+    inline Error _RcfError_FileIndex(
+        boost::uint64_t expectedPos,
+        boost::uint64_t actualPos)                          { return Error(RcfError_FileOffset, numberToString(expectedPos), numberToString(actualPos)); }
+
+    inline Error _RcfError_ConcurrentCalls()                { return Error(RcfError_ConcurrentCalls); }
+
+    inline Error _RcfError_ParseJsonRpcRequest()            { return Error(RcfError_ParseJsonRpcRequest); }
+
+    inline Error _RcfError_DllLoad(
+        const std::string & dllName)                        { return Error(RcfError_DllLoad, dllName); }
+
+    inline Error _RcfError_DllFuncLoad(
+        const std::string & dllName,
+        const std::string & funcName)                       { return Error(RcfError_DllFuncLoad, dllName, funcName); }
+
+    inline Error _RcfError_UnixDllLoad(
+        const std::string & dllName,
+        const std::string & dlerr)                          { return Error(RcfError_UnixDllLoad, dllName, dlerr); }
+
+    inline Error _RcfError_UnixDllFuncLoad(
+        const std::string & dllName,
+        const std::string & funcName,
+        const std::string & dlerr)                          { return Error(RcfError_UnixDllFuncLoad, dllName, funcName, dlerr); }
+
+    inline Error _RcfError_PingBackInterval(
+        boost::uint32_t requestedIntervalMs,
+        boost::uint32_t minimumIntervalMs)                  { return Error(RcfError_PingBackInterval, numberToString(requestedIntervalMs), numberToString(minimumIntervalMs) ); }
+
+    inline Error _RcfError_FileOpenWrite(
+        const std::string & filePath)                       { return Error(RcfError_FileOpenWrite, filePath); }
+
+    inline Error _RcfError_CustomCertValidation(
+        const std::string & errorMsg)                       { return Error(RcfError_CustomCertValidation, errorMsg); }
+
+    inline Error _RcfError_SupportedOnWindowsOnly(
+        const std::string & className)                      { return Error(RcfError_SupportedOnWindowsOnly, className); }
+
+    inline Error _RcfError_NotSupportedOnWindows(
+        const std::string & className)                      { return Error(RcfError_NotSupportedOnWindows, className); }
+
+    inline Error _RcfError_NotSupportedInThisBuild(
+        const std::string & className)                      { return Error(RcfError_NotSupportedInThisBuild, className); }
+
+    inline Error _RcfError_NoLongerSupported(
+        const std::string & s)                              { return Error(RcfError_NoLongerSupported, s); }
+
+    inline Error _RcfError_SslCertVerificationCustom()      { return Error(RcfError_SslCertVerificationCustom); }
+
+    inline Error _RcfError_ServerCallbacksNotSupported()    { return Error(RcfError_ServerCallbacksNotSupported); }
+
+    inline Error _RcfError_ServerUnsupportedFeature(
+        const std::string & s)                              { return Error(RcfError_ServerUnsupportedFeature, s); }
+
+    inline Error _RcfError_SyncPublishError(
+        const std::string & s)                              { return Error(RcfError_SyncPublishError, s); }
+
+    inline Error _RcfError_DeserializeVectorBool(
+        boost::uint32_t bitCount,
+        boost::uint32_t bufferSize)                         { return Error(RcfError_DeserializeVectorBool, numberToString(bitCount), numberToString(bufferSize)); }
+
+    inline Error _RcfError_HttpTunnelError(
+        const std::string & errorMsg)                       { return Error(RcfError_HttpTunnelError, errorMsg); }
+
+    inline Error _RcfError_HttpSessionTimeout()             { return Error(RcfError_HttpSessionTimeout); }
+
+    inline Error _RcfError_HttpRequestSessionIndex(
+        int expectedIndex,
+        int actualIndex)                                    { return Error(RcfError_HttpRequestSessionIndex, numberToString(expectedIndex), numberToString(actualIndex)); }
+
+    inline Error _RcfError_HttpResponseStatus(
+        const std::string & responseLine,
+        const std::string & responseMessage)                { return Error(RcfError_HttpResponseStatus, responseLine, responseMessage); }
+
+    inline Error _RcfError_HttpResponseSessionIndex(
+        int expectedIndex,
+        int actualIndex)                                    { return Error(RcfError_HttpResponseSessionIndex, numberToString(expectedIndex), numberToString(actualIndex)); }
+
+    inline Error _RcfError_HttpResponseSessionId(
+        const std::string & expectedId,
+        const std::string & actualId)                       { return Error(RcfError_HttpResponseSessionId, expectedId, actualId); }
+
+    inline Error _RcfError_NotHttpResponse()                { return Error(RcfError_NotHttpResponse); }
+    inline Error _RcfError_NotHttpPostRequest()             { return Error(RcfError_NotHttpPostRequest); }
+    inline Error _RcfError_NotHttpRequest()                 { return Error(RcfError_NotHttpRequest); }
+    inline Error _RcfError_NotSslHandshake()                { return Error(RcfError_NotSslHandshake); }
+    inline Error _RcfError_ClientStubParms()                { return Error(RcfError_ClientStubParms); }
+    inline Error _RcfError_ServerStubParms()                { return Error(RcfError_ServerStubParms); }
+
+    inline Error _RcfError_SessionObjectNotCreated(
+        const std::string & objectType)                     { return Error(RcfError_SessionObjectNotCreated, objectType); }
+
+    inline Error _RcfError_MessageHeaderEncoding(
+        std::size_t maxLen,
+        std::size_t actualLen)                              { return Error(RcfError_MessageHeaderEncoding, numberToString(maxLen), numberToString(actualLen)); }
+
+    inline Error _RcfError_OnewayHttp()                     { return Error(RcfError_OnewayHttp); }
+
+    inline Error _RcfError_ProxyAuthRetry()                 { return Error(RcfError_ProxyAuthRetry); }
+    inline Error _RcfError_ProxyCredentialsNeeded()         { return Error(RcfError_ProxyCredentialsNeeded); }
+    inline Error _RcfError_ProxyCredentialsInvalid()        { return Error(RcfError_ProxyCredentialsInvalid); }
 
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -521,7 +746,6 @@ namespace RCF {
 
     RCF_EXPORT int getRuntimeVersionOfThisRemoteCall();
 
-    /// Base class of all exceptions thrown by RCF.
     class RCF_EXPORT Exception : public std::runtime_error
     {
     public:
@@ -545,14 +769,11 @@ namespace RCF {
 
         ~Exception() throw();
 
-        virtual std::auto_ptr<Exception> clone() const
-        {
-            return std::auto_ptr<Exception>(
-                new Exception(*this));
-        }
+        virtual std::auto_ptr<Exception> clone() const;
 
         bool            good() const;
         bool            bad() const;
+        void            clear();
 
         const char *    what()                  const throw();
         const Error &   getError()              const;
@@ -563,9 +784,11 @@ namespace RCF {
         std::string     getSubSystemName()      const;
         std::string     getContext()            const;
         std::string     getWhat()               const;
+        bool            getShouldRetry()        const;
 
         void            setContext(const std::string &context);
         void            setWhat(const std::string &what);
+        void            setShouldRetry(bool shouldRetry);
 
         virtual void    throwSelf() const;
 
@@ -581,6 +804,8 @@ namespace RCF {
         Error                   mError;
         int                     mSubSystemError;
         int                     mSubSystem;
+
+        bool                    mShouldRetry;
 
         mutable std::string     mTranslatedWhat;
     };
@@ -612,13 +837,13 @@ namespace RCF {
 
         std::string getRemoteExceptionType() const;
 
-#ifdef RCF_USE_SF_SERIALIZATION
+#if RCF_FEATURE_SF==1
 
         void serialize(SF::Archive & ar);
 
 #endif
 
-#ifdef RCF_USE_BOOST_SERIALIZATION
+#if RCF_FEATURE_BOOST_SERIALIZATION==1
 
         template<typename Archive>
         void serialize(Archive &ar, const unsigned int)
@@ -673,7 +898,7 @@ namespace RCF {
     public:                                                     \
         E(                                                      \
             const std::string &what = "") :                     \
-                PE(_RcfError_Unspecified(), what)               \
+                PE(RcfError_User, what)                         \
         {}                                                      \
         E(                                                      \
             Error error,                                        \
@@ -694,7 +919,7 @@ namespace RCF {
         }                                                       \
         void throwSelf() const                                  \
         {                                                       \
-            RCF_THROW((*this));                                 \
+            throw *this;                                        \
         }                                                       \
         ~E() throw()                                            \
         {}                                                      \
@@ -724,7 +949,7 @@ namespace RCF {
 
         void throwSelf() const
         {
-            RCF_THROW((*this));
+            throw *this;
         }
 
     private:
@@ -736,14 +961,4 @@ namespace RCF {
 
 } // namespace RCF
 
-#include <memory>
-#include <boost/type_traits.hpp>
-RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION( RCF::Error )
-RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION( std::vector<std::string> )
-RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION( RCF::RemoteException )
-RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION( std::auto_ptr<RCF::RemoteException> )
-
-#if defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6))
-#pragma GCC diagnostic pop
-#endif
 #endif // ! INCLUDE_RCF_EXCEPTION_HPP

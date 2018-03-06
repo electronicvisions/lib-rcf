@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -16,104 +19,20 @@
 #ifndef INCLUDE_RCF_BYTEBUFFER_HPP
 #define INCLUDE_RCF_BYTEBUFFER_HPP
 
-// ECM: strstream stuff :/
-#define _BACKWARD_BACKWARD_WARNING_H 1
-#include <strstream>
-#undef _BACKWARD_BACKWARD_WARNING_H
-
 #include <string>
 #include <vector>
 
 #include <boost/shared_ptr.hpp>
 
 #include <RCF/Export.hpp>
+#include <RCF/MemStream.hpp>
 #include <RCF/MinMax.hpp>
-#include <RCF/Tools.hpp>
-#include <RCF/TypeTraits.hpp>
+#include <RCF/ReallocBuffer.hpp>
 
 namespace RCF {
 
-    class ReallocBuffer
-    {
-    public:
-        ReallocBuffer() : mpch(NULL), mSize(0), mCapacity(0)
-        {
-        }
-
-        ReallocBuffer(std::size_t size) : mpch(NULL), mSize(0), mCapacity(0)
-        {
-            resize(size);
-        }
-
-        ~ReallocBuffer()
-        {
-            clear();
-        }
-
-        void clear()
-        {
-            void * ret = realloc(mpch, 0);
-            RCF_UNUSED_VARIABLE(ret);
-
-            mpch = NULL;
-        }
-
-        void resize(std::size_t newSize)
-        {
-            if (newSize > mCapacity)
-            {
-                mpch = (char *) realloc(mpch, newSize);
-                if (!mpch)
-                {
-                    throw std::bad_alloc();
-                }
-                mCapacity = newSize;
-
-                // TODO: optional zero initialization?
-                // ...
-            }
-            mSize = newSize;
-        }
-
-        std::size_t size()
-        {
-            return mSize;
-        }
-
-        std::size_t capacity()
-        {
-            return mCapacity;
-        }
-
-        bool empty()
-        {
-            return mSize == 0;
-        }
-
-        char * getPtr()
-        {
-            return mpch;
-        }
-
-        char & operator[](std::size_t pos)
-        {
-            return mpch[pos];
-        }
-
-        const char & operator[](std::size_t pos) const
-        {
-            return mpch[pos];
-        }
-
-    private:
-
-        char * mpch;
-        std::size_t mSize;
-        std::size_t mCapacity;
-
-    };
-
-    typedef boost::shared_ptr<ReallocBuffer> ReallocBufferPtr;
+    class MemOstream;
+    typedef boost::shared_ptr<MemOstream> MemOstreamPtr;
 
     // ByteBuffer class for facilitating zero-copy transmission and reception
 
@@ -144,6 +63,11 @@ namespace RCF {
             ReallocBufferPtr sprb,
             bool readOnly = false);
 
+        explicit
+        ByteBuffer(
+            MemOstreamPtr spos,
+            bool readOnly = false);
+
         ByteBuffer(
             char *pv,
             std::size_t pvlen,
@@ -158,14 +82,14 @@ namespace RCF {
         ByteBuffer(
             char *pv,
             std::size_t pvlen,
-            boost::shared_ptr<std::ostrstream> spos,
+            boost::shared_ptr<MemOstream> spos,
             bool readOnly = false);
 
         ByteBuffer(
             char *pv,
             std::size_t pvlen,
             std::size_t leftMargin,
-            boost::shared_ptr<std::ostrstream> spos,
+            boost::shared_ptr<MemOstream> spos,
             bool readOnly = false);
 
         ByteBuffer(
@@ -197,7 +121,7 @@ namespace RCF {
         ByteBuffer(
             const ByteBuffer & byteBuffer,
             std::size_t offset = 0,
-            std::size_t len = -1);
+            std::size_t len = std::size_t(-1));
 
         char *              getPtr()            const;
         std::size_t         getLength()         const;
@@ -220,7 +144,7 @@ namespace RCF {
     private:
         // sentries
         boost::shared_ptr< std::vector<char> >      mSpvc;
-        boost::shared_ptr< std::ostrstream >        mSpos;
+        boost::shared_ptr< MemOstream >             mSpos;
         boost::shared_ptr< ReallocBuffer >          mSprb;
 
         char *                                      mPv;
@@ -291,7 +215,7 @@ namespace RCF {
         std::vector<ByteBuffer> &slicedBuffers,
         const std::vector<ByteBuffer> &byteBuffers,
         std::size_t offset,
-        std::size_t length = -1);
+        std::size_t length = std::size_t(-1));
 
     RCF_EXPORT void copyByteBuffers(
         const std::vector<ByteBuffer> &byteBuffers,
@@ -302,8 +226,6 @@ namespace RCF {
         ByteBuffer &byteBuffer);
 
 } // namespace RCF
-
-RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION(RCF::ByteBuffer)
 
 namespace SF {
 

@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -25,12 +28,11 @@
 #include <sstream>
 #include <vector>
 
-#include "AutoRun.hpp"
-#include "ThreadLibrary.hpp"
+#include "RCF/ThreadLibrary.hpp"
 
-#include "Platform/OS/GetCurrentTime.hpp"
+namespace RCF {
 
-namespace util {
+    class ProfilingData;
 
     class ProfilingResults
     {
@@ -38,6 +40,8 @@ namespace util {
         ProfilingResults()
         {
         }
+
+        ~ProfilingResults();
 
         static ProfilingResults *&getSingletonPtrRef()
         {
@@ -48,6 +52,9 @@ namespace util {
             }
             return pProfilingResults;
         }
+
+        std::vector<ProfilingData *> pTlsData;
+
     public:
         static ProfilingResults &getSingleton()
         {
@@ -60,7 +67,7 @@ namespace util {
         }
         void dump()
         {
-            Platform::Threads::mutex::scoped_lock lock(mMutex);
+            RCF::Lock lock(mMutex);
             for (unsigned int i=0; i<mResults.size(); i++)
             {
                 std::ostringstream ostr;
@@ -86,12 +93,12 @@ namespace util {
         typedef std::map<std::string, unsigned int> SubDataT;
         typedef std::map<std::string, std::pair<unsigned int, SubDataT > > DataT;
 
-        Platform::Threads::mutex mMutex;
+        RCF::Mutex mMutex;
         std::vector< DataT * > mResults;
 
         void add( DataT *data )
         {
-            Platform::Threads::mutex::scoped_lock scoped_lock( mMutex );
+            RCF::Lock scoped_lock( mMutex );
             mResults.push_back( data );
         }
 
@@ -102,13 +109,20 @@ namespace util {
     private:
         ProfilingData() : stack_(100), data_(new DataT()) { ProfilingResults::getSingleton().add( data_ );  }
     public:
+        ~ProfilingData()
+        {
+            delete data_;
+            data_ = NULL;
+        }
+
         static ProfilingData &getThreadSpecificInstance()
         {
-            static ThreadSpecificPtr<ProfilingData>::Val profilingData;
+            static RCF::ThreadSpecificPtr<ProfilingData>::Val profilingData;
 
             if (NULL == profilingData.get())
             {
                 profilingData.reset(new ProfilingData());
+                ProfilingResults::getSingleton().pTlsData.push_back(profilingData);
                 profilingData->push("");
             }
             return *profilingData;
@@ -140,7 +154,7 @@ namespace util {
 
     inline unsigned int getTickCount()
     {
-        return Platform::OS::getCurrentTimeMs();
+        return RCF::getCurrentTimeMs();
     }
 
     class Profile
@@ -185,7 +199,7 @@ namespace util {
         ImmediateProfile(const std::string &name) :
             mName(name),
             t0Ms(getTickCount()),
-            t1Ms(RCF_DEFAULT_INIT)
+            t1Ms()
         {}
 
         ~ImmediateProfile()
@@ -202,9 +216,16 @@ namespace util {
         unsigned int t1Ms;
     };
 
-    UTIL_ON_INIT_NAMED( ProfilingResults::getSingleton(); , ProfilingResultsInitialize)
-    UTIL_ON_DEINIT_NAMED( ProfilingResults::getSingleton().dump(); ProfilingResults::deleteSingleton();,  ProfilingResultsDeinitialize)
+    ProfilingResults::~ProfilingResults()
+    {
+        for (std::size_t i=0; i<pTlsData.size(); ++i)
+        {
+            delete pTlsData[i];
+        }
+        pTlsData.clear();
+    }
 
-} // namespace util
+
+} // namespace RCF
 
 #endif //! INCLUDE_UTIL_PROFILE_HPP

@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -34,119 +37,91 @@
 #include <RCF/Export.hpp>
 #include <RCF/GetInterfaceName.hpp>
 #include <RCF/RcfClient.hpp>
+#include <RCF/ServerObjectService.hpp>
 #include <RCF/ServerStub.hpp>
 #include <RCF/ServerTransport.hpp>
 #include <RCF/ThreadLibrary.hpp>
 #include <RCF/ThreadPool.hpp>
 
-#if !defined(RCF_NO_DIAGNOSTIC_WARNINGS)
-#if !defined(BOOST_WINDOWS) && !defined(RCF_USE_BOOST_ASIO) && defined(__GNUC__)
-#warning "Warning: On non-Windows platforms, RCF server-side components require Boost.Asio. To configure RCF to use Boost.Asio, define RCF_USE_BOOST_ASIO."
+#if RCF_FEATURE_FILETRANSFER==1
+#include <RCF/FileTransferService.hpp>
 #endif
+
+#if RCF_FEATURE_PUBSUB==1
+#include <RCF/PublishingService.hpp>
+#include <RCF/SubscriptionService.hpp>
 #endif
 
 namespace RCF {
 
-    class I_ServerTransport;
+    class ServerTransport;
     class StubEntry;
     class I_Service;
     class RcfSession;
-    class I_Endpoint;
+    class Endpoint;
     class I_FilterFactoryLookupProvider;
     class I_RcfClient;
-    class I_IpServerTransport;
+    class IpServerTransport;
     class PingBackService;
     class FileTransferService;
     class ObjectFactoryService;
     class FilterService;
     class SessionTimeoutService;
-
-    typedef boost::shared_ptr<I_ServerTransport>                ServerTransportPtr;
+    class PublishingService;
+    class SubscriptionService;
+    class SessionObjectFactoryService;
+    class ObjectFactoryService;
+    class CallbackConnectionService;
+    
+    typedef boost::shared_ptr<ServerTransport>                  ServerTransportPtr;
     typedef boost::shared_ptr<StubEntry>                        StubEntryPtr;
     typedef boost::shared_ptr<I_Service>                        ServicePtr;
     typedef boost::shared_ptr<RcfSession>                       RcfSessionPtr;
     typedef boost::shared_ptr<I_FilterFactoryLookupProvider>    FilterFactoryLookupProviderPtr;
     typedef boost::shared_ptr<I_RcfClient>                      RcfClientPtr;
-    typedef boost::shared_ptr<I_Endpoint>                       EndpointPtr;
+    typedef boost::shared_ptr<Endpoint>                         EndpointPtr;
     typedef boost::shared_ptr<PingBackService>                  PingBackServicePtr;
     typedef boost::shared_ptr<FileTransferService>              FileTransferServicePtr;
     typedef boost::shared_ptr<ObjectFactoryService>             ObjectFactoryServicePtr;
     typedef boost::shared_ptr<FilterService>                    FilterServicePtr;
     typedef boost::shared_ptr<SessionTimeoutService>            SessionTimeoutServicePtr;
+    typedef boost::shared_ptr<PublishingService>                PublishingServicePtr;
+    typedef boost::shared_ptr<SubscriptionService>              SubscriptionServicePtr;
+    typedef boost::shared_ptr<SessionObjectFactoryService>      SessionObjectFactoryServicePtr;
+    typedef boost::shared_ptr<ObjectFactoryService>             ObjectFactoryServicePtr;
+    typedef boost::shared_ptr<CallbackConnectionService>        CallbackConnectionServicePtr;
     typedef boost::weak_ptr<RcfSession>                         RcfSessionWeakPtr;  
 
-#if defined(_MSC_VER) && _MSC_VER < 1310
+    template<typename Interface>
+    class Publisher;
 
-    template<typename T>
-    struct BindDirect
-    {
-        typedef char (&yes_type)[1];
-        typedef char (&no_type)[2];
-        template<typename U> static yes_type dummyfunc(std::auto_ptr<U> *);
-        template<typename U> static yes_type dummyfunc(boost::shared_ptr<U> *);
-        template<typename U> static yes_type dummyfunc(boost::weak_ptr<U> *);
-        static no_type dummyfunc(...);
-        typedef boost::mpl::bool_< sizeof(no_type) == sizeof(dummyfunc( (T *) 0)) > type;
-    };
+    class Subscription;
+    typedef boost::shared_ptr<Subscription> SubscriptionPtr;
 
-#else
+    class SubscriptionParms;
 
-    template<typename T> struct BindDirect                          { typedef boost::mpl::true_ type; };
-    template<typename T> struct BindDirect< std::auto_ptr<T> >      { typedef boost::mpl::false_ type; };
-    template<typename T> struct BindDirect< boost::shared_ptr<T> >  { typedef boost::mpl::false_ type; };
-    template<typename T> struct BindDirect< boost::weak_ptr<T> >    { typedef boost::mpl::false_ type; };
+    class BandwidthQuota;
+    typedef boost::shared_ptr<BandwidthQuota> BandwidthQuotaPtr;
 
-#endif
+    class FileDownloadInfo;
+    class FileUploadInfo;
 
+    class JsonRpcRequest;
+    class JsonRpcResponse;
 
-#define RCF_SERVER_BINDING_SECTION_1_1(i1, T, arg)                                          \
-    template<typename i1, typename ImplementationT>                                         \
-    bool bind_impl_1(i1*, T t, const std::string &name, arg*)
+    class SspiFilter;
 
-#define RCF_SERVER_BINDING_SECTION_1_2(i1, i2, T, arg)                                      \
-    template<typename i1, typename i2, typename ImplementationT>                            \
-    bool bind_impl_2(i1*, i2 *, T t, const std::string &name, arg*)
+    class HttpSession;
+    typedef boost::shared_ptr<HttpSession> HttpSessionPtr;
 
-#define RCF_SERVER_BINDING_SECTION_1_3(i1, i2, i3, T, arg)                                  \
-    template<typename i1, typename i2, typename i3, typename ImplementationT>               \
-    bool bind_impl_3(i1*, i2*, i3*, T t, const std::string &name, arg*)
-
-#define RCF_SERVER_BINDING_SECTION_1_4(i1, i2, i3, i4, T, arg)                              \
-    template<typename i1, typename i2, typename i3, typename i4, typename ImplementationT>  \
-    bool bind_impl_4(i1*, i2*, i3*, i4*, T t, const std::string &name, arg*)
-
-#define RCF_SERVER_BINDING_SECTION_2(DerefT)                                                \
-    {                                                                                       \
-        boost::shared_ptr< I_Deref<ImplementationT> > derefPtr(                             \
-            new DerefT(t) );                                                                \
-                                                                                            \
-        RcfClientPtr rcfClientPtr = createServerStub(                                       \
-            (I1 *) 0,                                                                       \
-            (ImplementationT *) 0,                                                          \
-            derefPtr);                                                                      \
-
-#define RCF_SERVER_BINDING_SECTION_3(I_n)                                                   \
-        {                                                                                   \
-            RcfClientPtr mergeePtr = createServerStub(                                      \
-                (I_n *) 0,                                                                  \
-                (ImplementationT *) 0,                                                      \
-                derefPtr);                                                                  \
-                                                                                            \
-            rcfClientPtr->getServerStub().merge(mergeePtr);                                 \
-    }
-
-#define RCF_SERVER_BINDING_SECTION_4                                                        \
-        return bindShared(                                                                  \
-            name.empty() ? I1::getInterfaceName() : name ,                                  \
-            rcfClientPtr);                                                                  \
-    }                                                                                       \
+    typedef boost::function2<void, RcfSessionPtr, ClientTransportAutoPtr> OnCallbackConnectionCreated;
 
     class RCF_EXPORT RcfServer : boost::noncopyable
     {
     public:
 
         RcfServer();
-        RcfServer(const I_Endpoint &endpoint);
+        RcfServer(const Endpoint &endpoint);
         RcfServer(ServicePtr servicePtr);
         RcfServer(ServerTransportPtr serverTransportPtr);
 
@@ -155,23 +130,16 @@ namespace RCF {
         typedef boost::function0<void> JoinFunctor;
         typedef boost::function1<void, RcfServer&> StartCallback;
 
-#ifdef RCF_MULTI_THREADED
-
         void    start();
-
-#endif
-
-        void    startSt();
-        void    addJoinFunctor(const JoinFunctor &joinFunctor);
-        void    startInThisThread();
-        void    startInThisThread(const JoinFunctor &joinFunctor);
         void    stop();
-        bool    cycle(int timeoutMs = 0);
-        void    cycleSessions(int timeoutMs, const volatile bool &stopFlag);
+
+    private:
+
+        void init();
 
     public:
 
-        I_ServerTransport &     
+        ServerTransport &     
                 getServerTransport();
 
         I_Service &             
@@ -180,8 +148,10 @@ namespace RCF {
         ServerTransportPtr      
                 getServerTransportPtr();
 
-        I_IpServerTransport &   
+        IpServerTransport &   
                 getIpServerTransport();
+
+    private:
 
         bool    addService(
                     ServicePtr servicePtr);
@@ -189,23 +159,39 @@ namespace RCF {
         bool    removeService(
                     ServicePtr servicePtr);
 
+    public:
+
         PingBackServicePtr 
                 getPingBackServicePtr();
 
         FileTransferServicePtr
                 getFileTransferServicePtr();
 
+        SessionTimeoutServicePtr 
+                getSessionTimeoutServicePtr();
+
         ObjectFactoryServicePtr
                 getObjectFactoryServicePtr();
 
-        SessionTimeoutServicePtr 
-                getSessionTimeoutServicePtr();
+        SessionObjectFactoryServicePtr
+                getSessionObjectFactoryServicePtr();
+
+        PublishingServicePtr
+                getPublishingServicePtr();
+
+        SubscriptionServicePtr
+                getSubscriptionServicePtr();
+
+        FilterServicePtr getFilterServicePtr();
 
         bool    addServerTransport(
                     ServerTransportPtr serverTransportPtr);
 
         bool    removeServerTransport(
-                    ServerTransportPtr serverTransportPtr);        
+                    ServerTransportPtr serverTransportPtr);
+
+        ServerTransport & 
+                findTransportCompatibleWith(ClientTransport & clienetTransport);
         
         void    setStartCallback(const StartCallback &startCallback);       
         
@@ -213,7 +199,7 @@ namespace RCF {
         void    invokeStartCallback();
 
     private:
-        bool    bindShared(
+        ServerBindingPtr bindImpl(
                     const std::string &name, 
                     RcfClientPtr rcfClientPtr);
 
@@ -232,17 +218,20 @@ namespace RCF {
 
     private:
 
-        void startImpl(bool spawnThreads);
+        void startImpl();
 
     public:
 
-        bool getStopFlag() const;
 
         template<typename Iter>
         void enumerateSessions(const Iter & iter)
         {
-            Lock lock(mSessionsMutex);
-            std::copy(mSessions.begin(), mSessions.end(), iter);
+
+            for (std::size_t i=0; i<mServerTransports.size(); ++i)
+            {
+                mServerTransports[i]->enumerateSessions(iter);
+            }
+
         }
 
         //*************************************
@@ -253,16 +242,12 @@ namespace RCF {
         typedef std::map<std::string, StubEntryPtr>     StubMap;
         StubMap                                         mStubMap;
 
-        Mutex                                           mSessionsMutex;
-        std::set<RcfSessionWeakPtr>                     mSessions;
+        typedef boost::function<void(const JsonRpcRequest &, JsonRpcResponse &)> JsonRpcMethod;
+        typedef std::map<std::string, JsonRpcMethod>    JsonRpcMethods;
+        JsonRpcMethods                                  mJsonRpcMethods;
 
         friend class RcfSession;
 
-        void registerSession(
-            RcfSessionPtr rcfSessionPtr);
-
-        void unregisterSession(
-            RcfSessionWeakPtr rcfSessionWeakPtr);
 
 
         //*************************************
@@ -271,27 +256,29 @@ namespace RCF {
     private:
         std::vector<ServerTransportPtr>                 mServerTransports;
         std::vector<ServicePtr>                         mServices;
-        ObjectFactoryServicePtr                         mObjectFactoryServicePtr;
         FilterServicePtr                                mFilterServicePtr;
         PingBackServicePtr                              mPingBackServicePtr;
         FileTransferServicePtr                          mFileTransferServicePtr;
         SessionTimeoutServicePtr                        mSessionTimeoutServicePtr;
-
-        std::vector<JoinFunctor>                        mJoinFunctors;
+        PublishingServicePtr                            mPublishingServicePtr;
+        SubscriptionServicePtr                          mSubscriptionServicePtr;
+        CallbackConnectionServicePtr                    mCallbackConnectionServicePtr;
+        SessionObjectFactoryServicePtr                  mSessionObjectFactoryServicePtr;
+        ObjectFactoryServicePtr                         mObjectFactoryServicePtr;
+        ServerObjectServicePtr                          mServerObjectServicePtr;
 
         void startService(ServicePtr servicePtr) const;
-        void stopService(ServicePtr servicePtr, bool wait = true) const;
+        void stopService(ServicePtr servicePtr) const;
         void resolveServiceThreadPools(ServicePtr servicePtr) const;
 
+        friend class AsioNetworkSession;
         FilterPtr createFilter(int filterId);
 
     private:
         // start/stop functionality
         StartCallback                                   mStartCallback;
-        Platform::Threads::condition                    mStartEvent;
-        Platform::Threads::condition                    mStopEvent;
-
-        volatile bool                                   mServerThreadsStopFlag;
+        Condition                                       mStartEvent;
+        Condition                                       mStopEvent;
 
         Mutex                                           mStartStopMutex;
         bool                                            mStarted;
@@ -300,19 +287,15 @@ namespace RCF {
     public:
         void                    setThreadPool(ThreadPoolPtr threadPoolPtr);
         ThreadPoolPtr           getThreadPool();
-        I_ServerTransport &     addEndpoint(const I_Endpoint & endpoint);
+        ServerTransport &     addEndpoint(const Endpoint & endpoint);
 
     private:
         ThreadPoolPtr                                   mThreadPoolPtr;
 
     public:
 
-#ifdef RCF_MULTI_THREADED
-
         void                    waitForStopEvent();
         void                    waitForStartEvent();
-
-#endif
 
     bool                        isStarted();
 
@@ -334,200 +317,25 @@ namespace RCF {
 
     public:
 
-        // binding infrastructure
+        template<typename I1, typename ImplementationT> 
+        ServerBindingPtr bind(ImplementationT & t, const std::string &name = "")
+        { 
+            boost::shared_ptr< I_Deref<ImplementationT> > derefPtr( 
+                new DerefObj<ImplementationT>(t) ); 
 
-        // following functions are defined inline for reasons of portability (vc6 in particular)
+            RcfClientPtr rcfClientPtr = createServerStub( 
+                (I1 *) 0, 
+                (ImplementationT *) 0, derefPtr);
 
-        // direct
-        RCF_SERVER_BINDING_SECTION_1_1(I1, ImplementationT &, boost::mpl::true_)
-        RCF_SERVER_BINDING_SECTION_2(DerefObj<ImplementationT>)
-        RCF_SERVER_BINDING_SECTION_4
-
-        RCF_SERVER_BINDING_SECTION_1_2(I1, I2, ImplementationT &, boost::mpl::true_)
-        RCF_SERVER_BINDING_SECTION_2(DerefObj<ImplementationT>)
-        RCF_SERVER_BINDING_SECTION_3(I2)
-        RCF_SERVER_BINDING_SECTION_4
-
-        RCF_SERVER_BINDING_SECTION_1_3(I1, I2, I3, ImplementationT &, boost::mpl::true_)
-        RCF_SERVER_BINDING_SECTION_2(DerefObj<ImplementationT>)
-        RCF_SERVER_BINDING_SECTION_3(I2)
-        RCF_SERVER_BINDING_SECTION_3(I3)
-        RCF_SERVER_BINDING_SECTION_4
-
-        RCF_SERVER_BINDING_SECTION_1_4(I1, I2, I3, I4, ImplementationT &, boost::mpl::true_)
-        RCF_SERVER_BINDING_SECTION_2(DerefObj<ImplementationT>)
-        RCF_SERVER_BINDING_SECTION_3(I2)
-        RCF_SERVER_BINDING_SECTION_3(I3)
-        RCF_SERVER_BINDING_SECTION_3(I4)
-        RCF_SERVER_BINDING_SECTION_4
-
-        // indirect - shared_ptr
-        RCF_SERVER_BINDING_SECTION_1_1(I1, boost::shared_ptr<ImplementationT>, boost::mpl::false_)
-        RCF_SERVER_BINDING_SECTION_2(DerefSharedPtr<ImplementationT>)
-        RCF_SERVER_BINDING_SECTION_4
-
-        RCF_SERVER_BINDING_SECTION_1_2(I1, I2, boost::shared_ptr<ImplementationT>, boost::mpl::false_)
-        RCF_SERVER_BINDING_SECTION_2(DerefSharedPtr<ImplementationT>)
-        RCF_SERVER_BINDING_SECTION_3(I2)
-        RCF_SERVER_BINDING_SECTION_4
-
-        RCF_SERVER_BINDING_SECTION_1_3(I1, I2, I3, boost::shared_ptr<ImplementationT>, boost::mpl::false_)
-        RCF_SERVER_BINDING_SECTION_2(DerefSharedPtr<ImplementationT>)
-        RCF_SERVER_BINDING_SECTION_3(I2)
-        RCF_SERVER_BINDING_SECTION_3(I3)
-        RCF_SERVER_BINDING_SECTION_4
-
-        RCF_SERVER_BINDING_SECTION_1_4(I1, I2, I3, I4, boost::shared_ptr<ImplementationT>, boost::mpl::false_)
-        RCF_SERVER_BINDING_SECTION_2(DerefSharedPtr<ImplementationT>)
-        RCF_SERVER_BINDING_SECTION_3(I2)
-        RCF_SERVER_BINDING_SECTION_3(I3)
-        RCF_SERVER_BINDING_SECTION_3(I4)
-        RCF_SERVER_BINDING_SECTION_4
-
-        // indirect - weak_ptr
-        RCF_SERVER_BINDING_SECTION_1_1(I1, boost::weak_ptr<ImplementationT>, boost::mpl::false_)
-        RCF_SERVER_BINDING_SECTION_2(DerefWeakPtr<ImplementationT>)
-        RCF_SERVER_BINDING_SECTION_4
-
-        RCF_SERVER_BINDING_SECTION_1_2(I1, I2, boost::weak_ptr<ImplementationT>, boost::mpl::false_)
-        RCF_SERVER_BINDING_SECTION_2(DerefWeakPtr<ImplementationT>)
-        RCF_SERVER_BINDING_SECTION_3(I2)
-        RCF_SERVER_BINDING_SECTION_4
-
-        RCF_SERVER_BINDING_SECTION_1_3(I1, I2, I3, boost::weak_ptr<ImplementationT>, boost::mpl::false_)
-        RCF_SERVER_BINDING_SECTION_2(DerefWeakPtr<ImplementationT>)
-        RCF_SERVER_BINDING_SECTION_3(I2)
-        RCF_SERVER_BINDING_SECTION_3(I3)
-        RCF_SERVER_BINDING_SECTION_4
-
-        RCF_SERVER_BINDING_SECTION_1_4(I1, I2, I3, I4, boost::weak_ptr<ImplementationT>, boost::mpl::false_)
-        RCF_SERVER_BINDING_SECTION_2(DerefWeakPtr<ImplementationT>)
-        RCF_SERVER_BINDING_SECTION_3(I2)
-        RCF_SERVER_BINDING_SECTION_3(I3)
-        RCF_SERVER_BINDING_SECTION_3(I4)
-        RCF_SERVER_BINDING_SECTION_4
-
-        // indirect - auto_ptr
-        RCF_SERVER_BINDING_SECTION_1_1(I1, const std::auto_ptr<ImplementationT> &, boost::mpl::false_)
-        RCF_SERVER_BINDING_SECTION_2(DerefAutoPtr<ImplementationT>)
-        RCF_SERVER_BINDING_SECTION_4
-
-        RCF_SERVER_BINDING_SECTION_1_2(I1, I2, const std::auto_ptr<ImplementationT> &, boost::mpl::false_)
-        RCF_SERVER_BINDING_SECTION_2(DerefAutoPtr<ImplementationT>)
-        RCF_SERVER_BINDING_SECTION_3(I2)
-        RCF_SERVER_BINDING_SECTION_4
-
-        RCF_SERVER_BINDING_SECTION_1_3(I1, I2, I3, const std::auto_ptr<ImplementationT> &, boost::mpl::false_)
-        RCF_SERVER_BINDING_SECTION_2(DerefAutoPtr<ImplementationT>)
-        RCF_SERVER_BINDING_SECTION_3(I2)
-        RCF_SERVER_BINDING_SECTION_3(I3)
-        RCF_SERVER_BINDING_SECTION_4
-
-        RCF_SERVER_BINDING_SECTION_1_4(I1, I2, I3, I4, const std::auto_ptr<ImplementationT> &, boost::mpl::false_)
-        RCF_SERVER_BINDING_SECTION_2(DerefAutoPtr<ImplementationT>)
-        RCF_SERVER_BINDING_SECTION_3(I2)
-        RCF_SERVER_BINDING_SECTION_3(I3)
-        RCF_SERVER_BINDING_SECTION_3(I4)
-        RCF_SERVER_BINDING_SECTION_4
-
-#if !defined(_MSC_VER) || _MSC_VER > 1200
-
-        template<typename I1, typename ImplementationT>
-        bool bind(ImplementationT &t, const std::string &name = "")
-        {
-            typedef typename BindDirect<ImplementationT>::type type;
-            return bind_impl_1((I1 *) NULL, t, name, (type *) NULL);
-        }
-
-        template<typename I1, typename I2, typename ImplementationT>
-        bool bind(ImplementationT &t, const std::string &name = "")
-        {
-            typedef typename BindDirect<ImplementationT>::type type;
-            return bind_impl_2((I1 *) NULL, (I2 *) NULL, t, name, (type *) NULL);
-        }
-
-        template<typename I1, typename I2, typename I3, typename ImplementationT>
-        bool bind(ImplementationT &t, const std::string &name = "")
-        {
-            typedef typename BindDirect<ImplementationT>::type type;
-            return bind_impl_3((I1 *) NULL, (I2 *) NULL, (I3 *) NULL, t, name, (type *) NULL);
-        }
-
-        template<typename I1, typename I2, typename I3, typename I4, typename ImplementationT>
-        bool bind(ImplementationT &t, const std::string &name = "")
-        {
-            typedef typename BindDirect<ImplementationT>::type type;
-            return bind_impl_4((I1 *) NULL, (I2 *) NULL, (I3 *) NULL, (I4 *) NULL, t, name, (type *) NULL);
-        }
-
-
-        template<typename I1, typename ImplementationT>
-        bool bind(const ImplementationT &t, const std::string &name = "")
-        {
-            typedef typename BindDirect<ImplementationT>::type type;
-            return bind_impl_1((I1 *) NULL, t, name, (type *) NULL);
-        }
-
-        template<typename I1, typename I2, typename ImplementationT>
-        bool bind(const ImplementationT &t, const std::string &name = "")
-        {
-            typedef typename BindDirect<ImplementationT>::type type;
-            return bind_impl_2((I1 *) NULL, (I2 *) NULL, t, name, (type *) NULL);
-        }
-
-        template<typename I1, typename I2, typename I3, typename ImplementationT>
-        bool bind(const ImplementationT &t, const std::string &name = "")
-        {
-            typedef typename BindDirect<ImplementationT>::type type;
-            return bind_impl_3((I1 *) NULL, (I2 *) NULL, (I3 *) NULL, t, name, (type *) NULL);
-        }
-
-        template<typename I1, typename I2, typename I3, typename I4, typename ImplementationT>
-        bool bind(const ImplementationT &t, const std::string &name = "")
-        {
-            typedef typename BindDirect<ImplementationT>::type type;
-            return bind_impl_4((I1 *) NULL, (I2 *) NULL, (I3 *) NULL, (I4 *) NULL, t, name, (type *) NULL);
-        }
-
-
-        template<typename InterfaceT>
-        bool unbind(const std::string &name = "")
-        {
-            return unbind((InterfaceT *) NULL, name);
-        }
-
-#endif
-
-        template<typename I1, typename ImplementationT>
-        bool bind(I1 *i1, ImplementationT &t, const std::string &name = "")
-        {
-            typedef typename BindDirect<ImplementationT>::type type;
-            return bind_impl_1(i1, t, name, (type *) NULL);
-        }
-
-        template<typename I1, typename I2, typename ImplementationT>
-        bool bind(I1 *i1, I2 *i2, ImplementationT &t, const std::string &name = "")
-        {
-            typedef typename BindDirect<ImplementationT>::type type;
-            return bind_impl_2(i1, i2, t, name, (type *) NULL);
-        }
-
-        template<typename I1, typename I2, typename I3, typename ImplementationT>
-        bool bind(I1 *i1, I2 *i2, I3 *i3, ImplementationT &t, const std::string &name = "")
-        {
-            typedef typename BindDirect<ImplementationT>::type type;
-            return bind_impl_3(i1, i2, i3, t, name, (type *) NULL);
-        }
-
-        template<typename I1, typename I2, typename I3, typename I4, typename ImplementationT>
-        bool bind(I1 *i1, I2 *i2, I3 *i3, I4 *i4, ImplementationT &t, const std::string &name = "")
-        {
-            typedef typename BindDirect<ImplementationT>::type type;
-            return bind_impl_4(i1, i2, i3, i4, t, name, (type *) NULL);
+            return bindImpl( 
+                name.empty() ? 
+                    I1::getInterfaceName() : 
+                    name , 
+                rcfClientPtr); 
         }
 
         template<typename InterfaceT>
-        bool unbind(InterfaceT * , const std::string &name_ = "")
+        bool unbind(const std::string &name_ = "")
         {
             const std::string &name = (name_ == "") ?
                 getInterfaceName((InterfaceT *) NULL) :
@@ -538,6 +346,205 @@ namespace RCF {
             return true;
         }
 
+#if RCF_FEATURE_JSON==1
+        void bindJsonRpc(JsonRpcMethod jsonRpcMethod, const std::string & jsonRpcName);
+        void unbindJsonRpc(const std::string & jsonRpcName);
+#endif
+        
+        void setSupportedTransportProtocols(
+            const std::vector<TransportProtocol> & protocols);
+
+        const std::vector<TransportProtocol> & 
+            getSupportedTransportProtocols() const;
+
+        void setCertificate(CertificatePtr certificatePtr);
+        CertificatePtr getCertificate();
+
+        void setOpenSslCipherSuite(const std::string & cipherSuite);
+        std::string getOpenSslCipherSuite() const;
+
+        void setCaCertificate(CertificatePtr certificatePtr);
+        CertificatePtr getCaCertificate();
+
+
+        typedef boost::function<bool(Certificate *)> CertificateValidationCb;
+        void setCertificateValidationCallback(CertificateValidationCb certificateValidationCb);
+        const CertificateValidationCb & getCertificateValidationCallback() const;
+
+        void setEnableSchannelCertificateValidation(const tstring & peerName);
+        tstring getEnableSchannelCertificateValidation() const;
+
+        void setSslImplementation(SslImplementation sslImplementation);
+        SslImplementation getSslImplementation() const;
+
+        void setSessionTimeoutMs(boost::uint32_t sessionTimeoutMs);
+        boost::uint32_t getSessionTimeoutMs();
+
+        void setSessionHarvestingIntervalMs(boost::uint32_t sessionHarvestingIntervalMs);
+        boost::uint32_t getSessionHarvestingIntervalMs();
+
+        void setHttpSessionTimeoutMs(boost::uint32_t httpSessionTimeoutMs);
+        boost::uint32_t getHttpSessionTimeoutMs();
+
+        void setOnCallbackConnectionCreated(OnCallbackConnectionCreated onCallbackConnectionCreated);
+        OnCallbackConnectionCreated getOnCallbackConnectionCreated();
+
+        void setOfsMaxNumberOfObjects(boost::uint32_t ofsMaxNumberOfObjects);
+        void setOfsObjectTimeoutS(boost::uint32_t ofsObjectTimeoutS);
+        void setOfsCleanupIntervalS(boost::uint32_t ofsCleanupIntervalS);
+        void setOfsCleanupThreshold(float ofsCleanupThreshold);
+
+        boost::uint32_t getOfsMaxNumberOfObjects() const;
+        boost::uint32_t  getOfsObjectTimeoutS() const;
+        boost::uint32_t getOfsCleanupIntervalS() const;
+        float getOfsCleanupThreshold() const;
+
+#if RCF_FEATURE_FILETRANSFER==1
+
+        typedef FileTransferService::OnFileDownloadProgress OnFileDownloadProgress;
+        typedef FileTransferService::OnFileUploadProgress OnFileUploadProgress;
+
+        void setOnFileDownloadProgress(OnFileDownloadProgress onFileDownloadProgress);
+        void setOnFileUploadProgress(OnFileUploadProgress onFileUploadProgress);
+
+        void setFileUploadDirectory(const std::string & uploadDir);
+        std::string getFileUploadDirectory() const;
+
+        typedef boost::function1<BandwidthQuotaPtr, RcfSession &> BandwidthQuotaCallback;
+        typedef BandwidthQuotaCallback FileUploadQuotaCallback;
+        typedef BandwidthQuotaCallback FileDownloadQuotaCallback;
+
+        void setFileUploadBandwidthLimit(boost::uint32_t uploadQuotaBps);
+        boost::uint32_t getFileUploadBandwidthLimit() const;
+
+        void setFileUploadCustomBandwidthLimit(FileUploadQuotaCallback uploadQuotaCb);
+
+        void setFileDownloadBandwidthLimit(boost::uint32_t downloadQuotaBps);
+        boost::uint32_t getFileDownloadBandwidthLimit() const;
+
+        void setFileDownloadCustomBandwidthLimit(FileDownloadQuotaCallback downloadQuotaCb);
+
+    private:
+
+        OnFileDownloadProgress          mOnFileDownloadProgress;
+        OnFileUploadProgress            mOnFileUploadProgress;
+
+        std::string                     mFileUploadDirectory;
+
+        boost::uint32_t                 mFileUploadQuota;
+        FileUploadQuotaCallback         mFileUploadQuotaCb;
+
+        boost::uint32_t                 mFileDownloadQuota;
+        FileDownloadQuotaCallback       mFileDownloadQuotaCb;
+
+        friend class FileTransferService;
+
+#endif
+
+    private:
+
+        mutable ReadWriteMutex          mPropertiesMutex;
+
+        std::vector<TransportProtocol>  mSupportedProtocols;
+        CertificatePtr                  mCertificatePtr;
+        std::string                     mOpenSslCipherSuite;
+
+        CertificatePtr                  mCaCertificatePtr;
+        CertificateValidationCb         mCertificateValidationCb;
+        tstring                         mSchannelCertificateValidation;
+
+        SslImplementation               mSslImplementation;
+
+        boost::uint32_t                 mSessionTimeoutMs;
+        boost::uint32_t                 mSessionHarvestingIntervalMs;
+
+        boost::uint32_t                 mHttpSessionTimeoutMs;
+
+        OnCallbackConnectionCreated     mOnCallbackConnectionCreated;
+
+        boost::uint32_t                 mOfsMaxNumberOfObjects;
+        boost::uint32_t                 mOfsObjectTimeoutS;
+        boost::uint32_t                 mOfsCleanupIntervalS;
+        float                           mOfsCleanupThreshold;
+
+    public:
+
+#if RCF_FEATURE_PUBSUB==1
+
+        template<typename Interface>
+        boost::shared_ptr< Publisher<Interface> > createPublisher()
+        {
+            PublisherParms parms;
+            return mPublishingServicePtr->createPublisher<Interface>(parms);
+        }
+
+        template<typename Interface>
+        boost::shared_ptr< Publisher<Interface> > createPublisher(
+            const PublisherParms & parms)
+        {
+            return mPublishingServicePtr->createPublisher<Interface>(parms);
+        }
+
+        template<typename Interface, typename T>
+        boost::shared_ptr< Subscription > createSubscription(
+            T & t, 
+            const RCF::Endpoint & publisherEp)
+        {
+            RCF_ASSERT(mStarted);
+            SubscriptionParms parms;
+            parms.setPublisherEndpoint(publisherEp);
+            return mSubscriptionServicePtr->createSubscription<Interface>(t, publisherEp);
+        }
+
+        template<typename Interface, typename T>
+        boost::shared_ptr< Subscription > createSubscription(
+            T & t, 
+            const SubscriptionParms & parms)
+        {
+            RCF_ASSERT(mStarted);
+            return mSubscriptionServicePtr->createSubscription<Interface>(t, parms);
+        }
+
+#endif
+
+    private:
+
+        boost::uint32_t mServerObjectHarvestingIntervalS;
+
+        Mutex                                   mHttpSessionMapMutex;
+        std::map<std::string, HttpSessionPtr>   mHttpSessionMap;
+
+        friend class HttpSessionFilter;
+
+        HttpSessionPtr  attachHttpSession(const std::string & httpSessionId, bool allowCreate, ExceptionPtr & ePtr);
+        void            detachHttpSession(HttpSessionPtr httpSessionPtr);
+
+        friend class ServerObjectService;
+        void            harvestHttpSessions();
+
+    public:
+
+        boost::uint32_t getServerObjectHarvestingIntervalS() const;
+        void setServerObjectHarvestingIntervalS(boost::uint32_t harvestingIntervalS);
+
+        template<typename T>
+        boost::shared_ptr<T> queryServerObject(
+            const std::string & objectKey)
+        {
+            return mServerObjectServicePtr->queryServerObject<T>(objectKey);
+        }
+
+        template<typename T>
+        boost::shared_ptr<T> getServerObject(
+            const std::string & objectKey, 
+            boost::uint32_t timeoutMs)
+        {
+            return mServerObjectServicePtr->getServerObject<T>(objectKey, timeoutMs);
+        }
+
+        void deleteServerObject(const std::string & objectKey);
+
+        StubEntryPtr findStubEntryForToken(const Token & token);
     };
 
 } // namespace RCF

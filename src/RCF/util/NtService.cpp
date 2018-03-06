@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,7 +22,9 @@
 
 #include <RCF/Exception.hpp>
 
-namespace util {
+#include "tchar.h"
+
+namespace RCF {
 
     NtService::NtService(
         const std::string & serviceName, 
@@ -99,8 +104,13 @@ namespace util {
         }
     }
 
-
     bool NtService::Install()
+    {
+        tstring commandLineArgs;
+        return Install(commandLineArgs);
+    }
+
+    bool NtService::Install(const tstring & commandLineArgs)
     {
         if (IsInstalled())
         {
@@ -117,8 +127,15 @@ namespace util {
         }
 
         // Get the executable file path
-        char szFilePath[_MAX_PATH];
+        TCHAR szFilePath[_MAX_PATH];
         GetModuleFileName(NULL, szFilePath, _MAX_PATH);
+
+        tstring commandLine = szFilePath;
+        if (commandLineArgs.size() > 0)
+        {
+            commandLine += _T(" ");
+            commandLine += commandLineArgs;
+        }
 
         SC_HANDLE hService = CreateService(
             hSCM,
@@ -128,7 +145,7 @@ namespace util {
             SERVICE_WIN32_OWN_PROCESS,
             SERVICE_DEMAND_START,
             SERVICE_ERROR_NORMAL,
-            szFilePath,
+            commandLine.c_str(),
             NULL, NULL, 
             NULL,
             NULL, NULL);
@@ -264,4 +281,4 @@ namespace util {
         NtService::spThis->Handler(dwOpcode);
     }
 
-} // namespace util
+} // namespace RCF

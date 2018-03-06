@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -28,12 +31,13 @@ namespace RCF {
     typedef boost::shared_ptr<UdpClientTransport> UdpClientTransportPtr;
    
     class RCF_EXPORT UdpClientTransport : 
-        public I_ClientTransport, 
-        public I_IpClientTransport
+        public ClientTransport, 
+        public IpClientTransport
     {
     private:
         IpAddress                                   mSrcIp;
         IpAddress                                   mDestIp;
+        IpAddress                                   mFromIp;
         ReallocBufferPtr                            mReadVecPtr;
         ReallocBufferPtr                            mWriteVecPtr;
         bool                                        mAsync;
@@ -42,7 +46,9 @@ namespace RCF {
     public:
         UdpClientTransport(const IpAddress & ipAddress);
         UdpClientTransport(const UdpClientTransport &rhs);
-         ~UdpClientTransport();
+        ~UdpClientTransport();
+
+         TransportType getTransportType();
 
         ClientTransportAutoPtr 
                         clone() const;
@@ -50,18 +56,18 @@ namespace RCF {
         EndpointPtr     getEndpointPtr() const;
 
         void            connect(
-                            I_ClientTransportCallback &clientStub, 
+                            ClientTransportCallback &clientStub, 
                             unsigned int timeoutMs);
 
         void            disconnect(unsigned int timeoutMs);
 
         int             send(
-                            I_ClientTransportCallback &clientStub, 
+                            ClientTransportCallback &clientStub, 
                             const std::vector<ByteBuffer> &data, 
                             unsigned int timeoutMs);
 
         int             receive(
-                            I_ClientTransportCallback &clientStub, 
+                            ClientTransportCallback &clientStub, 
                             ByteBuffer &byteBuffer, 
                             unsigned int timeoutMs);
 
@@ -76,9 +82,12 @@ namespace RCF {
 
         int             getNativeHandle() const;
 
-        void            setAsync(bool async);
-        TimerEntry      setTimer(boost::uint32_t timeoutMs, I_ClientTransportCallback *pClientStub);
-        void            killTimer(const TimerEntry & timerEntry);
+        void            setTimer(boost::uint32_t timeoutMs, ClientTransportCallback *pClientStub);
+
+        bool            supportsTransportFilters()
+        {
+            return false;
+        }
     };
 
 } // namespace RCF

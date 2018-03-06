@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -22,7 +25,8 @@
 #include <string>
 
 #include <RCF/util/VariableArgMacro.hpp>
-#include <RCF/util/Platform/OS/Sleep.hpp>
+
+#include <RCF/CustomAllocator.hpp>
 
 #if defined(__GNUC__) && __GNUC__ >= 4 
     #ifdef RCF_TEST_BUILD_DLL
@@ -48,6 +52,7 @@
 #error "Error: DLL builds of RCF require dynamic runtime linking. Select one of the DLL options in Properties -> C/C++ -> Code Generation -> Runtime Library."
 #endif
 
+namespace RCF {
 
 // Test hierarchies.
 class RCF_TEST_EXPORT TestHierarchy
@@ -66,9 +71,9 @@ public:
 private:
 
     void        split(
-                    const std::string &s, 
+                    const std::string & s, 
                     char delim, 
-                    std::vector<std::string> &elems);
+                    std::vector<std::string> & elems);
 
     bool        doesCurrentTestCaseMatch();
 
@@ -81,12 +86,12 @@ private:
     bool mEnumerateOnly;
 };
 
-class RCF_TEST_EXPORT TestCase
+class RCF_TEST_EXPORT TestCaseSentry
 {
 public:
-                TestCase(const std::string & name);
-                TestCase(std::size_t n);
-                ~TestCase();
+                TestCaseSentry(const std::string & name);
+                TestCaseSentry(std::size_t n);
+                ~TestCaseSentry();
 
     bool        shouldRun();
     void        setHasRun();
@@ -100,7 +105,7 @@ private:
 
 #define TEST_CASE(name) TEST_CASE_IMPL(name, BOOST_PP_CAT(testCase, __LINE__))
 #define TEST_CASE_IMPL(name, instName)  \
-    for (TestCase instName((name)); instName.shouldRun(); instName.setHasRun())
+    for (RCF::TestCaseSentry instName((name)); instName.shouldRun(); instName.setHasRun())
 
 class RCF_TEST_EXPORT TestEnv
 {
@@ -110,6 +115,9 @@ public:
     void setTestCaseToRun(const std::string & testCase, bool caseSensitive = true);
     void setEnumerationOnly();
     void setAssertOnFail(bool assertOnFail);
+
+    typedef void (*PfnAssert)(const char * file, int line, const char * condition , const char * info);
+    void setPfnAssert(PfnAssert pfnAssert);
 
     std::size_t getFailCount();
     bool didTestCaseRun();
@@ -124,21 +132,27 @@ public:
 
 private:
 
-    friend class TestCase;
+    friend class TestCaseSentry;
 
     TestHierarchy mTestHierarchy;
 
     std::size_t mFailCount;
 
     bool mAssertOnFail;
-
+    PfnAssert mPfnAssert;
 };
 
 RCF_TEST_EXPORT TestEnv & gTestEnv();
 
+    std::string getRelativePathToCheckoutRoot();
+    std::string getRelativeTestDataPath();
+    std::string getWorkingDir();
+
+} // namespace RCF
+
 // RCF_CHECK
 
-class RcfCheckFunctor : public util::VariableArgMacroFunctor
+class RcfCheckFunctor : public RCF::VariableArgMacroFunctor
 {
 public:
 
@@ -152,8 +166,8 @@ public:
 
     ~RcfCheckFunctor()
     {
-        std::string values(mArgs->str(), static_cast<std::size_t>(mArgs->pcount()));
-        gTestEnv().reportTestFailure(mFile, mLine, mCond, values.c_str());
+        std::string values(mArgs->str(), static_cast<std::size_t>(mArgs->tellp()));
+        RCF::gTestEnv().reportTestFailure(mFile, mLine, mCond, values.c_str());
     }
 
 private:
@@ -172,9 +186,9 @@ DECLARE_VARIABLE_ARG_MACRO( RCF_CHECK, RcfCheckFunctor );
 #define RCF_CHECK(cond)                                             \
     if (cond);                                                      \
     else                                                            \
-        VariableArgMacro<RcfCheckFunctor>()                         \
+        ::VariableArgMacro<RcfCheckFunctor>()                       \
             .setArgs(__FILE__, __LINE__, #cond)                     \
-            .cast( (VariableArgMacro<RcfCheckFunctor> *) NULL )     \
+            .cast( (::VariableArgMacro<RcfCheckFunctor> *) NULL )   \
             .RCF_CHECK_A
 
 #define RCF_CHECK_A(x)                         RCF_CHECK_OP(x, B)

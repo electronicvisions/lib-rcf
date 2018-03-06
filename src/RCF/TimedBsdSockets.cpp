@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,7 +22,7 @@
 
 #include <RCF/BsdClientTransport.hpp>
 #include <RCF/ClientStub.hpp>
-#include <RCF/ThreadLocalCache.hpp>
+#include <RCF/ThreadLocalData.hpp>
 #include <RCF/Tools.hpp>
 
 namespace RCF {
@@ -27,14 +30,14 @@ namespace RCF {
     // return -2 for timeout, -1 for error, 0 for ready
     int pollSocket(unsigned int endTimeMs, int fd, int &err, bool bRead)
     {
-        ClientStub & clientStub = *getCurrentClientStubPtr();
+        ClientStub & clientStub = *getTlsClientStubPtr();
 
         while (true)
         {
 
             fd_set fdSet;
             FD_ZERO(&fdSet);
-            FD_SET( static_cast<RCF_SOCKET>(fd), &fdSet);
+            FD_SET( static_cast<SOCKET>(fd), &fdSet);
             
             unsigned int timeoutMs = generateTimeoutMs(endTimeMs);
             timeoutMs = clientStub.generatePollingTimeout(timeoutMs);
@@ -72,7 +75,7 @@ namespace RCF {
 
                 RCF_VERIFY(
                     ret == 0, 
-                    Exception(_RcfError_Socket(), err, RcfSubsystem_Os, "getsockopt() failed"));
+                    Exception(_RcfError_Socket("getsockopt()"), err, RcfSubsystem_Os));
 
                 if (errorOpt == 0)
                 {
@@ -205,19 +208,15 @@ namespace RCF {
             }
 #endif
 
-            //int myErr = WSAGetLastError();
-            //int myErr = Platform::OS::BsdSockets::GetLastError()
-            //if (ret == 0)
             if (count >= 0)
             {
                 RCF_ASSERT_LTEQ(count , static_cast<int>(bytesRemaining));
 
-                bytesRemaining -= count;//cbSent;
-                bytesSent += count;//cbSent;
+                bytesRemaining -= count;
+                bytesSent += count;
                 err = 0;
                 return static_cast<int>(bytesSent);
             }
-            //else if (myErr == WSAEWOULDBLOCK)
             else if (myErr == Platform::OS::BsdSockets::ERR_EWOULDBLOCK)
             {
                 // can't get WSA_IO_PENDING here, since the socket isn't overlapped
@@ -272,7 +271,7 @@ namespace RCF {
                 ret == -1 &&
                 err == Platform::OS::BsdSockets::ERR_EWOULDBLOCK)
             {
-                int ret = pollingFunctor(fd, err, true);
+                ret = pollingFunctor(fd, err, true);
                 if (ret  != 0)
                 {
                     clientTransport.onTimedRecvCompleted(ret, err);
@@ -296,7 +295,7 @@ namespace RCF {
             timeval tv = {0,0};
             fd_set readFds;
             FD_ZERO(&readFds);
-            FD_SET( static_cast<RCF_SOCKET>(fd), &readFds);
+            FD_SET( static_cast<SOCKET>(fd), &readFds);
 
             int ret = Platform::OS::BsdSockets::select(
                 fd+1,
@@ -314,7 +313,7 @@ namespace RCF {
                 const int length = 1;
                 char buffer[length];
 
-                int ret = Platform::OS::BsdSockets::recv(
+                ret = Platform::OS::BsdSockets::recv(
                     fd,
                     buffer,
                     length,
@@ -352,14 +351,14 @@ namespace RCF {
 
         RCF_VERIFY(
             ret != -1, 
-            RCF::Exception( _RcfError_Socket(), err, RcfSubsystem_Os))(ret)(err);
+            RCF::Exception( _RcfError_Socket("gethostname()"), err, RcfSubsystem_Os))(ret);
 
         hostent *phe = gethostbyname(&hostname[0]);
         err = Platform::OS::BsdSockets::GetLastError();
 
         RCF_VERIFY(
             phe, 
-            RCF::Exception( _RcfError_Socket(), err, RCF::RcfSubsystem_Os))(err);
+            RCF::Exception( _RcfError_Socket("gethostbyname()"), err, RCF::RcfSubsystem_Os));
 
         std::vector<std::string> ips;
         for (int i = 0; phe->h_addr_list[i] != 0; ++i) {

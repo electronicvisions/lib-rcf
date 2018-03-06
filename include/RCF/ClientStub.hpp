@@ -2,24 +2,22 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
 #ifndef INCLUDE_RCF_CLIENTSTUB_HPP
 #define INCLUDE_RCF_CLIENTSTUB_HPP
-
-#if defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6))
-#pragma GCC diagnostic push
-#endif
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 #include <string>
 #include <vector>
@@ -30,51 +28,53 @@
 #include <boost/shared_ptr.hpp>
 #include <boost/enable_shared_from_this.hpp>
 
-#include <RCF/AsyncFilter.hpp>
+#include <RCF/Certificate.hpp>
+#include <RCF/ClientProgress.hpp>
+#include <RCF/Filter.hpp>
 #include <RCF/ClientTransport.hpp>
 #include <RCF/Endpoint.hpp>
+#include <RCF/Enums.hpp>
 #include <RCF/Export.hpp>
 #include <RCF/GetInterfaceName.hpp>
 #include <RCF/MethodInvocation.hpp>
-#include <RCF/Protocol/Protocol.hpp>
+#include <RCF/SerializationProtocol_Base.hpp>
 #include <RCF/RecursionLimiter.hpp>
 #include <RCF/SerializationProtocol.hpp>
 #include <RCF/Token.hpp>
 
-#ifdef RCF_USE_SF_SERIALIZATION
-#include <SF/SfNew.hpp>
-#include <SF/shared_ptr.hpp>
-#endif
-
-#ifdef RCF_USE_BOOST_SERIALIZATION
-#include <boost/serialization/shared_ptr.hpp>
-#endif
-
-#ifdef RCF_USE_BOOST_FILESYSTEM
+#if RCF_FEATURE_FILETRANSFER==1
 #include <RCF/FileStream.hpp>
+#include <RCF/FileDownload.hpp>
+#include <RCF/FileUpload.hpp>
 #endif
 
 namespace RCF {
+
+    template<typename T>
+    class FutureImpl;
+
+    struct Void;
+
+    class CallOptions;
 
     class ConnectionResetGuard;
 
     class I_Parameters;
 
-    /// Indicates whether a client should use oneway or twoway semantics for remote calls.
-    enum RemoteCallSemantics
-    {
-        Oneway,
-        Twoway
-    };
+    /// Sets the default SSL implementation to use (OpenSSL or Schannel). The default is OpenSSL.
+    RCF_EXPORT void                 setDefaultSslImplementation(SslImplementation sslImplementation);
 
-    RCF_EXPORT void setDefaultConnectTimeoutMs(unsigned int connectTimeoutMs);
+    /// Gets the default SSL implementation.
+    RCF_EXPORT SslImplementation    getDefaultSslImplementation();
+
+    RCF_EXPORT void         setDefaultConnectTimeoutMs(unsigned int connectTimeoutMs);
     RCF_EXPORT unsigned int getDefaultConnectTimeoutMs();
 
-    RCF_EXPORT void setDefaultRemoteCallTimeoutMs(unsigned int remoteCallTimeoutMs);
+    RCF_EXPORT void         setDefaultRemoteCallTimeoutMs(unsigned int remoteCallTimeoutMs);
     RCF_EXPORT unsigned int getDefaultRemoteCallTimeoutMs();
 
-    RCF_EXPORT void setDefaultNativeWstringSerialization(bool enable);
-    RCF_EXPORT bool getDefaultNativeWstringSerialization();
+    RCF_EXPORT void         setDefaultNativeWstringSerialization(bool enable);
+    RCF_EXPORT bool         getDefaultNativeWstringSerialization();
 
     class ClientStub;
 
@@ -85,19 +85,25 @@ namespace RCF {
     class ClientProgress;
     typedef boost::shared_ptr<ClientProgress> ClientProgressPtr;
 
-    class I_ClientTransport;
-    typedef std::auto_ptr<I_ClientTransport> ClientTransportAutoPtr;
+    class ClientTransport;
+    typedef std::auto_ptr<ClientTransport> ClientTransportAutoPtr;
 
     class I_RcfClient;
     typedef boost::shared_ptr<I_RcfClient> RcfClientPtr;
 
     class I_Future;
-    class I_IpClientTransport;
+    class IpClientTransport;
 
     template<typename T>
     class FutureImpl;
 
-    typedef boost::function2<void, boost::uint64_t, boost::uint64_t> FileProgressCb;
+    class FileTransferProgress;
+
+    class OpenSslEncryptionFilter;
+
+    class SspiFilter;
+
+    typedef boost::function1<void, const FileTransferProgress &> FileProgressCb;
 
     template<
         typename R, 
@@ -144,32 +150,46 @@ namespace RCF {
     {
     public:
         CurrentClientStubSentry(ClientStub & clientStub);
+        CurrentClientStubSentry(ClientStub * pClientStub);
         ~CurrentClientStubSentry();
+
+    private:
+        bool mEnabled;
     };
 
     class RCF_EXPORT ClientStub : 
-        public I_ClientTransportCallback, 
+        public ClientTransportCallback, 
         public boost::enable_shared_from_this<ClientStub>
     {
     public:
-        ClientStub(const std::string &interfaceName);
-        ClientStub(const std::string &interfaceName, const std::string &objectName);
-        ClientStub(const ClientStub &rhs);
+        ClientStub(const std::string & interfaceName);
+        ClientStub(const std::string & interfaceName, const std::string &objectName);
+        ClientStub(const ClientStub & rhs);
         ~ClientStub();
 
-        ClientStub &operator=(const ClientStub &rhs);
+        ClientStub &operator=(const ClientStub & rhs);
 
-        void                setEndpoint(const I_Endpoint &endpoint);
-        void                setEndpoint(EndpointPtr endpointPtr);
-        EndpointPtr         getEndpoint() const;
-        Token               getTargetToken() const;
-        void                setTargetToken(Token token);
-        std::string         getTargetName() const;
-        void                setTargetName(const std::string &targetName);
-        void                setInterfaceName(const std::string & interfaceName);
-        std::string         getInterfaceName();
-        RemoteCallSemantics getDefaultCallingSemantics() const;
-        void                setDefaultCallingSemantics(RemoteCallSemantics defaultCallingSemantics);
+    private:
+        void                    init(const std::string & interfaceName, const std::string & objectName);
+        void                    assign(const ClientStub & rhs);
+
+    public:
+
+        void                    setEndpoint(const Endpoint &endpoint);
+        void                    setEndpoint(EndpointPtr endpointPtr);
+        EndpointPtr             getEndpoint() const;
+        Token                   getTargetToken() const;
+        void                    setTargetToken(Token token);
+        const std::string &     getTargetName() const;
+        void                    setTargetName(const std::string &targetName);
+        void                    setInterfaceName(const std::string & interfaceName);
+        const std::string &     getInterfaceName();
+        RemoteCallSemantics     getRemoteCallSemantics() const;
+        void                    setRemoteCallSemantics(RemoteCallSemantics defaultCallingSemantics);
+
+        // Deprecated - use getRemoteCallSemantics()/setRemoteCallSemantics instead.
+        RemoteCallSemantics     getDefaultCallingSemantics() const;
+        void                    setDefaultCallingSemantics(RemoteCallSemantics defaultCallingSemantics);
 
         void                    setSerializationProtocol(SerializationProtocol protocol);
         SerializationProtocol   getSerializationProtocol() const;
@@ -180,171 +200,162 @@ namespace RCF {
         bool                    getNativeWstringSerialization();
         void                    setNativeWstringSerialization(bool enable);
 
-        void                    enableSfSerializationPointerTracking(bool enable);
+        void                    setEnableSfPointerTracking(bool enable);
+        bool                    getEnableSfPointerTracking() const;
+
         void                    setTransport(ClientTransportAutoPtr transport);
 
-        I_ClientTransport&      getTransport();
-        I_IpClientTransport &   getIpTransport();
+        ClientTransport&        getTransport();
+        IpClientTransport &     getIpTransport();
 
         ClientTransportAutoPtr  releaseTransport();
 
-        void        instantiateTransport();
-        void        connect();
-        void        connectAsync(boost::function0<void> onCompletion);
-        void        waitAsync(boost::function0<void> onCompletion, boost::uint32_t timeoutMs);
-        void        disconnect();
-        bool        isConnected();
-        void        setConnected(bool connected);
+        void                    instantiateTransport();
+        void                    connect();
+        void                    connectAsync(boost::function0<void> onCompletion);
+        void                    wait(boost::function0<void> onCompletion, boost::uint32_t timeoutMs);
+        void                    disconnect();
+        bool                    isConnected();
+        void                    setConnected(bool connected);
 
-        void        setMessageFilters(const std::vector<FilterPtr> &filters);
-        void        setMessageFilters();
-        void        setMessageFilters(FilterPtr filterPtr);
+        void                    setMessageFilters(const std::vector<FilterPtr> &filters);
+        void                    setMessageFilters();
+        void                    setMessageFilters(FilterPtr filterPtr);
 
         const std::vector<FilterPtr> &
-                    getMessageFilters();
+                                getMessageFilters();
+
+        virtual bool            isClientStub() const;
 
 
         // Synchronous transport filter requests.
-        void        requestTransportFilters(const std::vector<FilterPtr> &filters);
-        void        requestTransportFilters(FilterPtr filterPtr);
-        void        requestTransportFilters();
+        void                    requestTransportFilters_Legacy(const std::vector<FilterPtr> &filters);
+        void                    requestTransportFilters(const std::vector<FilterPtr> &filters);
+        void                    requestTransportFilters(FilterPtr filterPtr);
+        void                    requestTransportFilters();
 
-        bool        queryForTransportFilters(const std::vector<FilterPtr> &filters);
-        bool        queryForTransportFilters(FilterPtr filterPtr);
-        void        clearTransportFilters();
+        void                    clearTransportFilters();
 
         // Asynchronous transport filter requests.
-        void        requestTransportFiltersAsync(
-                        const std::vector<FilterPtr> &filters,
-                        boost::function0<void> onCompletion);
+        void                    requestTransportFiltersAsync_Legacy(
+                                    const std::vector<FilterPtr> &filters,
+                                    boost::function0<void> onCompletion);
 
-        void        requestTransportFiltersAsync(
-                        FilterPtr filterPtr,
-                        boost::function0<void> onCompletion);
+        void                    requestTransportFiltersAsync(
+                                    const std::vector<FilterPtr> &filters,
+                                    boost::function0<void> onCompletion);
 
-        void        queryForTransportFiltersAsync(
-                        const std::vector<FilterPtr> &filters,
-                        boost::function0<void> onCompletion);
-
-        void        queryForTransportFiltersAsync(
-                        FilterPtr filterPtr,
-                        boost::function0<void> onCompletion);
+        void                    requestTransportFiltersAsync(
+                                    FilterPtr filterPtr,
+                                    boost::function0<void> onCompletion);
 
 
-        void            setRemoteCallTimeoutMs(unsigned int remoteCallTimeoutMs);
-        unsigned int    getRemoteCallTimeoutMs() const;
+        void                    setRemoteCallTimeoutMs(unsigned int remoteCallTimeoutMs);
+        unsigned int            getRemoteCallTimeoutMs() const;
 
-        void            setConnectTimeoutMs(unsigned int connectTimeoutMs);
-        unsigned int    getConnectTimeoutMs() const;
+        void                    setConnectTimeoutMs(unsigned int connectTimeoutMs);
+        unsigned int            getConnectTimeoutMs() const;
 
-        void        setAutoReconnect(bool autoReconnect);
-        bool        getAutoReconnect() const;
+        void                    setAutoReconnect(bool autoReconnect);
+        bool                    getAutoReconnect() const;
 
-        void        setAutoVersioning(bool autoVersioning);
-        bool        getAutoVersioning() const;
+        void                    setAutoVersioning(bool autoVersioning);
+        bool                    getAutoVersioning() const;
 
-        void            setRuntimeVersion(boost::uint32_t version);
-        boost::uint32_t getRuntimeVersion() const;
+        void                    setRuntimeVersion(boost::uint32_t version);
+        boost::uint32_t         getRuntimeVersion() const;
 
-        void            setArchiveVersion(boost::uint32_t version);
-        boost::uint32_t getArchiveVersion() const;
+        void                    setArchiveVersion(boost::uint32_t version);
+        boost::uint32_t         getArchiveVersion() const;
 
-        void        setClientProgressPtr(ClientProgressPtr ClientProgressPtr);
+        void                    setClientProgressPtr(ClientProgressPtr clientProgressPtr);
 
-        ClientProgressPtr 
-                    getClientProgressPtr() const;
+        ClientProgressPtr       getClientProgressPtr() const;
 
-        void        setTries(std::size_t tries);
-        std::size_t getTries() const;
+        typedef     ClientProgress::ProgressCallback RemoteCallProgressCallback;
 
-        void        setUserData(boost::any userData);
-        boost::any  getUserData();
+        void                    setRemoteCallProgressCallback(
+                                    RemoteCallProgressCallback cb, 
+                                    boost::uint32_t callbackIntervalMs);
 
-#ifdef RCF_USE_SF_SERIALIZATION
-        void serialize(SF::Archive & ar);
-#endif
+        void                    setTries(std::size_t tries);
+        std::size_t             getTries() const;
+
+        void                    setUserData(boost::any userData);
+        boost::any              getUserData();
 
         //**********************************************************************
         // These functions involve network calls.
 
         // Synchronous versions.
 
-        void createRemoteObject(const std::string &objectName = "");
-        void deleteRemoteObject();
+#if RCF_FEATURE_LEGACY==1
 
-        void createRemoteSessionObject(const std::string &objectName = "");
-        void deleteRemoteSessionObject();
+        void                    createRemoteObject(const std::string &objectName = "");
+        void                    deleteRemoteObject();
 
-#ifdef RCF_USE_BOOST_FILESYSTEM
-        void setFileProgressCallback(FileProgressCb fileProgressCb);
-        void setFileProgressCallback() { setFileProgressCallback( FileProgressCb() ); }
+        void                    createRemoteSessionObject(const std::string &objectName = "");
+        void                    deleteRemoteSessionObject();
 
-        void uploadFiles(
-            const std::string & whichFile, 
-            boost::uint32_t & uploadId,
-            boost::uint32_t chunkSize = 8*1024,
-            boost::uint32_t sessionLocalId = 0);
-
-        void uploadFiles(
-            const FileManifest & whichFile, 
-            boost::uint32_t & uploadId,
-            boost::uint32_t chunkSize = 8*1024,
-            boost::uint32_t sessionLocalId = 0);
-
-        void downloadFiles(
-            const std::string & downloadLocation, 
-            FileManifest & manifest,
-            boost::uint32_t chunkSize = 8*1024, 
-            boost::uint32_t transferRateBps = 0,
-            boost::uint32_t sessionLocalId = 0);
-
-        boost::uint32_t addUploadStream(FileUpload fileStream);
-        void processUploadStreams();
-
-        boost::uint32_t addDownloadStream(FileDownload fileStream);
-
-        // For testing.
-        void                setTransferWindowS(boost::uint32_t transferWindowS);
-        boost::uint32_t     getTransferWindowS();
 #endif
 
-        void ping();
-        void ping(RemoteCallSemantics rcs);
+#if RCF_FEATURE_FILETRANSFER==1
+        void                    setFileProgressCallback(FileProgressCb fileProgressCb);
+        void                    setFileProgressCallback() { setFileProgressCallback( FileProgressCb() ); }
 
-        // Asynchronous versions.
+        void                    uploadFiles(
+                                    const std::string & whichFile, 
+                                    std::string & uploadId,
+                                    boost::uint32_t chunkSize,
+                                    boost::uint32_t transferRateBps,
+                                    boost::uint32_t sessionLocalId);
 
-        void createRemoteObjectAsync(
-            boost::function0<void> onCompletion,
-            const std::string &objectName = "");
+        void                    uploadFiles(
+                                    const FileManifest & whichFile, 
+                                    std::string & uploadId,
+                                    boost::uint32_t chunkSize,
+                                    boost::uint32_t transferRateBps,
+                                    boost::uint32_t sessionLocalId);
 
-        void deleteRemoteObjectAsync(
-            boost::function0<void> onCompletion);
+        void                    downloadFiles(
+                                    const std::string & downloadLocation, 
+                                    FileManifest & manifest,
+                                    boost::uint32_t chunkSize, 
+                                    boost::uint32_t transferRateBps,
+                                    boost::uint32_t sessionLocalId);
 
-        void createRemoteSessionObjectAsync(
-            boost::function0<void> onCompletion,
-            const std::string &objectName = "");
+        boost::uint32_t         addUploadStream(FileUpload fileStream);
+        void                    processUploadStreams();
 
-        void deleteRemoteSessionObjectAsync(
-            boost::function0<void> onCompletion);
+        boost::uint32_t         addDownloadStream(FileDownload fileStream);
 
-        //void ping(
-        //    boost::function1<void, ExceptionPtr> onCompletion);
+        // For testing.
+        void                    setTransferWindowS(boost::uint32_t transferWindowS);
+        boost::uint32_t         getTransferWindowS();
+#endif
 
-        //void ping(
-        //    RemoteCallSemantics rcs, 
-        //    boost::function1<void, ExceptionPtr> onCompletion);
+        FutureImpl<Void>        ping();
+        FutureImpl<Void>        ping(const CallOptions & callOptions);
 
+        ByteBuffer              getOutOfBandRequest();
+        void                    setOutofBandRequest(ByteBuffer requestBuffer);
 
+        ByteBuffer              getOutOfBandResponse();
+        void                    setOutofBandResponse(ByteBuffer responseBuffer);
+
+        FutureImpl<Void>        doControlMessage(
+                                    const CallOptions &     callOptions, 
+                                    ByteBuffer              controlRequest);
 
         //**********************************************************************
 
-        void setPingBackIntervalMs(int pingBackIntervalMs);
-        int getPingBackIntervalMs();
+        void                    setPingBackIntervalMs(int pingBackIntervalMs);
+        int                     getPingBackIntervalMs();
 
-        std::size_t     getPingBackCount();
-        boost::uint32_t getPingBackTimeStamp();
+        std::size_t             getPingBackCount();
+        boost::uint32_t         getPingBackTimeStamp();
         
-        void clearParameters();
+        void                    clearParameters();
 
         SerializationProtocolIn &   getSpIn();
         SerializationProtocolOut &  getSpOut();
@@ -353,26 +364,15 @@ namespace RCF {
         void                        setAsyncException(std::auto_ptr<Exception>);
         bool                        hasAsyncException();
 
-        boost::uint32_t     generatePollingTimeout(boost::uint32_t timeoutMs);
-        void                onPollingTimeout();
-        void                onUiMessage();
+        boost::uint32_t         generatePollingTimeout(boost::uint32_t timeoutMs);
+        void                    onPollingTimeout();
+        void                    onUiMessage();
 
         friend class CallOptions;
 
-#if defined(_MSC_VER) && _MSC_VER < 1310
-
-        // vc6: Can't seem to get declare FutureImpl<>, ClientParameters<> and 
-        // AllocateClientParameters<> as friends.
-    public:    
-
-#else
     private:
 
-        template<typename T>
-        friend class Future;
-
-        template<typename T>
-        friend class FutureImpl;
+        friend class FutureImplBase;
 
         template<
             typename R, 
@@ -412,8 +412,6 @@ namespace RCF {
             typename A15>
         friend class ClientParameters;
 
-#endif
-
         Token                       mToken;
         RemoteCallSemantics         mDefaultCallingSemantics;
         SerializationProtocol       mProtocol;
@@ -440,6 +438,7 @@ namespace RCF {
         boost::uint32_t             mArchiveVersion;
 
         bool                        mUseNativeWstringSerialization;
+        bool                        mEnableSfPointerTracking;
 
         std::vector<I_Future *>     mFutures;
         boost::any                  mUserData;        
@@ -448,20 +447,8 @@ namespace RCF {
         SerializationProtocolIn     mIn;
         SerializationProtocolOut    mOut;
 
-        typedef std::pair<boost::uint32_t, OverlappedAmiPtr> TimerEntry;
-
-        enum TimerReason
-        {
-            None,
-            Wait,
-            Connect,
-            Write,
-            Read
-        };
-
         bool                        mAsync;
-        TimerEntry                  mAsyncTimerEntry;
-        TimerReason                 mAsyncTimerReason;
+        AsyncOpType                 mAsyncOpType;
         boost::function0<void>      mAsyncCallback;
         std::auto_ptr<Exception>    mAsyncException;
         unsigned int                mEndTimeMs;
@@ -474,7 +461,7 @@ namespace RCF {
         std::vector<char>           mParametersVec;
         I_Parameters *              mpParameters;
 
-        int                         mPingBackIntervalMs;
+        boost::uint32_t             mPingBackIntervalMs;
         boost::uint32_t             mPingBackTimeStamp;
         std::size_t                 mPingBackCount;
 
@@ -483,37 +470,48 @@ namespace RCF {
         boost::uint32_t             mPingBackCheckIntervalMs;
         boost::uint32_t             mTimerIntervalMs;
 
-        boost::shared_ptr<Mutex>        mSignalledMutex;
-        boost::shared_ptr<Condition>    mSignalledCondition;
-        bool                            mSignalled;
+        MutexPtr                    mSignalledMutexPtr;
+        ConditionPtr                mSignalledConditionPtr;
+        LockPtr                     mSignalledLockPtr;
 
-        Mutex                           mSubRcfClientMutex;
-        RcfClientPtr                    mSubRcfClientPtr;
+        bool                        mSignalled;
 
-        bool                            mBatchMode;
-        ReallocBufferPtr                mBatchBufferPtr;
-        ReallocBuffer                   mBatchBufferTemp;
-        boost::uint32_t                 mBatchMaxMessageLength;
-        boost::uint32_t                 mBatchCount;
-        boost::uint32_t                 mBatchMessageCount;
+        Mutex                       mSubRcfClientMutex;
+        RcfClientPtr                mSubRcfClientPtr;
+
+        bool                        mBatchMode;
+        ReallocBufferPtr            mBatchBufferPtr;
+        ReallocBuffer               mBatchBufferTemp;
+        boost::uint32_t             mBatchMaxMessageLength;
+        boost::uint32_t             mBatchCount;
+        boost::uint32_t             mBatchMessageCount;
+
+        // Set to true if we need to set the transport protocol without disconnecting.
+        bool                        mSetTransportProtocol;  
 
         void                enrol(
                                 I_Future *pFuture);
 
         void                init( 
-                                const std::string &subInterface, 
+                                const std::string & interfaceName,
                                 int fnId, 
                                 RCF::RemoteCallSemantics rcs);
 
-        void                send();
+        void                beginCall();
 
-        void                receive();
+        void                beginSend();
+
+        void                beginReceive();
 
         void                call( 
                                 RCF::RemoteCallSemantics rcs);
 
         void                onConnectCompleted(
                                 bool alreadyConnected = false);
+
+        void                onRequestTransportFiltersCompleted();
+
+        void                doBatching();
 
         void                onSendCompleted();
 
@@ -530,7 +528,10 @@ namespace RCF {
         void                onException(
                                 const Exception & e);
 
-        void                prepareAmiNotification();
+        void                scheduleAmiNotification();
+
+        void                createFilterSequence(std::vector<FilterPtr> & filters);
+
 
     public:
 
@@ -554,7 +555,7 @@ namespace RCF {
         bool                getAsync();
 
         bool                ready();
-        void                wait(boost::uint32_t timeoutMs = 0);
+        void                waitForReady(boost::uint32_t timeoutMs = 0);
         void                cancel();
 
         void                setSubRcfClientPtr(RcfClientPtr clientStubPtr);
@@ -568,7 +569,7 @@ namespace RCF {
         void                setResponseUserData(const std::string & userData);
         std::string         getResponseUserData();
 
-#ifdef RCF_USE_BOOST_FILESYSTEM
+#if RCF_FEATURE_FILETRANSFER==1
         FileProgressCb              mFileProgressCb;
 
         std::vector<FileUpload>     mUploadStreams;
@@ -578,6 +579,91 @@ namespace RCF {
         boost::uint32_t             mTransferWindowS;    
 
         RecursionState<int, int>    mRecursionState;
+
+        std::string                 mCurrentCallDesc;
+        bool                        mCallInProgress;
+
+    public:
+
+        void                setHttpProxy(const std::string & httpProxy);
+        std::string         getHttpProxy() const;
+
+        void                setHttpProxyPort(int httpProxyPort);
+        int                 getHttpProxyPort() const;
+        
+        void                setTransportProtocol(TransportProtocol protocol);
+        TransportProtocol   getTransportProtocol() const;
+
+        TransportType       getTransportType();
+
+        void                setUsername(const tstring & username);
+        tstring             getUsername() const;
+
+        void                setPassword(const tstring & password);
+        tstring             getPassword() const;
+
+        void                setHttpProxyUsername(const tstring & proxyUsername);
+        tstring             getHttpProxyUsername() const;
+
+        void                setHttpProxyPassword(const tstring & proxyPassword);
+        tstring             getHttpProxyPassword() const;
+
+        void                setHttpProxyRealm(const tstring & proxyRealm);
+        tstring             getHttpProxyRealm() const;
+
+        void                setKerberosSpn(const tstring & kerberosSpn);
+        tstring             getKerberosSpn() const;
+
+        void                setEnableCompression(bool enableCompression);
+        bool                getEnableCompression() const;
+
+        void                setCertificate(CertificatePtr certificatePtr);
+        CertificatePtr      getCertificate() const;
+
+        void                setCaCertificate(CertificatePtr certificatePtr);
+        CertificatePtr      getCaCertificate() const;
+
+        void                setOpenSslCipherSuite(const std::string & cipherSuite);
+        std::string         getOpenSslCipherSuite() const;
+
+        void                setEnableSchannelCertificateValidation(const tstring & peerName);
+        tstring             getEnableSchannelCertificateValidation() const;
+
+        typedef boost::function<bool(Certificate *)> CertificateValidationCb;
+        void                                setCertificateValidationCallback(CertificateValidationCb certificateValidationCb);
+        const CertificateValidationCb &     getCertificateValidationCallback() const;
+
+        void                setSslImplementation(SslImplementation sslImplementation);
+        SslImplementation   getSslImplementation() const;
+
+#ifdef BOOST_WINDOWS
+        void                setWindowsImpersonationToken(HANDLE hToken);
+        HANDLE              getWindowsImpersonationToken() const;
+
+    private:
+        std::auto_ptr<HANDLE>                   mWindowsImpersonationToken;
+#endif
+
+    private:
+        std::string                             mHttpProxy;
+        int                                     mHttpProxyPort;
+        tstring                                 mHttpProxyRealm;
+        TransportProtocol                       mTransportProtocol;
+        tstring                                 mUsername;
+        tstring                                 mPassword;
+        tstring                                 mHttpProxyUsername;
+        tstring                                 mHttpProxyPassword;
+        tstring                                 mKerberosSpn;
+        bool                                    mEnableCompression;
+
+        CertificatePtr                          mCertificatePtr;
+        CertificatePtr                          mCaCertificatePtr;
+        CertificateValidationCb                 mCertificateValidationCb;
+        tstring                                 mSchannelCertificateValidation;
+
+        std::string                             mOpenSslCipherSuite;
+
+        SslImplementation                       mSslImplementation;
     };
 
     class CallOptions
@@ -597,7 +683,7 @@ namespace RCF {
             mCallback()
         {}
 
-        CallOptions(RemoteCallSemantics rcs, boost::function0<void> callback) : 
+        CallOptions(RemoteCallSemantics rcs, const boost::function0<void> & callback) : 
             mAsync(true),
             mRcsSpecified(true),
             mRcs(rcs),
@@ -615,7 +701,7 @@ namespace RCF {
         {
             clientStub.setAsync(mAsync);
             clientStub.setAsyncCallback(mCallback);
-            return mRcsSpecified ? mRcs : clientStub.getDefaultCallingSemantics();
+            return mRcsSpecified ? mRcs : clientStub.getRemoteCallSemantics();
         }
 
     private:
@@ -628,15 +714,15 @@ namespace RCF {
     class RCF_EXPORT AsyncTwoway : public CallOptions
     {
     public:
-        AsyncTwoway(boost::function0<void> callback) :
+        AsyncTwoway(const boost::function0<void> & callback) :
             CallOptions(RCF::Twoway, callback)
         {}
     };
 
-    class AsyncOneway : public CallOptions
+    class RCF_EXPORT AsyncOneway : public CallOptions
     {
     public:
-        AsyncOneway(boost::function0<void> callback) :
+        AsyncOneway(const boost::function0<void> & callback) :
             CallOptions(RCF::Oneway, callback)
         {}
     };
@@ -645,37 +731,14 @@ namespace RCF {
     {
     public:
 
-        RestoreClientTransportGuard(ClientStub &client, ClientStub &clientTemp) :
-            mClient(client),
-            mClientTemp(clientTemp)
-        {}
-
-        ~RestoreClientTransportGuard()
-        {
-            RCF_DTOR_BEGIN
-            mClient.setTransport(mClientTemp.releaseTransport());
-            RCF_DTOR_END
-        }
+        RestoreClientTransportGuard(ClientStub &client, ClientStub &clientTemp);
+        ~RestoreClientTransportGuard();
 
     private:
         ClientStub &mClient;
         ClientStub &mClientTemp;
     };
 
-
 } // namespace RCF
 
-#ifdef RCF_USE_SF_SERIALIZATION
-
-namespace SF {
-
-    SF_CTOR(RCF::ClientStub, RCF::ClientStub("", ""))
-
-} // namespace SF
-
-#endif
-
-#if defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6))
-#pragma GCC diagnostic pop
-#endif
 #endif // ! INCLUDE_RCF_CLIENTSTUB_HPP

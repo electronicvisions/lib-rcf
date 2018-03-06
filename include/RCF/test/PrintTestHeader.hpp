@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -21,13 +24,10 @@
 #include <iostream>
 #include <string>
 #include <RCF/Config.hpp>
-#include <RCF/util/AutoBuild.hpp>
+#include <RCF/test/Test.hpp>
 #include <boost/version.hpp>
 
-#ifdef RCF_USE_BOOST_ASIO
-#include <boost/asio/version.hpp>
 #include <RCF/Asio.hpp>
-#endif
 
 #ifdef _MSC_VER
 #pragma warning( push )
@@ -50,8 +50,10 @@ inline void printTestHeader(const char *file)
     std::cout << "Visual C++ 9.0";
 #elif defined(_MSC_VER) && _MSC_VER == 1600
     std::cout << "Visual C++ 10.0";
+#elif defined(_MSC_VER) && _MSC_VER == 1700
+    std::cout << "Visual C++ 11.0";
 #elif defined(_MSC_VER) 
-    std::cout << "Visual C++ ??? - " << "_MSC_VER is " << _MSC_VER;
+    std::cout << "Visual C++ <<<version>>> - " << "_MSC_VER is " << _MSC_VER;
 #endif
 
 #if defined(__GNUC__)
@@ -65,19 +67,27 @@ inline void printTestHeader(const char *file)
     std::cout << std::endl;
     std::cout << "Architecture (bits): " << 8*sizeof(void*) << std::endl;
 
+#if !defined(NDEBUG) || defined(_DEBUG)
+    std::cout << "Debug build" << std::endl;
+#else
+    std::cout << "Release build" << std::endl;
+#endif
+
+
     std::cout << "\n*********************\n";
     std::cout << file << std::endl;
     time_t now = time(NULL);
     std::cout << "Time now: " << std::string(ctime(&now));
+    std::cout << "Current working directory: " << RCF::getWorkingDir() << std::endl;
+    std::cout << "Relative path to test data: " << RCF::getRelativeTestDataPath() << std::endl;
+
     std::cout << "Defines:" << std::endl;
 
     std::cout << "BOOST_VERSION: " << BOOST_VERSION << std::endl;
 
 #ifdef RCF_USE_BOOST_ASIO
     std::cout << "BOOST_ASIO_VERSION: " << BOOST_ASIO_VERSION << std::endl;
-#endif
 
-#ifdef RCF_USE_BOOST_ASIO
 #if defined(BOOST_ASIO_HAS_IOCP)
     std::cout << "BOOST_ASIO_HAS_IOCP" << std::endl;
 #elif defined(BOOST_ASIO_HAS_EPOLL)
@@ -87,55 +97,48 @@ inline void printTestHeader(const char *file)
 #elif defined(BOOST_ASIO_HAS_DEV_POLL)
     std::cout << "BOOST_ASIO_HAS_DEV_POLL" << std::endl;
 #else
-    std::cout << "Boost.Asio - using select()" << std::endl;
-#endif
-#endif
-
-    std::cout << "RCF_MAX_METHOD_COUNT: " << RCF_MAX_METHOD_COUNT << std::endl;
-    std::cout << "RCF_MEM_ISTREAM_INLINE_STREAMBUF: " << RCF_MEM_ISTREAM_INLINE_STREAMBUF << std::endl;
-
-#ifdef RCF_MULTI_THREADED
-    std::cout << "RCF_MULTI_THREADED" << std::endl;
+    std::cout << "BOOST_ASIO_HAS_*** - using select()" << std::endl;
 #endif
 
-#ifdef RCF_SINGLE_THREADED
-    std::cout << "RCF_SINGLE_THREADED" << std::endl;
+#else
+    std::cout << "ASIO_VERSION: " << ASIO_VERSION << std::endl;
+
+#if defined(ASIO_HAS_IOCP)
+    std::cout << "ASIO_HAS_IOCP" << std::endl;
+#elif defined(ASIO_HAS_EPOLL)
+    std::cout << "ASIO_HAS_EPOLL" << std::endl;
+#elif defined(ASIO_HAS_KQUEUE)
+    std::cout << "ASIO_HAS_KQUEUE" << std::endl;
+#elif defined(ASIO_HAS_DEV_POLL)
+    std::cout << "ASIO_HAS_DEV_POLL" << std::endl;
+#else
+    std::cout << "ASIO_HAS_*** - using select()" << std::endl;
 #endif
 
-#ifdef RCF_USE_BOOST_THREADS
-    std::cout << "RCF_USE_BOOST_THREADS" << std::endl;
 #endif
-
-#ifdef RCF_USE_BOOST_ASIO
-    std::cout << "RCF_USE_BOOST_ASIO" << std::endl;
-#endif
-
-#ifdef RCF_USE_SF_SERIALIZATION
-    std::cout << "RCF_USE_SF_SERIALIZATION" << std::endl;
-#endif
-
-#ifdef RCF_USE_BOOST_SERIALIZATION
-    std::cout << "RCF_USE_BOOST_SERIALIZATION" << std::endl;
-#endif
-
-#ifdef RCF_USE_BOOST_XML_SERIALIZATION
-    std::cout << "RCF_USE_BOOST_XML_SERIALIZATION" << std::endl;
-#endif
-
-#ifdef RCF_USE_ZLIB
-    std::cout << "RCF_USE_ZLIB" << std::endl;
-#endif
-
-#ifdef RCF_USE_OPENSSL
-    std::cout << "RCF_USE_OPENSSL" << std::endl;
-#endif
-
-#ifdef BOOST_SP_ENABLE_DEBUG_HOOKS
-    std::cout << "BOOST_SP_ENABLE_DEBUG_HOOKS" << std::endl;
-#endif
-
-    std::cout << "RCF_TEMP_DIR: " << RCF_TEMP_DIR << std::endl;
     
+    std::cout << "RCF_MAX_METHOD_COUNT: " << RCF_MAX_METHOD_COUNT << std::endl;
+
+    std::cout << "RCF_FEATURE_LEGACY:               : " << RCF_FEATURE_LEGACY << std::endl;
+
+    std::cout << "RCF_FEATURE_SF:                   : " << RCF_FEATURE_SF << std::endl;
+
+    std::cout << "RCF_FEATURE_BOOST_SERIALIZATION   : " << RCF_FEATURE_BOOST_SERIALIZATION << std::endl;
+
+    std::cout << "RCF_FEATURE_ZLIB                  : " << RCF_FEATURE_ZLIB << std::endl;
+
+    std::cout << "RCF_FEATURE_OPENSSL               : " << RCF_FEATURE_OPENSSL << std::endl;
+
+    std::cout << "RCF_FEATURE_FILETRANSFER          : " << RCF_FEATURE_FILETRANSFER << std::endl;
+
+    std::cout << "RCF_FEATURE_JSON                  : " << RCF_FEATURE_JSON << std::endl;
+
+    std::cout << "RCF_FEATURE_IPV6                  : " << RCF_FEATURE_IPV6 << std::endl;
+
+    std::cout << "RCF_FEATURE_PROTOBUF              : " << RCF_FEATURE_PROTOBUF << std::endl;
+
+    std::cout << "RCF_FEATURE_CUSTOM_ALLOCATOR      : " << RCF_FEATURE_CUSTOM_ALLOCATOR << std::endl;
+
     std::cout << "*********************\n\n";
 }
 

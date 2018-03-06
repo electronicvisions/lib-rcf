@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -16,26 +19,103 @@
 #include <RCF/util/Log.hpp>
 
 #include <RCF/ByteBuffer.hpp>
+#include <RCF/Exception.hpp>
 #include <RCF/ThreadLibrary.hpp>
+#include <RCF/ThreadLocalData.hpp>
 #include <RCF/Tools.hpp>
+#include <RCF/util/Assert.hpp>
 
-#include <RCF/util/InitDeinit.hpp>
-#include <RCF/util/Platform/OS/ThreadId.hpp>
-
-#include <iostream>
+#include <stdlib.h>
+#include <time.h>
 
 #ifndef BOOST_WINDOWS
 #include <sys/time.h>
 #endif
 
-namespace util {
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4995) // 'sprintf': name was marked as #pragma deprecated
+#pragma warning(disable: 4996) // 'sprintf'/'localtime': This function or variable may be unsafe.
+#endif
+
+namespace RCF {
+
+    LoggerPtr gRcfLoggerPtr;
+
+    void enableLogging(
+        const LogTarget &       logTarget, 
+        int                     logLevel, 
+        const std::string &     logFormat)
+    {
+        Lock lock(LogManager::instance().DefaultLoggerPtrMutex);
+
+        LoggerPtr & defaultLoggerPtr = LogManager::instance().DefaultLoggerPtr;
+
+        if (defaultLoggerPtr)
+        {
+            defaultLoggerPtr->deactivate();
+        }
+
+        defaultLoggerPtr.reset();
+
+        defaultLoggerPtr.reset( new RCF::Logger(
+            RCF::LogNameRcf, 
+            logLevel, 
+            logTarget,
+            logFormat) );
+
+        defaultLoggerPtr->activate();
+    }
+
+    void disableLogging()
+    {
+        Lock lock(LogManager::instance().DefaultLoggerPtrMutex);
+
+        LoggerPtr & defaultLoggerPtr = LogManager::instance().DefaultLoggerPtr;
+
+        if (defaultLoggerPtr)
+        {
+            defaultLoggerPtr->deactivate();
+        }
+
+        defaultLoggerPtr.reset();
+    }
+
+    void printToOstream(RCF::MemOstream & os, boost::uint16_t n)
+    {
+        char buffer[50] = {0};
+        sprintf(buffer, "%u", boost::uint32_t(n));
+        os << buffer;
+    }
+
+    void printToOstream(RCF::MemOstream & os, boost::uint32_t n)
+    {
+        char buffer[50] = {0};
+        sprintf(buffer, "%u", n);
+        os << buffer;
+    }
+
+    void printToOstream(RCF::MemOstream & os, boost::uint64_t n)
+    {
+        char buffer[50] = {0};
+
+#ifdef _MSC_VER
+        sprintf(buffer, "%llu", n);
+#else
+        sprintf(buffer, "%llu", (long long unsigned int) n);
+#endif
+        os << buffer;
+    }
 
     LogManager * gpLogManager;
 
-    util::ThreadSpecificPtr<std::ostrstream>::Val tlsUserBufferPtr;
-    util::ThreadSpecificPtr<std::ostrstream>::Val tlsLoggerBufferPtr;
+    LogManager::LogManager() : 
+        mLoggersMutex(WriterPriority), 
+        DefaultLogFormat("%E(%F): [Thread: %D][Time: %H] %X")
+    {
+    }
 
-    LogManager::LogManager() : mLoggersMutex(util::WriterPriority)
+    LogManager::~LogManager()
     {
     }
 
@@ -52,6 +132,10 @@ namespace util {
     
     LogManager & LogManager::instance()
     {
+        if (!gpLogManager)
+        {
+            throw Exception(_RcfError_RcfNotInitialized());
+        }
         return *gpLogManager;
     }
 
@@ -170,10 +254,10 @@ namespace util {
 
         {
             Lock lock(sIoMutex);
-            std::cout.write(output.getPtr(), static_cast<std::streamsize>(output.getLength() - 1));
+            fwrite(output.getPtr(), sizeof(char), output.getLength() - 1, stdout);
             if (mFlush)
             {
-                std::cout.flush();
+                fflush(stdout);
             }
         }
 
@@ -239,6 +323,7 @@ namespace util {
     LogToFile::LogToFile(const std::string & filePath, bool flushAfterEachWrite) : 
         mFilePath(filePath), 
         mOpened(false), 
+        mFp(NULL),
         mFlush(flushAfterEachWrite)
     {
     }
@@ -246,8 +331,18 @@ namespace util {
     LogToFile::LogToFile(const LogToFile & rhs) : 
         mFilePath(rhs.mFilePath), 
         mOpened(false), 
+        mFp(NULL),
         mFlush(rhs.mFlush)
     {
+    }
+
+    LogToFile::~LogToFile()
+    {
+        if (mFp)
+        {
+            fclose(mFp);
+            mFp = NULL;
+        }
     }
 
     LogTarget * LogToFile::clone() const
@@ -257,23 +352,26 @@ namespace util {
 
     void LogToFile::write(const RCF::ByteBuffer & output)
     {
+        Lock lock(mMutex);
+
         if (!mOpened)
         {
-            mFout.open(mFilePath.c_str(), std::ios::app);
-            if (!mFout.is_open())
+            mFp = fopen(mFilePath.c_str(), "a");
+            if (!mFp)
             {
-                throw std::runtime_error("Unable to open log file.");
+                std::string errMsg = "Unable to open log file for appending. File: " + mFilePath;
+                throw std::runtime_error(errMsg);
             }
             mOpened = true;
         }
 
         output.getPtr()[output.getLength() - 2] = '\n';
 
-        mFout.write(output.getPtr(), static_cast<std::streamsize>(output.getLength() - 1));
+        fwrite(output.getPtr(), sizeof(char), output.getLength() - 1, mFp);
 
         if (mFlush)
         {
-            mFout.flush();
+            fflush(mFp);
         }
 
         output.getPtr()[output.getLength() - 2] = '\0';
@@ -319,7 +417,7 @@ namespace util {
         mFile(NULL),
         mLine(0),
         mFunc(NULL),
-        mThreadId( Platform::OS::GetCurrentThreadId() ),
+        mThreadId( RCF::getCurrentThreadId() ),
         mTime(0),
         mTimeMs(0)
     {
@@ -327,15 +425,10 @@ namespace util {
         mTime = time(NULL);
         mTimeMs = getCurrentMsValue();
 
-        if (!tlsUserBufferPtr.get())
-        {
-            tlsUserBufferPtr.reset( new std::ostrstream() );
-        }
-
-        mpOstream = tlsUserBufferPtr.get();
+        LogBuffers & logBuffers = getTlsLogBuffers();
+        mpOstream = & logBuffers.mTlsUserBuffer;
         mpOstream->clear();
-        mpOstream->rdbuf()->freeze(false);
-        mpOstream->rdbuf()->pubseekoff(0, std::ios::beg, std::ios::out);
+        mpOstream->rewind();
     }
 
     LogEntry::LogEntry(int name, int level, const char * szFile, int line, const char * szFunc) : 
@@ -344,7 +437,7 @@ namespace util {
         mFile(szFile), 
         mLine(line),
         mFunc(szFunc),
-        mThreadId( Platform::OS::GetCurrentThreadId() ),
+        mThreadId( RCF::getCurrentThreadId() ),
         mTime(0),
         mTimeMs(0)
     {
@@ -352,36 +445,71 @@ namespace util {
         mTime = time(NULL);
         mTimeMs = getCurrentMsValue();
 
-        if (!tlsUserBufferPtr.get())
-        {
-            tlsUserBufferPtr.reset( new std::ostrstream() );
-        }
-
-        mpOstream = tlsUserBufferPtr.get();
+        LogBuffers & logBuffers = getTlsLogBuffers();
+        mpOstream = & logBuffers.mTlsUserBuffer;
         mpOstream->clear();
-        mpOstream->rdbuf()->freeze(false);
-        mpOstream->rdbuf()->pubseekoff(0, std::ios::beg, std::ios::out);
+        mpOstream->rewind();
     }
 
     LogEntry::~LogEntry()
     {
-        *mpOstream << std::ends;
+        *mpOstream << '\0';
         LogManager::instance().writeToLoggers(*this);
     }
 
-    Logger::Logger(int name, int level, const LogTarget& logTarget, const std::string logFormat) :
-        mName(name), 
-        mLevel(level), 
-        mTargetPtr( logTarget.clone() ), 
-        mFormat(logFormat)
+    Logger::Logger(
+        int name, 
+        int level, 
+        const LogTarget& logTarget, 
+        const std::string & logFormat) :
+            mName(name), 
+            mLevel(level), 
+            mTargetPtr( logTarget.clone() ), 
+            mFormat(logFormat)
+    {
+        if (mFormat.empty())
+        {
+            mFormat = LogManager::instance().DefaultLogFormat;
+        }
+    }
+
+    Logger::Logger(
+        int name, 
+        int level, 
+        const LogTarget& logTarget, 
+        LogFormatFunctor logFormatFunctor) :
+            mName(name), 
+            mLevel(level), 
+            mTargetPtr( logTarget.clone() ), 
+            mFormatFunctor(logFormatFunctor)
     {
     }
 
-    Logger::Logger(int name, int level, const LogTarget& logTarget, LogFormatFunctor logFormatFunctor) :
-        mName(name), 
-        mLevel(level), 
-        mTargetPtr( logTarget.clone() ), 
-        mFormatFunctor(logFormatFunctor)
+    Logger::Logger(
+        int name, 
+        int level, 
+        LogTargetPtr logTargetPtr, 
+        const std::string & logFormat) :
+            mName(name), 
+            mLevel(level), 
+            mTargetPtr(logTargetPtr), 
+            mFormat(logFormat)
+    {
+        if (mFormat.empty())
+        {
+            mFormat = LogManager::instance().DefaultLogFormat;
+        }
+    }
+
+    Logger::Logger(
+        int name, 
+        int level, 
+        LogTargetPtr logTargetPtr, 
+        LogFormatFunctor logFormatFunctor) :
+            mName(name), 
+            mLevel(level), 
+            mTargetPtr(logTargetPtr), 
+            mFormatFunctor(logFormatFunctor)
     {
     }
 
@@ -463,7 +591,7 @@ namespace util {
 
     // A: Log name
     // B: Log level
-    // C: date time
+    // C: time
     // D: thread id
     // E: __FILE__
     // F: __LINE__
@@ -484,18 +612,13 @@ namespace util {
         }
         else
         {
-            std::size_t len = static_cast<std::size_t>(logEntry.mpOstream->pcount());
+            std::size_t len = static_cast<std::size_t>(logEntry.mpOstream->tellp());
             RCF::ByteBuffer logEntryOutput(logEntry.mpOstream->str(), len);
             
-            if (!tlsLoggerBufferPtr.get())
-            {
-                tlsLoggerBufferPtr.reset( new std::ostrstream() );
-            }
-
-            std::ostrstream & os = *tlsLoggerBufferPtr;
+            LogBuffers & logBuffers = getTlsLogBuffers();
+            RCF::MemOstream & os = logBuffers.mTlsLoggerBuffer;
             os.clear();
-            os.rdbuf()->freeze(false);
-            os.rdbuf()->pubseekoff(0, std::ios::beg, std::ios::out);
+            os.rewind();
 
             tm * ts = NULL;
             char timeBuffer[80] = {0};
@@ -521,33 +644,21 @@ namespace util {
 
                     case 'C': 
 
-#if defined(_MSC_VER)
-#pragma warning(push)
-#pragma warning(disable: 4995) // 'sprintf': name was marked as #pragma deprecated
-#pragma warning(disable: 4996) // 'sprintf'/'localtime': This function or variable may be unsafe.
-#endif
-
                         ts = localtime(&logEntry.mTime);
 
                         sprintf(
                             timeBuffer, 
-                            "%d%02d%02d %02d:%02d:%02d:%03d", 
-                            1900+ts->tm_year, 
-                            1+ts->tm_mon, 
-                            ts->tm_mday, 
+                            "%02d:%02d:%02d:%03u", 
                             ts->tm_hour, 
                             ts->tm_min, 
                             ts->tm_sec,
                             logEntry.mTimeMs);
 
-#if defined(_MSC_VER)
-#pragma warning(pop)
-#endif
                         os << timeBuffer;
                         break;
 
                     case 'D': 
-                        os << logEntry.mThreadId;                        
+                        printToOstream(os, logEntry.mThreadId);
                         break;
 
                     case 'E': 
@@ -555,7 +666,7 @@ namespace util {
                         break;
 
                     case 'F': 
-                        os << logEntry.mLine;                            
+                        printToOstream(os, logEntry.mLine);
                         break;
 
                     case 'G': 
@@ -563,7 +674,7 @@ namespace util {
                         break;
 
                     case 'H':
-                        os << RCF::getCurrentTimeMs();
+                        printToOstream(os, RCF::getCurrentTimeMs());
                         break;
 
                     case 'X': 
@@ -585,9 +696,9 @@ namespace util {
             }
 
             // Terminate the string with two zeros, that way the log targets can insert a newline if they want.
-            os << std::ends << std::ends;
+            os << '\0' << '\0';
 
-            output = RCF::ByteBuffer(os.str(), static_cast<std::size_t>(os.pcount()));
+            output = RCF::ByteBuffer(os.str(), static_cast<std::size_t>(os.tellp()));
         }
 
         // Pass the string to the log target.
@@ -610,48 +721,35 @@ namespace util {
     bool Logger::isActive()
     {
         return LogManager::instance().isLoggerActive( shared_from_this() );
+    }   
+
+    void initLogManager()
+    {
+        LogManager::init();
+    }   
+
+    void deinitLogManager()
+    {
+        LogManager::deinit();
     }
-
-    UTIL_ON_INIT_NAMED( LogManager::init(), LogInitialize )
-    UTIL_ON_DEINIT_NAMED( LogManager::deinit(), LogDeinitialize )
-
-} // namespace util
-
-
-namespace util {
-
-    util::ThreadSpecificPtr<std::ostrstream>::Val tlsVarArgBuffer1Ptr;
-    util::ThreadSpecificPtr<std::ostrstream>::Val tlsVarArgBuffer2Ptr;
 
     VariableArgMacroFunctor::VariableArgMacroFunctor() :
         mFile(NULL),
         mLine(0),
         mFunc(NULL)
     {
-        if (!tlsVarArgBuffer1Ptr.get())
-        {
-            tlsVarArgBuffer1Ptr.reset( new std::ostrstream() );
-            *tlsVarArgBuffer1Ptr << std::ends;
-        }
+        RCF::LogBuffers & logBuffers = RCF::getTlsLogBuffers();
+        mHeader = & logBuffers.mTlsVarArgBuffer1;
+        mArgs = & logBuffers.mTlsVarArgBuffer2;
 
-        if (!tlsVarArgBuffer2Ptr.get())
-        {
-            tlsVarArgBuffer2Ptr.reset( new std::ostrstream() );
-            *tlsVarArgBuffer2Ptr << std::ends;
-        }
-
-        mHeader = tlsVarArgBuffer1Ptr.get();
         mHeader->clear();
-        mHeader->rdbuf()->freeze(false);
-        mHeader->rdbuf()->pubseekoff(0, std::ios::beg, std::ios::out);
+        mHeader->rewind();
 
-        mArgs = tlsVarArgBuffer2Ptr.get();
         mArgs->clear();
-        mArgs->rdbuf()->freeze(false);
-        mArgs->rdbuf()->pubseekoff(0, std::ios::beg, std::ios::out);
+        mArgs->rewind();
     }
 
-    VariableArgMacroFunctor::~VariableArgMacroFunctor() noexcept(false)
+    VariableArgMacroFunctor::~VariableArgMacroFunctor()
     {}
 
     VariableArgMacroFunctor & VariableArgMacroFunctor::init(
@@ -665,8 +763,8 @@ namespace util {
         mLine = line;
         mFunc = func;
 
-        unsigned int timestamp = Platform::OS::getCurrentTimeMs();
-        Platform::OS::ThreadId threadid = Platform::OS::GetCurrentThreadId();
+        unsigned int timestamp = RCF::getCurrentTimeMs();
+        RCF::ThreadId threadid = RCF::getCurrentThreadId();
        
         *mHeader
             << file << "(" << line << "): "
@@ -674,10 +772,108 @@ namespace util {
             << ": Thread-id=" << threadid
             << " : Timestamp(ms)=" << timestamp << ": "
             << label << msg << ": "
-            << std::ends;
+            << '\0';
 
         return *this;
     }
 
-} // namespace util
+    void printToOstream(RCF::MemOstream & os, const std::exception &e)
+    {
+        os << RCF::toString(e);
+    }
 
+    void printToOstream(RCF::MemOstream & os, const RCF::Exception &e)
+    {
+        os << RCF::toString(e);
+    }
+
+    void printToOstream(RCF::MemOstream & os, const RCF::RemoteException &e)
+    {
+        os << RCF::toString(e);
+    }
+
+    void printToOstream(RCF::MemOstream & os, const RCF::SerializationException &e)
+    {
+        os << RCF::toString(e);
+    }
+
+    void printToOstream(RCF::MemOstream & os, const std::type_info &ti)
+    {
+        os << ti.name();
+    }
+
+    AssertFunctor::AssertFunctor() : mExpr(NULL)
+    {
+    }
+
+    AssertFunctor::AssertFunctor(const char * expr) : mExpr(expr)
+    {
+    }
+
+#if defined(_MSC_VER) && !defined(NDEBUG)
+#pragma warning(push)
+#pragma warning(disable: 4995) // 'sprintf': name was marked as #pragma deprecated
+#pragma warning(disable: 4996) // 'sprintf': This function or variable may be unsafe.
+
+    AssertFunctor::~AssertFunctor()
+    {
+        const char * msg =
+            "%s\n"
+            "Values: %s\n"
+            "Function: %s";
+
+        std::string values(mArgs->str(), static_cast<std::size_t>(mArgs->tellp()));
+
+        char szBuffer[512] = { 0 };
+        sprintf(szBuffer, "%s(%d): Assert failed. Expression: %s.\n", mFile, mLine, mExpr);
+        OutputDebugStringA(szBuffer);
+        fprintf(stdout, "%s", szBuffer);
+
+        std::string assertMsg(szBuffer);
+        RCF_LOG_1()(assertMsg) << "Failed assertion!";
+
+        int ret = _CrtDbgReport(_CRT_ASSERT, mFile, mLine, NULL, msg, mExpr, values.c_str(), mFunc);
+        if ( ret == 1 )
+        {
+            // __debugbreak() is more likely to give a proper call stack.
+            //DebugBreak();
+            __debugbreak();
+        }
+    }
+
+#pragma warning(pop)
+#else
+
+    AssertFunctor::~AssertFunctor()
+    {
+        std::string values(mArgs->str(), static_cast<std::size_t>(mArgs->tellp()));
+
+        char szBuffer[512] = { 0 };
+        sprintf(
+            szBuffer,
+            "%s:%d: Assertion failed. %s . Values: %s\n",
+            mFile,
+            mLine,
+            mExpr,
+            values.c_str());
+
+        fprintf(stdout, "%s", szBuffer);
+
+        std::string assertMsg(szBuffer);
+        RCF_LOG_1()(assertMsg) << "Failed assertion!";
+
+        assert(0 && "See line above for assertion details.");
+    }
+
+#endif
+
+    VarArgAbort::VarArgAbort()
+    {
+        abort();
+    }
+
+} // namespace RCF
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif

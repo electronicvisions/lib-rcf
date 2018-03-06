@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -81,7 +84,7 @@ namespace SF {
 
     RCF_EXPORT bool getCurrentNativeWstringSerialization();
 
-#if !defined(BOOST_NO_STD_WSTRING) && !defined(__BORLANDC__)
+#if !defined(BOOST_NO_STD_WSTRING)
 
     template<typename C, typename T, typename A>
     inline void serializeEncodedString(SF::Archive & ar, std::basic_string<C,T,A> & ws)
@@ -156,13 +159,13 @@ namespace SF {
     }
 
     template<typename C, typename T, typename A>
-    inline void serializeEncodedStringOrNot(SF::Archive & ar, std::basic_string<C, T, A> & t, boost::mpl::true_ *)
+    inline void serializeEncodedStringOrNot(SF::Archive & ar, std::basic_string<C, T, A> & t, RCF::TrueType *)
     {
         serializeEncodedString(ar, t);
     }
 
     template<typename C, typename T, typename A>
-    inline void serializeEncodedStringOrNot(SF::Archive & ar, std::basic_string<C, T, A> & t, boost::mpl::false_ *)
+    inline void serializeEncodedStringOrNot(SF::Archive & ar, std::basic_string<C, T, A> & t, RCF::FalseType *)
     {
         serializeString(ar, t);
     }

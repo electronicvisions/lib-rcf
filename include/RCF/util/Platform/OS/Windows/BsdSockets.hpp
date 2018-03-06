@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -49,8 +52,8 @@
 typedef
 BOOL
 (PASCAL FAR * LPFN_ACCEPTEX)(
-    IN RCF_SOCKET sListenSocket,
-    IN RCF_SOCKET sAcceptSocket,
+    IN SOCKET sListenSocket,
+    IN SOCKET sAcceptSocket,
     IN PVOID lpOutputBuffer,
     IN DWORD dwReceiveDataLength,
     IN DWORD dwLocalAddressLength,
@@ -157,9 +160,9 @@ namespace Platform {
                 return ::connect(fd, name, namelen);
             }
 
-            inline int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, const struct timeval *timeout)
+            inline int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct timeval *timeout)
             {
-                return ::select(nfds, readfds, writefds, exceptfds, timeout );
+                return ::select(nfds, readfds, writefds, exceptfds, const_cast<struct timeval *>(timeout) );
             }
 
             inline int closesocket(int fd)                                      

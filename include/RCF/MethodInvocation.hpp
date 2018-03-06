@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -21,11 +24,11 @@
 
 #include <boost/shared_ptr.hpp>
 
-#include <RCF/AsyncFilter.hpp>
+#include <RCF/Filter.hpp>
 #include <RCF/ByteBuffer.hpp>
 #include <RCF/Export.hpp>
 #include <RCF/Exception.hpp>
-#include <RCF/Protocol/Protocol.hpp>
+#include <RCF/SerializationProtocol_Base.hpp>
 #include <RCF/Token.hpp>
 
 namespace RCF {
@@ -40,6 +43,7 @@ namespace RCF {
     class SerializationProtocolOut;
 
     class MethodInvocationResponse;
+    class MethodInvocationRequest;
 
     // message types
     static const int Descriptor_Error               = 0;
@@ -52,10 +56,35 @@ namespace RCF {
 
     class Protobufs;
 
-    class RCF_EXPORT MethodInvocationRequest
+    class RemoteCallRequest
+    {
+    public:
+
+        RemoteCallRequest(const MethodInvocationRequest & req);
+
+        std::string             mServantBindingName;
+        std::string             mInterfaceName;
+        int                     mFnId;
+        bool                    mOneway;
+        SerializationProtocol   mSerializationProtocol;
+        int                     mRuntimeVersion;
+        int                     mArchiveVersion;
+        boost::uint32_t         mPingBackIntervalMs;
+        bool                    mUseNativeWstringSerialization;
+        bool                    mEnableSfPointerTracking;
+
+    };
+
+    class RCF_EXPORT MethodInvocationRequest : boost::noncopyable
     {
     public:
         MethodInvocationRequest();
+
+        void            init(                            
+                            int                             runtimeVersion);
+
+        void            init(
+                            const MethodInvocationRequest & rhs);
 
         void            init(
                             const Token &                   token,
@@ -70,14 +99,15 @@ namespace RCF {
                             bool                            ignoreRuntimeVersion,
                             boost::uint32_t                 pingBackIntervalMs,
                             int                             archiveVersion,
-                            bool                            useNativeWstringSerialization);
+                            bool                            useNativeWstringSerialization,
+                            bool                            enableSfPointerTracking);
 
         Token           getToken() const;
-        std::string     getSubInterface() const;
+        const std::string & getSubInterface() const;
         int             getFnId() const;
         bool            getOneway() const;
         bool            getClose() const;
-        std::string     getService() const;
+        const std::string & getService() const;
         void            setService(const std::string &service);
         int             getPingBackIntervalMs();
 
@@ -96,7 +126,8 @@ namespace RCF {
 
         bool            encodeResponse(
                             const RemoteException *         pRe,
-                            ByteBuffer &                    buffer);
+                            ByteBuffer &                    buffer,
+                            bool                            enableSfPointerTracking);
 
         void            decodeResponse(
                             const ByteBuffer &              message,
@@ -111,6 +142,7 @@ namespace RCF {
 
         friend class RcfSession;
         friend class ClientStub;
+        friend class RemoteCallRequest;
 
         void            decodeFromMessage(
                             const ByteBuffer &              message,
@@ -123,33 +155,6 @@ namespace RCF {
                             std::vector<ByteBuffer> &       message,
                             const std::vector<ByteBuffer> & buffers,
                             const std::vector<FilterPtr> &  filters);
-
-
-        // Protocol Buffer functionality.
-        ByteBuffer      encodeRequestHeaderProto();
-
-        void            encodeToMessageProto(
-                            std::vector<ByteBuffer> &       message,
-                            const std::vector<ByteBuffer> & buffers,
-                            const std::vector<FilterPtr> &  filters);
-
-        std::size_t     decodeRequestHeaderProto(
-                            const ByteBuffer &              buffer);
-
-        std::size_t     decodeFromMessageProto(
-                            const ByteBuffer &              message,
-                            std::vector<int> &              filterIds,
-                            std::size_t &                   unfilteredLen);
-
-        void            encodeResponseProto(
-                            const RemoteException *         pRe,
-                            ByteBuffer &                    buffer);
-
-        std::size_t     decodeResponseHeaderProto(
-                            const ByteBuffer &              buffer,
-                            MethodInvocationResponse &      response);
-
-        void            initProtobuf();
 
         Token                   mToken;
         std::string             mSubInterface;
@@ -166,14 +171,14 @@ namespace RCF {
         ByteBuffer              mRequestUserData;
         ByteBuffer              mResponseUserData;
         bool                    mUseNativeWstringSerialization;
+        bool                    mEnableSfPointerTracking;
+        ByteBuffer              mOutOfBandRequest;
+        ByteBuffer              mOutOfBandResponse;
 
         boost::shared_ptr<std::vector<char> >   mVecPtr;
         
-        // Protobuf specific stuff.
-        boost::shared_ptr<std::ostrstream>      mOsPtr;
-        boost::shared_ptr<Protobufs>            mProtobufsPtr;
 
-        friend std::ostream& operator<<(std::ostream& os, const MethodInvocationRequest& r)
+        friend RCF::MemOstream& operator<<(RCF::MemOstream& os, const MethodInvocationRequest& r)
         {
             os
                 << NAMEVALUE(r.mToken)
@@ -202,11 +207,13 @@ namespace RCF {
         int     getError() const;
         int     getArg0() const;
         int     getArg1() const;
+        bool    getEnableSfPointerTracking() const;
 
         std::auto_ptr<RemoteException> getExceptionPtr();
 
     private:
         friend class MethodInvocationRequest;
+        
 
         typedef std::auto_ptr<RemoteException> RemoteExceptionPtr;
 
@@ -216,8 +223,9 @@ namespace RCF {
         int                 mErrorCode;
         int                 mArg0;
         int                 mArg1;
+        bool                mEnableSfPointerTracking;
 
-        friend std::ostream& operator<<(std::ostream& os, const MethodInvocationResponse& r)
+        friend RCF::MemOstream& operator<<(RCF::MemOstream& os, const MethodInvocationResponse& r)
         {
             os    << NAMEVALUE(r.mException);
             if (r.mExceptionPtr.get())
@@ -236,6 +244,102 @@ namespace RCF {
             return os;
         }
     };
+
+    // Out of band messages
+
+    enum OobMessageType
+    {
+        Omt_RequestTransportFilters = 1,
+        Omt_CreateCallbackConnection = 2,
+        Omt_RequestSubscription = 3
+    };
+
+    class OobMessage;
+    typedef boost::shared_ptr<OobMessage> OobMessagePtr;
+    typedef boost::shared_ptr< std::vector<char> > VecPtr;
+
+    class RCF_EXPORT OobMessage
+    {
+    public:
+
+        OobMessage(int runtimeVersion);
+        virtual ~OobMessage();
+
+        virtual OobMessageType  getMessageType() = 0;
+
+        virtual void            encodeRequest(ByteBuffer & buffer) = 0;
+        virtual void            decodeRequest(const ByteBuffer & buffer, std::size_t & pos) = 0;
+
+        virtual void            encodeResponse(ByteBuffer & buffer);
+        virtual void            decodeResponse(const ByteBuffer & buffer);
+
+    protected:
+        void                    encodeRequestCommon(VecPtr vecPtr, std::size_t & pos);
+
+    public:
+        static OobMessagePtr    decodeRequestCommon(const ByteBuffer & buffer);
+
+    protected:
+        void                    encodeResponseCommon(VecPtr vecPtr, std::size_t & pos);
+        void                    decodeResponseCommon(const ByteBuffer & buffer, std::size_t & pos);
+
+        int                     mRuntimeVersion;
+
+    public:
+
+        // Common return values.
+        boost::uint32_t         mResponseError;
+        std::string             mResponseErrorString;
+    };
+
+    class RCF_EXPORT OobRequestTransportFilters : public OobMessage
+    {
+    public:
+        OobRequestTransportFilters(int runtimeVersion);
+
+        OobRequestTransportFilters(
+            int runtimeVersion, 
+            const std::vector<FilterPtr> &filters);
+
+        virtual OobMessageType  getMessageType();
+        virtual void            encodeRequest(ByteBuffer & buffer);
+        virtual void            decodeRequest(const ByteBuffer & buffer, std::size_t & pos);
+
+        std::vector<boost::int32_t>        mFilterIds;
+    };
+
+    class RCF_EXPORT OobCreateCallbackConnection : public OobMessage
+    {
+    public:
+        OobCreateCallbackConnection(int runtimeVersion);
+
+        virtual OobMessageType  getMessageType();
+        virtual void            encodeRequest(ByteBuffer & buffer);
+        virtual void            decodeRequest(const ByteBuffer & buffer, std::size_t & pos);
+    };
+
+    class RCF_EXPORT OobRequestSubscription : public OobMessage
+    {
+    public:
+        OobRequestSubscription(int runtimeVersion);
+
+        OobRequestSubscription(
+            int                     runtimeVersion, 
+            const std::string &     publisherName, 
+            boost::uint32_t         subToPubPingIntervalMs);
+
+        virtual OobMessageType  getMessageType();
+        virtual void            encodeRequest(ByteBuffer & buffer);
+        virtual void            decodeRequest(const ByteBuffer & buffer, std::size_t & pos);
+        virtual void            encodeResponse(ByteBuffer & buffer);
+        virtual void            decodeResponse(const ByteBuffer & buffer);
+
+
+        std::string             mPublisherName;
+        boost::uint32_t         mSubToPubPingIntervalMs;
+        boost::uint32_t         mPubToSubPingIntervalMs;
+    };
+
 
 } // namespace RCF
 

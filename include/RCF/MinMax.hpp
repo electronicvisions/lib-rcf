@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -16,28 +19,8 @@
 #ifndef INCLUDE_RCF_MINMAX_HPP
 #define INCLUDE_RCF_MINMAX_HPP
 
-/*
-// Because of macros in Windows platform headers, it's rather difficult to use 
-// std::min/max. So we define our own instead.
-
-namespace RCF {
-
-    template<typename T>
-    T rcfMin(T t1, T t2)
-    {
-        return (t1 <= t2) ? t1 : t2;
-    }
-    template<typename T>
-    T rcfMax(T t1, T t2)
-    {
-        return (t1 <= t2) ? t2 : t1;
-    }
-
-#define RCF_MIN RCF::rcfMin
-#define RCF_MAX RCF::rcfMax
-
-} // namespace RCF
-*/
+// Macros in Windows platform headers tend to make it difficult to use
+// std::min/std::max.
 
 #include <algorithm>
 

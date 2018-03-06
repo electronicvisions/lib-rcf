@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -61,12 +64,12 @@
 #define O_BINARY 0
 #endif
 
-#ifndef RCF_SOCKET
-#define RCF_SOCKET int
+#ifndef SOCKET
+#define SOCKET int
 #endif
 
-#ifndef RCF_INVALID_SOCKET
-#define RCF_INVALID_SOCKET -1
+#ifndef INVALID_SOCKET
+#define INVALID_SOCKET -1
 #endif
 
 // Solaris doesn't define INADDR_NONE, for some reason
@@ -84,9 +87,7 @@ namespace Platform {
 
         namespace BsdSockets {
 
-#ifndef __CYGWIN__
             typedef ::socklen_t socklen_t;
-#endif
 
             inline int recv(int fd, char *buf, int len, int flags)             
             {
@@ -141,7 +142,7 @@ namespace Platform {
                 return ::close(fd);
             }
 
-            inline void setblocking(RCF_SOCKET fd, bool bBlocking)                 
+            inline void setblocking(SOCKET fd, bool bBlocking)                 
             {
                 int arg = bBlocking ? 0 : 1;
                 ::ioctl(fd, FIONBIO, &arg);
@@ -152,7 +153,7 @@ namespace Platform {
                 return errno;
             }
 
-#if (defined(__MACH__) && defined(__APPLE__)) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
+#if (defined(__MACH__) && defined(__APPLE__)) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__ANDROID__)
 
             inline void disableBrokenPipeSignals()
             {

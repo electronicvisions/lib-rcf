@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,7 +22,7 @@
 #include <fstream>
 #include <string>
 
-#include <RCF/util/AutoBuild.hpp>
+#include <RCF/test/Test.hpp>
 
 class Usernames
 {
@@ -33,35 +36,6 @@ public:
     std::string mAdDomain;
 };
 
-bool getUsernames(Usernames & usernames)
-{
-    std::string whichFile = RCF_TEMP_DIR "sspi.txt";
-
-    std::ifstream fin(whichFile.c_str());
-    
-    if (!fin)
-    {
-        return false;
-    }
-    
-    fin >> usernames.mLocalUsername;
-    fin >> usernames.mLocalPassword;
-    fin >> usernames.mLocalPasswordBad;
-    fin >> usernames.mAdUsername;
-    fin >> usernames.mAdPassword;
-    fin >> usernames.mAdPasswordBad;
-    fin >> usernames.mAdDomain;
-    
-    assert(fin);
-    
-    if (!fin)
-    {
-        return false;
-    }
-
-    fin.close();
-
-    return true;
-}
+bool getUsernames(Usernames & usernames);
 
 #endif // ! INCLUDE_RCF_TEST_USERNAMES_HPP

@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -26,7 +29,7 @@
 
 namespace RCF {
 
-#ifdef RCF_USE_IPV6
+#if RCF_FEATURE_IPV6==1
 
     typedef in6_addr In6Addr;
     typedef sockaddr_in6 SockAddrIn6;
@@ -60,24 +63,35 @@ namespace RCF {
     class Exception;
     typedef boost::shared_ptr<Exception> ExceptionPtr;
 
-    class RCF_EXPORT IpAddress : public I_RemoteAddress
+    /// Represents an IP address (IPv4 or IPv6).
+    class RCF_EXPORT IpAddress : public RemoteAddress
     {
     public:
 
+        // *** SWIG BEGIN ***
+
+        /// Construct an IP address from a host name
+        explicit IpAddress(const std::string & ip);
+
+        /// Construct an IP address from a host name and port.
+        explicit IpAddress(const std::string & ip, int port);
+
+        // *** SWIG END ***
+
         enum Type { V4_or_V6, V4, V6 };
 
-        static void setDefaultResolveProtocol(Type type);
-        static Type getDefaultResolveProtocol();
+        static void setPreferredResolveProtocol(Type type);
+        static Type getPreferredResolveProtocol();
         
         IpAddress();
         explicit IpAddress(Type restrictTo);
-        explicit IpAddress(const std::string & ip);
-        explicit IpAddress(const std::string & ip, int port);
         explicit IpAddress(const std::string & ip, int port, Type restrictTo);
         explicit IpAddress(const sockaddr_in &addr);
         explicit IpAddress(const SockAddrIn6 &addr);
         explicit IpAddress(const sockaddr &addr, std::size_t addrLen, Type type);
         explicit IpAddress(int fd, Type type);
+
+        void            init(const sockaddr &addr, std::size_t addrLen, Type type);
 
         int             createSocket(int socketType = SOCK_STREAM, int protocol = IPPROTO_TCP) const;
         void            getSockAddr(sockaddr *&, Platform::OS::BsdSockets::socklen_t &) const;
@@ -92,16 +106,14 @@ namespace RCF {
         bool            isResolved() const;
         bool            isBroadcast() const;
         bool            isMulticast() const;
+        bool            isLoopback() const;
         bool            matches(const IpAddress & rhs, std::size_t bits = std::size_t(-1)) const;
 
         void            setPort(int port);
 
         bool            operator==(const IpAddress & rhs) const;
+        bool            operator!=(const IpAddress & rhs) const;
         bool            operator<(const IpAddress &rhs) const;
-
-#ifdef RCF_USE_SF_SERIALIZATION
-        void            serialize(SF::Archive &ar);
-#endif // RCF_USE_SF_SERIALIZATION
 
     private:
 
@@ -151,8 +163,5 @@ namespace RCF {
     };
 
 } // namespace RCF
-
-RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION(RCF::IpAddress)
-RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION(RCF::IpAddress::Type)
 
 #endif // ! INCLUDE_RCF_IPADDRESS_HPP

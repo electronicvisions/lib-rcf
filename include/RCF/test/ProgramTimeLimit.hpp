@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -22,8 +25,6 @@
 
 #include <RCF/ThreadLibrary.hpp>
 #include <RCF/ThreadPool.hpp>
-#include <RCF/util/InitDeinit.hpp>
-#include <RCF/util/Platform/OS/GetCurrentTime.hpp>
 #include <RCF/util/CommandLine.hpp>
 
 class ProgramTimeLimit
@@ -31,7 +32,7 @@ class ProgramTimeLimit
 public:
     ProgramTimeLimit(unsigned int timeLimitS)
     {
-        mStartTimeMs = Platform::OS::getCurrentTimeMs();
+        mStartTimeMs = RCF::getCurrentTimeMs();
         mTimeLimitMs = timeLimitS*1000;
         mStopFlag = false;
         if (timeLimitS)
@@ -47,7 +48,7 @@ public:
             {
                 RCF::Lock lock(mStopMutex);
                 mStopFlag = true;
-                mStopCondition.notify_all();
+                mStopCondition.notify_all(lock);
             }
             mThreadPtr->join();
         }
@@ -58,7 +59,7 @@ private:
     void poll()
     {
         // Set our thread name.
-        RCF::setWin32ThreadName( static_cast<boost::uint32_t>(-1), "RCF Program Time Limit");
+        RCF::setWin32ThreadName("RCF Program Time Limit");
 
         while (true)
         {
@@ -71,14 +72,14 @@ private:
             }
             else
             {
-                unsigned int currentTimeMs = Platform::OS::getCurrentTimeMs();
+                unsigned int currentTimeMs = RCF::getCurrentTimeMs();
                 if (currentTimeMs - mStartTimeMs > mTimeLimitMs)
                 {
                     std::cout 
                         << "Time limit expired (" << mTimeLimitMs/1000 << " (s) ). Killing this test." 
                         << std::endl;
 
-#if defined(_MSC_VER) && _MSC_VER >= 1310
+#if defined(_MSC_VER)
 
                     // By simulating an access violation , we will trigger the 
                     // creation  of a minidump, which will aid postmortem analysis.
@@ -109,8 +110,6 @@ private:
     RCF::Condition mStopCondition;
 };
 
-ProgramTimeLimit * gpProgramTimeLimit;
-
-UTIL_ON_DEINIT_NAMED( delete gpProgramTimeLimit; gpProgramTimeLimit = NULL; , PtoCloDeinitialize )
+ProgramTimeLimit * gpProgramTimeLimit = NULL;
 
 #endif // ! INCLUDE_RCF_TEST_PROGRAMTIMELIMIT_HPP

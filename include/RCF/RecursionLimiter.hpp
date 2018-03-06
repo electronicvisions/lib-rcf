@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -21,6 +24,7 @@
 
 #include <RCF/ByteBuffer.hpp>
 #include <RCF/Tools.hpp>
+#include <RCF/TypeTraits.hpp>
 
 namespace RCF {
 
@@ -29,10 +33,10 @@ namespace RCF {
     {
     public:
         RecursionState() :
-            mRecursing(RCF_DEFAULT_INIT),
-            mBreak(RCF_DEFAULT_INIT),
-            mT1(RCF_DEFAULT_INIT),
-            mT2(RCF_DEFAULT_INIT)
+            mRecursing(),
+            mBreak(),
+            mT1(),
+            mT2()
         {}
 
         void assign(const T1 &t1)
@@ -65,13 +69,13 @@ namespace RCF {
         T2      mT2;
 
     private:
-        void clearArg_(const ByteBuffer &byteBuffer, boost::mpl::true_*)
+        void clearArg_(const ByteBuffer &byteBuffer, TrueType *)
         {
             const_cast<ByteBuffer &>(byteBuffer).clear();
         }
 
         template<typename T>
-        void clearArg_(const T &, boost::mpl::false_*)
+        void clearArg_(const T &, FalseType *)
         {}
 
         template<typename T>

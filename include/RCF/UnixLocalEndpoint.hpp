@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -27,32 +30,27 @@
 #error Unix domain sockets not supported on Windows.
 #endif
 
-#include <boost/version.hpp>
-#if BOOST_VERSION < 103600
-#error Need Boost 1.36.0 or later for Unix domain socket support.
-#endif
-
 namespace RCF {
 
-    class RCF_EXPORT UnixLocalEndpoint : public I_Endpoint
+    /// Represents a UNIX local socket endpoint. Only available on UNIX platforms.
+    class RCF_EXPORT UnixLocalEndpoint : public Endpoint
     {
     public:
 
         UnixLocalEndpoint();
 
-        UnixLocalEndpoint(const std::string & pipeName);
+        // *** SWIG BEGIN ***
+
+        /// Constructs a UNIX local socket endpoint with the given name.
+        UnixLocalEndpoint(const std::string & socketName);
+
+        // *** SWIG END ***
 
         ServerTransportAutoPtr createServerTransport() const;
         ClientTransportAutoPtr createClientTransport() const;
         EndpointPtr clone() const;
 
         std::string asString() const;
-
-#ifdef RCF_USE_SF_SERIALIZATION
-
-        void serialize(SF::Archive &ar);
-
-#endif
 
         std::string getPipeName() const
         {
@@ -65,7 +63,5 @@ namespace RCF {
     };
 
 } // namespace RCF
-
-RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION(RCF::UnixLocalEndpoint)
 
 #endif // ! INCLUDE_RCF_UNIXLOCALENDPOINT_HPP

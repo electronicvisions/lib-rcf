@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -17,7 +20,6 @@
 #define INCLUDE_RCF_OBJECTPOOL_HPP
 
 #include <vector>
-#include <strstream>
 
 #include <boost/bind.hpp>
 #include <boost/shared_ptr.hpp>
@@ -27,7 +29,7 @@
 
 namespace RCF {
 
-    static const std::size_t CbSize = 64;
+    static const std::size_t CbSize = 128;
 
     class ObjectPool;
 
@@ -76,6 +78,7 @@ namespace RCF {
         {
             BOOST_STATIC_ASSERT( sizeof(T) <= CbSize );
             RCF_ASSERT_EQ(cnt , 1);
+            RCF_UNUSED_VARIABLE(cnt);
             return reinterpret_cast<pointer>(CbAllocatorBase::allocate());
         }
 
@@ -162,19 +165,17 @@ namespace RCF {
             return false;
         }
 
-        typedef boost::shared_ptr<std::vector<char> > VecPtr;
-        typedef boost::shared_ptr<std::ostrstream> OstrStreamPtr;
+        MemOstreamPtr getMemOstreamPtr();
+        ReallocBufferPtr getReallocBufferPtr();
 
-        void get(VecPtr & vecPtr);
-        void get(OstrStreamPtr & ostrStreamPtr);
-        void get(ReallocBufferPtr & bufferPtr);
-
-        void enumerateBuffers(std::vector<std::size_t> & bufferSizes);
-        void enumerateOstrstreams(std::vector<std::size_t> & bufferSizes);
-        void enumerateReallocBuffers(std::vector<std::size_t> & bufferSizes);
+        void enumerateWriteBuffers(std::vector<std::size_t> & bufferSizes);
+        void enumerateReadBuffers(std::vector<std::size_t> & bufferSizes);
 
         void setBufferCountLimit(std::size_t bufferCountLimit);
         std::size_t getBufferCountLimit();
+
+        void setBufferSizeLimit(std::size_t bufferSizeLimit);
+        std::size_t getBufferSizeLimit();
 
         template<typename T>
         void getObj(boost::shared_ptr<T> & objPtr, bool alwaysCreate = true)
@@ -186,7 +187,7 @@ namespace RCF {
 
 
             {
-                ReadLock lock(mObjPoolMutex);
+                ReadLock poolLock(mObjPoolMutex);
 
                 if (mObjPool.empty())
                 {
@@ -217,7 +218,7 @@ namespace RCF {
                     else
                     {
                         ObjList & objList = *(iter->second);
-                        Lock lock(objList.mMutex);
+                        Lock listLock(objList.mMutex);
                         if (objList.mMaxSize == 0)
                         {
                             if (alwaysCreate)
@@ -368,17 +369,14 @@ namespace RCF {
         void * getPcb();
         void putPcb(void * pcb);
 
-        void putVec(std::vector<char> * pVec);
-        void putOstrStream(std::ostrstream * pOs);
+        void putMemOstream(MemOstream * pOs);
         void putReallocBuffer(ReallocBuffer * pRb);
 
         std::size_t                             mBufferCountLimit;
-
-        Mutex                                   mVecPoolMutex;
-        std::vector< std::vector<char> * >      mVecPool;
+        std::size_t                             mBufferSizeLimit;
 
         Mutex                                   mOsPoolMutex;
-        std::vector< std::ostrstream * >        mOsPool;
+        std::vector< MemOstream * >             mOsPool;
 
         Mutex                                   mRbPoolMutex;
         std::vector< ReallocBuffer * >          mRbPool;

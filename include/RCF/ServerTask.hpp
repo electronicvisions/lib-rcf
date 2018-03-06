@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -30,7 +33,8 @@ namespace RCF {
         TaskEntry(
             Task                    task,
             StopFunctor             stopFunctor,
-            const std::string &     threadName = "");
+            const std::string &     threadName,
+            bool                    autoStart = true);
 
         TaskEntry(
             MuxerType               muxerType);
@@ -40,8 +44,9 @@ namespace RCF {
 
         void    setThreadPoolPtr(ThreadPoolPtr threadPoolPtr);
         Task    getTask();
-        void    start(const volatile bool &stopFlag);
-        void    stop(bool wait = true);
+        bool    getAutoStart();
+        void    start();
+        void    stop();
 
         void    resetMuxers();
 
@@ -56,8 +61,9 @@ namespace RCF {
         std::string     mThreadName;
 
         ThreadPoolPtr   mLocalThreadPoolPtr;
-
         ThreadPoolPtr   mWhichThreadPoolPtr;
+
+        bool            mAutoStart;
     };
 
     typedef std::vector<TaskEntry> TaskEntries;

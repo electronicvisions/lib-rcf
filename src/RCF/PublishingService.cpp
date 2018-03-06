@@ -2,95 +2,83 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
 #include <RCF/PublishingService.hpp>
 
+#include <RCF/AsioServerTransport.hpp>
+#include <RCF/ConnectedClientTransport.hpp>
 #include <RCF/CurrentSession.hpp>
 #include <RCF/MulticastClientTransport.hpp>
 #include <RCF/RcfServer.hpp>
 #include <RCF/RcfSession.hpp>
-#include <RCF/ServerInterfaces.hpp>
 #include <RCF/ServerTransport.hpp>
+#include <RCF/ThreadLibrary.hpp>
 
-#ifdef RCF_USE_PROTOBUF
-#include <RCF/protobuf/RcfMessages.pb.h>
+#if RCF_FEATURE_LEGACY==1
+#include <RCF/ServerInterfaces.hpp>
 #endif
-
-#include <RCF/util/Platform/OS/Sleep.hpp>
 
 namespace RCF {
 
-    PublishingService::PublishingService(boost::uint32_t pingIntervalMs) :
-        mPublishersMutex(WriterPriority),
-        mPingIntervalMs(pingIntervalMs)
+    void PublisherParms::setTopicName(const std::string & topicName)
+    {
+        mTopicName = topicName;
+    }
+
+    std::string PublisherParms::getTopicName() const
+    {
+        return mTopicName;
+    }
+
+    void PublisherParms::setOnSubscriberConnect(OnSubscriberConnect onSubscriberConnect)
+    {
+        mOnSubscriberConnect = onSubscriberConnect;
+    }
+
+    void PublisherParms::setOnSubscriberDisconnect(OnSubscriberDisconnect onSubscriberDisconnect)
+    {
+        mOnSubscriberDisconnect = onSubscriberDisconnect;
+    }
+    
+#ifdef _MSC_VER
+#pragma warning( push )
+#pragma warning( disable : 4355 ) // warning C4355: 'this' : used in base member initializer list
+#endif
+
+    PublishingService::PublishingService() :
+        mPingIntervalMs(0),
+        mPeriodicTimer(*this, 0)
     {}
 
-    bool PublishingService::beginPublishNamed(
-        const std::string &publisherName,
-        RcfClientPtr rcfClientPtr)
+#ifdef _MSC_VER
+#pragma warning( pop )
+#endif
+
+    PublishingService::~PublishingService()
     {
-        rcfClientPtr->getClientStub().setTransport(ClientTransportAutoPtr(new MulticastClientTransport));
-        rcfClientPtr->getClientStub().setDefaultCallingSemantics(Oneway);
-        rcfClientPtr->getClientStub().setTargetName("");
-        rcfClientPtr->getClientStub().setTargetToken( Token());
-        PublisherPtr publisherPtr( new Publisher(publisherName, rcfClientPtr));
-        WriteLock lock(mPublishersMutex);
-        mPublishers[publisherName] = publisherPtr;
-        return true;
     }
 
-    I_RcfClient &PublishingService::publishNamed(const std::string &publisherName)
+    void PublishingService::setPingIntervalMs(boost::uint32_t pingIntervalMs)
     {
-        ReadLock lock(mPublishersMutex);
-        if (mPublishers.find(publisherName) != mPublishers.end())
-        {
-            return *mPublishers[ publisherName ]->mMulticastRcfClientPtr;
-        }
-        Exception e(_RcfError_UnknownPublisher(publisherName));
-        RCF_THROW(e);
+        mPingIntervalMs = pingIntervalMs;
     }
 
-    bool PublishingService::endPublishNamed(const std::string &publisherName)
+    boost::uint32_t PublishingService::getPingIntervalMs() const
     {
-        WriteLock lock(mPublishersMutex);
-        Publishers::iterator iter = mPublishers.find(publisherName);
-        if (iter != mPublishers.end())
-        {
-            mPublishers.erase(iter);
-        }
-        return true;
-    }
-
-    void PublishingService::setOnConnectCallback(
-        OnConnectCallback onConnectCallback)
-    {
-        WriteLock lock(mPublishersMutex);
-        mOnConnectCallback = onConnectCallback;
-    }
-
-    void PublishingService::setOnDisconnectCallback(
-        OnDisconnectCallback onDisconnectCallback)
-    {
-        WriteLock lock(mPublishersMutex);
-        mOnDisconnectCallback = onDisconnectCallback;
-    }
-
-    void vc6_boost_bind_helper_2(
-        PublishingService::OnDisconnectCallback onDisconnect, 
-        RcfSession & rcfSession,
-        const std::string & subscriptionName )
-    {
-        onDisconnect(rcfSession, subscriptionName);
+        return mPingIntervalMs;
     }
 
     // remotely accessible
@@ -112,199 +100,202 @@ namespace RCF {
         boost::uint32_t subToPubPingIntervalMs,
         boost::uint32_t & pubToSubPingIntervalMs)
     {
+        PublisherPtr publisherPtr;
         std::string publisherName = subscriptionName;
-        bool found = false;
-        ReadLock lock(mPublishersMutex);
-        if (mPublishers.find(publisherName) != mPublishers.end())
+        Lock lock(mPublishersMutex);
+        Publishers::iterator iter = mPublishers.find(publisherName);
+        if (iter != mPublishers.end())
         {
-            found = true;
+            PublisherWeakPtr publisherWeakPtr = iter->second;
+            publisherPtr = publisherWeakPtr.lock();
         }
         lock.unlock();
-        if (found)
+        if (publisherPtr)
         {
-            RcfSession & rcfSession = getCurrentRcfSession();
+            RcfSession & rcfSession = getTlsRcfSession();
 
-            if (mOnConnectCallback)
+            if (publisherPtr->mParms.mOnSubscriberConnect)
             {
-                mOnConnectCallback(rcfSession, subscriptionName);
-            }            
+                bool allowSubscriber = publisherPtr->mParms.mOnSubscriberConnect(rcfSession, subscriptionName);
+                if (!allowSubscriber)
+                {
+                    return RcfError_AccessDenied;
+                }
+            }
 
-            I_ServerTransportEx &serverTransport =
-                dynamic_cast<I_ServerTransportEx &>(
-                    rcfSession.getSessionState().getServerTransport());
+            rcfSession.setPingIntervalMs(subToPubPingIntervalMs);
 
-            ClientTransportAutoPtrPtr clientTransportAutoPtrPtr(
-                new ClientTransportAutoPtr(
-                    serverTransport.createClientTransport(
-                        rcfSession.shared_from_this())));
+            ServerTransportEx &serverTransport = dynamic_cast<ServerTransportEx &>(
+                rcfSession.getNetworkSession().getServerTransport());
+
+            ClientTransportAutoPtrPtr clientTransportAutoPtrPtr( new ClientTransportAutoPtr(
+                serverTransport.createClientTransport( rcfSession.shared_from_this() )));
 
             (*clientTransportAutoPtrPtr)->setRcfSession(
                 rcfSession.shared_from_this());
 
-            rcfSession.setPingIntervalMs(subToPubPingIntervalMs);
-
-            rcfSession.addOnWriteCompletedCallback(
-                boost::bind(
-                    &PublishingService::addSubscriberTransport,
-                    this,
-                    _1,
-                    publisherName,
-                    clientTransportAutoPtrPtr) );
-
-            if (mOnDisconnectCallback)
+            if ( publisherPtr->mParms.mOnSubscriberDisconnect )
             {
+                rcfSession.setOnDestroyCallback( boost::bind(
+                    publisherPtr->mParms.mOnSubscriberDisconnect,
+                    _1,
+                    publisherName));
+            }
 
-#if defined(_MSC_VER) && _MSC_VER < 1310
+            rcfSession.setPingTimestamp();
 
-                rcfSession.setOnDestroyCallback(
-                    boost::bind(vc6_boost_bind_helper_2, mOnDisconnectCallback, _1, subscriptionName));
-
-#else
-
-                rcfSession.setOnDestroyCallback(
-                    boost::bind(mOnDisconnectCallback, _1, subscriptionName));
-
-#endif
-
-            }            
+            rcfSession.addOnWriteCompletedCallback( boost::bind(
+                &PublishingService::addSubscriberTransport,
+                this,
+                _1,
+                publisherName,
+                clientTransportAutoPtrPtr) );
         }  
         pubToSubPingIntervalMs = mPingIntervalMs;
-        return found ? RcfError_Ok : RcfError_Unspecified;
+        return publisherPtr ? RcfError_Ok : RcfError_UnknownPublisher;
     }
-
-#ifdef RCF_USE_PROTOBUF
-
-    class PublishingServicePb
-    {
-    public:
-
-        PublishingServicePb(PublishingService & ps) : mPs(ps)
-        {
-        }
-
-        void RequestSubscription(const PbRequestSubscription & request)
-        {
-            int error = mPs.RequestSubscription(request.subscriptionname());
-
-            if (error != RCF::RcfError_Ok)
-            {
-                RemoteException e(( Error(error) ));
-                RCF_THROW(e);
-            }
-        }
-
-    private:
-        PublishingService & mPs;
-    };
-
-    void onServiceAddedProto(PublishingService & ps, RcfServer & server)
-    {
-        boost::shared_ptr<PublishingServicePb> psPbPtr(
-            new PublishingServicePb(ps));
-
-        server.bind((I_RequestSubscriptionPb *) NULL, psPbPtr);
-    }
-
-    void onServiceRemovedProto(PublishingService & ps, RcfServer & server)
-    {
-        server.unbind( (I_RequestSubscriptionPb *) NULL);
-    }
-
-#else
-
-    void onServiceAddedProto(PublishingService &, RcfServer &)
-    {
-    }
-
-    void onServiceRemovedProto(PublishingService &, RcfServer &)
-    {
-    }
-
-#endif // RCF_USE_PROTOBUF
 
     void PublishingService::onServiceAdded(RcfServer & server)
     {
-        server.bind( (I_RequestSubscription *) NULL, *this);
 
-        onServiceAddedProto(*this, server);
-
-        mStopFlag = false;
-        mLastRunTimer.restart(Platform::OS::getCurrentTimeMs() - 2*mPingIntervalMs);
-
-        if (mPingIntervalMs)
-        {
-            mTaskEntries.clear();
-
-            mTaskEntries.push_back( TaskEntry(
-                boost::bind(&PublishingService::cycle, this, _1, _2),
-                boost::bind(&PublishingService::stop, this),
-                "RCF Publishing Timeout"));
-        }
+#if RCF_FEATURE_LEGACY==1
+        server.bind<I_RequestSubscription>(*this);
+#endif
     }
 
     void PublishingService::onServiceRemoved(RcfServer &server)
     {
-        server.unbind( (I_RequestSubscription *) NULL);
 
-        onServiceRemovedProto(*this, server);
+#if RCF_FEATURE_LEGACY==1
+        server.unbind<I_RequestSubscription>();
+#endif
+
+    }
+
+    void PublishingService::onServerStart(RcfServer &server)
+    {
+        RCF_UNUSED_VARIABLE(server);
+        mPeriodicTimer.setIntervalMs(mPingIntervalMs);
+        mPeriodicTimer.start();
     }
 
     void PublishingService::onServerStop(RcfServer &server)
     {
-        // need to do this now, rather than implicitly, when RcfServer is destroyed, because
-        // the client transport objects have links to the server transport (close functor)
         RCF_UNUSED_VARIABLE(server);
-        WriteLock writeLock(mPublishersMutex);
-        this->mPublishers.clear();
+        mPeriodicTimer.stop();
+
+        // Close all publishers.
+
+        Publishers publishers;
+        {
+            Lock writeLock(mPublishersMutex);
+            publishers = mPublishers;
+        }
+
+        Publishers::iterator iter;
+        for (iter = publishers.begin(); iter != publishers.end(); ++iter)
+        {
+            PublisherPtr publisherPtr = iter->second.lock();
+            if (publisherPtr)
+            {
+                publisherPtr->close();
+            }
+        }
+
+        {
+            Lock writeLock(mPublishersMutex);
+            RCF_ASSERT(mPublishers.empty());
+        }
     }
 
     void PublishingService::addSubscriberTransport(
-        RcfSession &session,
+        RcfSession &rcfSession,
         const std::string &publisherName,
         ClientTransportAutoPtrPtr clientTransportAutoPtrPtr)
     {
-        session.setPingTimestamp();
+        PublisherPtr publisherPtr;
 
-        WriteLock lock(mPublishersMutex);
-        if (mPublishers.find(publisherName) != mPublishers.end())
         {
-            I_ClientTransport &clientTransport =
-                mPublishers[ publisherName ]->mMulticastRcfClientPtr->
-                    getClientStub().getTransport();
+            Lock lock(mPublishersMutex);
+            if ( mPublishers.find(publisherName) != mPublishers.end() )
+            {
+                publisherPtr = mPublishers[publisherName].lock();
+            }
+        }
 
-            MulticastClientTransport &multiCastClientTransport =
-                dynamic_cast<MulticastClientTransport &>(clientTransport);
+        if ( publisherPtr )
+        {        
+            AsioNetworkSession& networkSession = static_cast<AsioNetworkSession&>(rcfSession.getNetworkSession());
 
-            multiCastClientTransport.addTransport(*clientTransportAutoPtrPtr);
+            // For now we assume the presence of wire filters indicates a HTTP/HTTPS connection.
+            if ( networkSession.mWireFilters.size() > 0 )
+            {
+                // This doesn't actually close anything, it just takes the session out of the server IO loop.
+                rcfSession.setCloseSessionAfterWrite(true);
+                (*clientTransportAutoPtrPtr)->setRcfSession(RcfSessionWeakPtr());
+
+                std::size_t wireFilterCount = networkSession.mWireFilters.size();
+                RCF_ASSERT(wireFilterCount == 1 || wireFilterCount == 2);
+                RCF_UNUSED_VARIABLE(wireFilterCount);
+
+                ConnectedClientTransport& connClientTransport = static_cast<ConnectedClientTransport&>(**clientTransportAutoPtrPtr);
+                connClientTransport.setWireFilters(networkSession.mWireFilters);
+                networkSession.mWireFilters.clear();
+                networkSession.setTransportFilters(std::vector<FilterPtr>());
+            }
+
+            MulticastClientTransport &multicastClientTransport = 
+                static_cast<MulticastClientTransport &>(
+                    publisherPtr->mRcfClientPtr->getClientStub().getTransport());
+
+            multicastClientTransport.addTransport(*clientTransportAutoPtrPtr);
         }
     }
 
-    bool PublishingService::cycle(
-        int timeoutMs,
-        const volatile bool &stopFlag)
+    void PublishingService::closePublisher(const std::string & name)
     {
-        RCF_UNUSED_VARIABLE(timeoutMs);
-
-        if (    !mLastRunTimer.elapsed(mPingIntervalMs)
-            &&  !stopFlag 
-            &&  !mStopFlag)
+        Lock writeLock(mPublishersMutex);
+        Publishers::iterator iter = mPublishers.find(name);
+        if (iter != mPublishers.end())
         {
-            Platform::OS::Sleep(1);
-            return false;
+            mPublishers.erase(iter);
+        }
+    }
+
+    void PublishingService::onTimer()
+    {
+        pingAllSubscriptions();
+        harvestExpiredSubscriptions();
+    }
+
+    void PublishingService::pingAllSubscriptions()
+    {
+        // Send one way pings on all our subscriptions, so the subscriber
+        // knows we're still alive.
+
+        std::vector<PublisherPtr> pubs;
+
+        {
+            Lock lock(mPublishersMutex);
+
+            Publishers::iterator iter;
+            for (iter = mPublishers.begin(); iter != mPublishers.end(); ++iter)
+            {
+                PublisherPtr publisherPtr = iter->second.lock();
+                if (publisherPtr)
+                {
+                    pubs.push_back(publisherPtr);
+                }
+            }
         }
 
-        mLastRunTimer.restart();
-
-        WriteLock lock(mPublishersMutex);
-
-        // Publish a oneway ping.
-        Publishers::iterator iter;
-        for (iter = mPublishers.begin(); iter != mPublishers.end(); ++iter)
+        for (std::size_t i=0; i<pubs.size(); ++i)
         {
-            Publisher & pub = * iter->second;
+            PublisherPtr publisherPtr = pubs[i];
+            RCF_ASSERT(publisherPtr);
 
-            I_ClientTransport & transport = 
-                pub.mMulticastRcfClientPtr->getClientStub().getTransport();
+            ClientTransport & transport = 
+                pubs[i]->mRcfClientPtr->getClientStub().getTransport();
 
             MulticastClientTransport & multiTransport = 
                 static_cast<MulticastClientTransport &>(transport);
@@ -312,13 +303,33 @@ namespace RCF {
             multiTransport.pingAllTransports();
         }
 
-        // Check ping timestamps on all subscribers, and kill off any stragglers.
-        for (iter = mPublishers.begin(); iter != mPublishers.end(); ++iter)
-        {
-            Publisher & pub = * iter->second;
+        pubs.clear();
+    }
 
-            I_ClientTransport & transport = 
-                pub.mMulticastRcfClientPtr->getClientStub().getTransport();
+    void PublishingService::harvestExpiredSubscriptions()
+    {
+        // Kill off subscriptions that haven't received any recent pings.
+
+        std::vector<PublisherPtr> pubs;
+
+        {
+            Lock lock(mPublishersMutex);
+
+            Publishers::iterator iter;
+            for (iter = mPublishers.begin(); iter != mPublishers.end(); ++iter)
+            {
+                PublisherPtr publisherPtr = iter->second.lock();
+                if (publisherPtr)
+                {
+                    pubs.push_back(publisherPtr);
+                }
+            }
+        }
+
+        for (std::size_t i=0; i<pubs.size(); ++i)
+        {
+            ClientTransport & transport = 
+                pubs[i]->mRcfClientPtr->getClientStub().getTransport();
 
             MulticastClientTransport & multiTransport = 
                 static_cast<MulticastClientTransport &>(transport);
@@ -326,12 +337,63 @@ namespace RCF {
             multiTransport.dropIdleTransports();
         }
 
-        return stopFlag || mStopFlag;
+        pubs.clear();
     }
 
-    void PublishingService::stop()
+    PublisherBase::PublisherBase(PublishingService & pubService, const PublisherParms & parms) : 
+        mPublishingService(pubService),
+        mParms(parms),
+        mClosed(false)
     {
-        mStopFlag = true;
+        mTopicName = parms.getTopicName();
     }
-   
+
+    PublisherBase::~PublisherBase()
+    {
+        if (!mClosed)
+        {
+            close();
+        }
+    }
+
+    std::string PublisherBase::getTopicName()
+    {
+        return mTopicName;
+    }
+
+    std::size_t PublisherBase::getSubscriberCount()
+    {
+        ClientStub & stub = mRcfClientPtr->getClientStub();
+        ClientTransport & transport = stub.getTransport();
+        MulticastClientTransport & multiTransport = static_cast<MulticastClientTransport &>(transport);
+        std::size_t transportCount = multiTransport.getTransportCount();
+        return transportCount;
+    }
+
+    void PublisherBase::close()
+    {
+        mPublishingService.closePublisher(mTopicName);
+
+        ClientTransport & transport = mRcfClientPtr->getClientStub().getTransport();
+
+        MulticastClientTransport & multicastTransport = 
+            static_cast<MulticastClientTransport &>(transport);
+        
+        multicastTransport.close();
+
+        mRcfClientPtr.reset();
+
+        mClosed = true;
+    }
+
+    void PublisherBase::init()
+    {
+        mRcfClientPtr->getClientStub().setTransport(
+            ClientTransportAutoPtr(new MulticastClientTransport));
+
+        mRcfClientPtr->getClientStub().setRemoteCallSemantics(Oneway);
+        mRcfClientPtr->getClientStub().setTargetName("");
+        mRcfClientPtr->getClientStub().setTargetToken( Token());
+    }
+
 } // namespace RCF

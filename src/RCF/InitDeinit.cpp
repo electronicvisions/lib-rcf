@@ -2,20 +2,28 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
 #include <RCF/InitDeinit.hpp>
 
+#include <RCF/Config.hpp>
 #include <RCF/ThreadLibrary.hpp>
+#include <RCF/AmiThreadPool.hpp>
+
+#include <RCF/Filter.hpp>
+#include <RCF/Globals.hpp>
 
 // std::size_t
 #include <cstdlib>
@@ -23,34 +31,163 @@
 // std::size_t for vc6
 #include <boost/config.hpp>
 
+#include <csignal>
+
 namespace RCF {
 
-    Mutex gInitRefCountMutex;
-    std::size_t gInitRefCount = 0;
+    extern AmiThreadPool * gpAmiThreadPool;
 
-    void init()
+    static Mutex gInitRefCountMutex;
+    static std::size_t gInitRefCount = 0;
+
+    void initAmiHandlerCache();
+    void initFileIoThreadPool();
+    void initAmi();
+    void initObjectPool();
+    void initPerformanceData();
+    void SspiInitialize();
+    void initThreadLocalData();
+    void initTpHandlerCache();
+    void initWinsock();
+    void initRegistrySingleton();
+    void initLogManager();
+    void initPfnGetUserName();
+
+    void deinitAmiHandlerCache();
+    void deinitFileIoThreadPool();
+    void deinitAmi();
+    void deinitObjectPool();
+    void deinitPerformanceData();
+    void SspiUninitialize();
+    void deinitThreadLocalData();
+    void deinitTpHandlerCache();
+    void deinitWinsock();
+    void deinitOpenSsl();
+    void deinitRegistrySingleton();
+    void deinitLogManager();
+    void deinitPfnGetUserName();
+
+    extern Globals * gpGlobals;
+
+    std::size_t getInitRefCount()
     {
-        Lock lock(gInitRefCountMutex);
-        if (gInitRefCount == 0)
-        {
-            util::invokeInitCallbacks();
-        }
-        ++gInitRefCount;
+        return gInitRefCount;
     }
 
-    void deinit()
+    bool init(RcfConfigT *)
     {
-        Lock lock(gInitRefCountMutex);
+        Lock lock(getRootMutex());
+        if (gInitRefCount == 0)
+        {
+
+            gpGlobals = new Globals();
+
+            // General initialization.
+            
+            RCF::getCurrentTimeMs();
+            initAmiHandlerCache();
+            initLogManager();
+            initAmi();
+            initObjectPool();
+            initPerformanceData();
+            initThreadLocalData();
+            initTpHandlerCache();
+
+
+#if RCF_FEATURE_FILETRANSFER==1
+            initFileIoThreadPool();
+#endif
+
+
+#if RCF_FEATURE_SF==1
+            initRegistrySingleton();
+#endif
+
+
+#ifdef BOOST_WINDOWS
+            initWinsock();
+            initPfnGetUserName();
+#endif
+
+
+#ifndef BOOST_WINDOWS
+            // Disable broken pipe signals on non-Windows platforms.
+            std::signal(SIGPIPE, SIG_IGN);
+#endif
+
+
+#if RCF_FEATURE_SSPI==1
+            SspiInitialize();
+#endif
+
+           
+#if RCF_FEATURE_SERVER==1
+            // Start the AMI thread pool.
+            gpAmiThreadPool = new AmiThreadPool(); 
+            gpAmiThreadPool->start();
+#endif
+
+        }
+
+        ++gInitRefCount;
+        return gInitRefCount == 1;
+    }
+
+    bool deinit()
+    {
+        Lock lock(getRootMutex());
         --gInitRefCount;
         if (gInitRefCount == 0)
         {
-            util::invokeDeinitCallbacks();
+
+
+#if RCF_FEATURE_SERVER==1
+            // Stop the AMI thread pool.
+            gpAmiThreadPool->stop(); 
+            delete gpAmiThreadPool; 
+            gpAmiThreadPool = NULL;
+#endif
+
+
+#if RCF_FEATURE_FILETRANSFER==1
+            deinitFileIoThreadPool();
+#endif
+            
+
+#ifdef BOOST_WINDOWS
+            deinitPfnGetUserName();
+            deinitWinsock();
+#endif
+
+
+#if RCF_FEATURE_SSPI==1
+            SspiUninitialize();
+#endif
+
+
+#if RCF_FEATURE_SF==1
+            deinitRegistrySingleton();
+#endif
+
+
+            // General deinitialization.
+            deinitAmi();
+            deinitObjectPool();
+            deinitAmiHandlerCache();
+            deinitPerformanceData();
+            deinitThreadLocalData();
+            deinitTpHandlerCache();
+            deinitLogManager();  
+
+            delete gpGlobals;
+            gpGlobals = NULL;
         }
+        return gInitRefCount == 0;
     }
 
-    RcfInitDeinit::RcfInitDeinit()
+    RcfInitDeinit::RcfInitDeinit(RcfConfigT *) : mIsRootInstance(false)
     {
-        init();
+        mIsRootInstance = init();
     }
 
     RcfInitDeinit::~RcfInitDeinit()
@@ -58,14 +195,13 @@ namespace RCF {
         deinit();
     }
 
-    // In some situations, Win32 DLL's in particular, the user needs to be able 
-    // to explicitly initialize and deinitialize the framework. To do that, define 
-    // RCF_NO_AUTO_INIT_DEINIT and then manually call RCF::init() / RCF::deinit().
+    bool RcfInitDeinit::isRootInstance()
+    {
+        return mIsRootInstance;
+    }
 
-#ifndef RCF_NO_AUTO_INIT_DEINIT
-
-    static RcfInitDeinit rcfInitDeinit;
-
+#ifdef RCF_AUTO_INIT_DEINIT
+    RcfInitDeinit gRcfAutoInit;
 #endif
 
 } // namespace RCF

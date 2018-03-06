@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -17,79 +20,54 @@
 
 #include <RCF/Exception.hpp>
 #include <RCF/InitDeinit.hpp>
+#include <RCF/util/Log.hpp>
+#include <RCF/ThreadLibrary.hpp>
 
-#include <RCF/util/Platform/OS/GetCurrentTime.hpp>
+#include <sys/types.h>
+#include <sys/stat.h>
 
-#ifndef __BORLANDC__
-namespace std {
+namespace RCF {
+
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4995) // 'sprintf': name was marked as #pragma deprecated
+#pragma warning(disable: 4996) // 'sprintf': This function or variable may be unsafe.
 #endif
 
-    // Logging of type_info.
-    std::ostream &operator<<(std::ostream &os, const std::type_info &ti)
+    DummyVariableArgMacroObject rcfThrow(const char * szFile, int line, const char * szFunc, const Exception & e)
     {
-        return os << ti.name();
+        std::string context = szFile;
+        context += ":";
+        char szBuffer[32] = {0};
+        sprintf(szBuffer, "%d", line);
+        context += szBuffer;
+        const_cast<Exception&>(e).setContext(context);
+
+        if (RCF::LogManager::instance().isEnabled(LogNameRcf, LogLevel_1))
+        {
+            RCF::LogEntry entry(LogNameRcf, LogLevel_1, szFile, line, szFunc);
+
+            entry
+                << "RCF exception thrown. Error message: "
+                << e.getErrorString();
+        }
+
+        e.throwSelf();
+
+        return DummyVariableArgMacroObject();
     }
 
-    // Logging of exception.
-    std::ostream &operator<<(std::ostream &os, const std::exception &e)
-    {
-        os << RCF::toString(e);
-        return os;
-    }
-
-    // Logging of RCF::Exception.
-    std::ostream &operator<<(std::ostream &os, const RCF::Exception &e)
-    {
-        os << RCF::toString(e);
-        return os;
-    }
-
-#ifndef __BORLANDC__
-} // namespace std
+#if defined(_MSC_VER)
+#pragma warning(pop)
 #endif
-
-#if defined(_MSC_VER) && _MSC_VER == 1200
-
-namespace std {
-
-    std::ostream &operator<<(std::ostream &os, __int64)
-    {
-        // TODO
-        RCF_ASSERT(0);
-        return os;
-    }
-
-    std::ostream &operator<<(std::ostream &os, unsigned __int64)
-    {
-        // TODO
-        RCF_ASSERT(0);
-        return os;
-    }
-
-    std::istream &operator>>(std::istream &os, __int64 &)
-    {
-        // TODO
-        RCF_ASSERT(0);
-        return os;
-    }
-
-    std::istream &operator>>(std::istream &os, unsigned __int64 &)
-    {
-        // TODO
-        RCF_ASSERT(0);
-        return os;
-    }
 
 }
-
-#endif
-
 
 namespace RCF {
 
     std::string toString(const std::exception &e)
     {
-        std::ostringstream os;
+        MemOstream os;
 
         const RCF::Exception *pE = dynamic_cast<const RCF::Exception *>(&e);
         if (pE)
@@ -103,40 +81,53 @@ namespace RCF {
             os << "[What: " << e.what() << "]" ;
         }
 
-        return os.str();
-    }
-
-    // 32 bit millisecond counter. Turns over every 49 days or so.
-    unsigned int getCurrentTimeMs()
-    {
-        return Platform::OS::getCurrentTimeMs();
+        return os.string();
     }
 
     // Generate a timeout value for the given ending time.
     // Returns zero if endTime <= current time <= endTime+10% of timer resolution,
     // otherwise returns a nonzero duration in ms.
     // Timer resolution as above (49 days).
-    unsigned int generateTimeoutMs(unsigned int endTimeMs)
+    boost::uint32_t generateTimeoutMs(unsigned int endTimeMs)
     {
         // 90% of the timer interval
-        static const unsigned int maxTimeoutMs = (((unsigned int)-1)/10)*9;
-        unsigned int currentTimeMs = getCurrentTimeMs();
-        unsigned int timeoutMs = endTimeMs - currentTimeMs;
-        return (timeoutMs < maxTimeoutMs) ? timeoutMs : 0;
+        boost::uint32_t currentTimeMs = getCurrentTimeMs();
+        boost::uint32_t timeoutMs = endTimeMs - currentTimeMs;
+        return (timeoutMs <= MaxTimeoutMs) ? timeoutMs : 0;
     }
+
+#ifdef BOOST_WINDOWS
 
     boost::uint64_t fileSize(const std::string & path)
     {
-        // TODO: this may not work for files larger than 32 bits, on some 32 bit
-        // STL implementations. msvc for instance.
+        struct _stat fileInfo = {0};
+        int ret = _stat(path.c_str(), &fileInfo);
+        RCF_VERIFY(ret == 0, Exception(_RcfError_FileOpen(path)));
+        return fileInfo.st_size;
+    }
 
-        std::ifstream fin ( path.c_str() );
-        RCF_VERIFY(fin, Exception(_RcfError_FileOpen(path)));
-        std::size_t begin = static_cast<std::size_t>(fin.tellg());
-        fin.seekg (0, std::ios::end);
-        std::size_t end = static_cast<std::size_t>(fin.tellg());
-        fin.close();
-        return end - begin;
+#else
+
+    boost::uint64_t fileSize(const std::string & path)
+    {
+        struct stat fileInfo = { 0 };
+        int ret = stat(path.c_str(), &fileInfo);
+        RCF_VERIFY(ret == 0, Exception(_RcfError_FileOpen(path)));
+        return fileInfo.st_size;
+    }
+
+#endif
+
+    void rcfDtorCatchHandler(const std::exception & e)
+    {
+        if (!std::uncaught_exception())
+        {
+            throw;
+        }
+        else
+        {
+            RCF_LOG_1()(e);
+        }
     }
 
 } // namespace RCF

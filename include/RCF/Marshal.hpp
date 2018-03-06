@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -16,14 +19,11 @@
 #ifndef INCLUDE_RCF_MARSHAL_HPP
 #define INCLUDE_RCF_MARSHAL_HPP
 
-#if defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6))
-#pragma GCC diagnostic push
-#endif
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-
+#include <RCF/AmiThreadPool.hpp>
 #include <RCF/ClientStub.hpp>
 #include <RCF/CurrentSerializationProtocol.hpp>
 #include <RCF/ObjectPool.hpp>
+#include <RCF/PublishingService.hpp>
 #include <RCF/RcfServer.hpp>
 #include <RCF/RcfSession.hpp>
 #include <RCF/SerializationProtocol.hpp>
@@ -42,11 +42,11 @@
 #include <boost/static_assert.hpp>
 #include <boost/type_traits.hpp>
 
-#ifdef RCF_USE_SF_SERIALIZATION
+#if RCF_FEATURE_SF==1
 #include <SF/memory.hpp>
 #endif
 
-#ifdef RCF_USE_BOOST_SERIALIZATION
+#if RCF_FEATURE_BOOST_SERIALIZATION==1
 #include <RCF/BsAutoPtr.hpp>
 #include <boost/serialization/binary_object.hpp>
 #endif
@@ -119,15 +119,9 @@ namespace RCF {
         deserializeImpl(in, *pt, 0);                                    \
     }
 
-#ifdef RCF_USE_BOOST_SERIALIZATION
+#if RCF_FEATURE_BOOST_SERIALIZATION==1
 
-#if defined(__MWERKS__) || (defined(_MSC_VER) && _MSC_VER < 1310)
-    // ambiguity issues with CW
-    RCF_DEFINE_PRIMITIVE_POINTER_SERIALIZATION(std::string)
-    RCF_DEFINE_PRIMITIVE_POINTER_SERIALIZATION(std::wstring)
-#else
     RCF_DEFINE_PRIMITIVE_POINTER_SERIALIZATION_T3(std::basic_string)
-#endif
 
 #endif
 
@@ -189,7 +183,7 @@ namespace RCF {
 
 #undef RefCountSmartPtr
 
-#ifdef RCF_USE_BOOST_SERIALIZATION
+#if RCF_FEATURE_BOOST_SERIALIZATION==1
 } // namespace RCF
 
 namespace boost { namespace serialization {
@@ -197,23 +191,6 @@ namespace boost { namespace serialization {
     template<class Archive>
     void save(Archive & ar, const RCF::ByteBuffer &byteBuffer, unsigned int)
     {
-
-        RCF::SerializationProtocolIn * pIn = NULL;
-        RCF::SerializationProtocolOut * pOut = NULL;
-
-        RCF::ClientStub * pClientStub = RCF::getCurrentClientStubPtr();
-        RCF::RcfSession * pRcfSession = RCF::getCurrentRcfSessionPtr();
-        if (pClientStub)
-        {
-            pIn = & pClientStub->getSpIn();
-            pOut = & pClientStub->getSpOut();
-        }
-        else if (pRcfSession)
-        {
-            pIn = & pRcfSession->getSpIn();
-            pOut = & pRcfSession->getSpOut();
-        }
-
         // We have to copy the buffer - can't do efficient zero-copy transmission 
         // of ByteBuffer, with B.Ser.
 
@@ -226,32 +203,13 @@ namespace boost { namespace serialization {
     template<class Archive>
     void load(Archive &ar, RCF::ByteBuffer &byteBuffer, unsigned int)
     {
-
-        RCF::SerializationProtocolIn * pIn = NULL;
-        RCF::SerializationProtocolOut * pOut = NULL;
-
-        RCF::ClientStub * pClientStub = RCF::getCurrentClientStubPtr();
-        RCF::RcfSession * pRcfSession = RCF::getCurrentRcfSessionPtr();
-
-        if (pClientStub)
-        {
-            pIn = &pClientStub->getSpIn();
-            pOut = &pClientStub->getSpOut();
-        }
-        else if (pRcfSession)
-        {
-            pIn = &pRcfSession->getSpIn();
-            pOut = &pRcfSession->getSpOut();
-        }
-
         // We have to copy the buffer - can't do efficient zero-copy transmission 
         // of ByteBuffer, with B.Ser.
 
         boost::uint32_t len = 0;
         ar & len;
 
-        RCF::ReallocBufferPtr bufferPtr;
-        RCF::getObjectPool().get(bufferPtr);
+        RCF::ReallocBufferPtr bufferPtr = RCF::getObjectPool().getReallocBufferPtr();
         bufferPtr->resize(len);
         byteBuffer = RCF::ByteBuffer(bufferPtr);
 
@@ -260,10 +218,10 @@ namespace boost { namespace serialization {
 
 }} // namespace boost namespace serialization
 
-    BOOST_SERIALIZATION_SPLIT_FREE(RCF::ByteBuffer)
+    BOOST_SERIALIZATION_SPLIT_FREE(RCF::ByteBuffer);
 
 namespace RCF {
-#endif // RCF_USE_BOOST_SERIALIZATION
+#endif // RCF_FEATURE_BOOST_SERIALIZATION==1
 
     // serializeOverride() and deserializeOverride() are used to implement
     // a backwards compatibility workaround, for ByteBuffer interoperability 
@@ -275,17 +233,11 @@ namespace RCF {
         return false;
     }
 
-#if defined(__BORLANDC__) && __BORLANDC__ <= 0x560
-
-#else
-
     template<typename U>
     bool serializeOverride(SerializationProtocolOut &, U *)
     {
         return false;
     }
-
-#endif
 
     template<typename U>
     bool deserializeOverride(SerializationProtocolIn &, U &)
@@ -302,16 +254,6 @@ namespace RCF {
     // For vc6, manual zero-initialization of integral types.
 
     template<typename T> void vc6DefaultInit(T *) {}
-
-#if defined(_MSC_VER) && _MSC_VER == 1200
-
-#define DEFINE_VC6_DEFAULT_INIT(T) \
-    inline void vc6DefaultInit( T * pn ) { *pn = 0; }
-
-    SF_FOR_EACH_FUNDAMENTAL_TYPE( DEFINE_VC6_DEFAULT_INIT )
-
-#undef DEFINE_VC6_DEFAULT_INIT
-#endif
 
     // -------------------------------------------------------------------------
     // Parameter store.
@@ -394,6 +336,31 @@ namespace RCF {
 
         boost::shared_ptr<T> mptPtr;
         T * mpT;
+    };
+
+    // Helper class to ensure delete is called for pointers that we allocate as part of reference marshaling.
+    template<typename T>
+    class Deleter
+    {
+    public:
+        Deleter(T *& pt) : mpt(pt), mDismissed(false)
+        {
+        }
+        ~Deleter()
+        {
+            if ( !mDismissed && mpt )
+            {
+                delete mpt;
+                mpt = NULL;
+            }
+        }
+        void dismiss()
+        {
+            mDismissed = true;
+        }
+    private:
+        T*&     mpt;
+        bool    mDismissed;
     };
 
 
@@ -547,9 +514,7 @@ namespace RCF {
         typedef typename RemoveCv<CT>::type T;
         BOOST_MPL_ASSERT(( IsReference<CRefT> ));
 
-#ifndef __BORLANDC__
         BOOST_MPL_ASSERT(( IsConst<CT> ));
-#endif
 
         BOOST_MPL_ASSERT(( boost::mpl::not_< IsPointer<T> > ));
 
@@ -585,7 +550,9 @@ namespace RCF {
                     // polymorphic serialization happening.
 
                     T *pt = NULL;
+                    Deleter<T> deleter(pt);
                     deserialize(in, pt);
+                    deleter.dismiss();
                     mPs.assign(pt);
                 }
                 else if (ver == 8)
@@ -610,12 +577,14 @@ namespace RCF {
                     else
                     {
                         T *pt = NULL;
+                        Deleter<T> deleter(pt);
                         deserialize(in, pt);
                         if (!pt)
                         {
                             RCF::Exception e(RCF::_RcfError_DeserializationNullPointer());
                             RCF_THROW(e);
                         }
+                        deleter.dismiss();
                         mPs.assign(pt);
                     }
                 }
@@ -678,7 +647,9 @@ namespace RCF {
                     // polymorphic serialization happening.
 
                     T * pt = NULL;
+                    Deleter<T> deleter(pt);
                     deserialize(in, pt);
+                    deleter.dismiss();
                     mPs.assign(pt);
                 }
                 else if (ver == 8)
@@ -704,12 +675,14 @@ namespace RCF {
                     else
                     {
                         T *pt = NULL;
+                        Deleter<T> deleter(pt);
                         deserialize(in, pt);
                         if (!pt)
                         {
                             RCF::Exception e(RCF::_RcfError_DeserializationNullPointer());
                             RCF_THROW(e);
                         }
+                        deleter.dismiss();
                         mPs.assign(pt);
                     }
                 }
@@ -829,7 +802,9 @@ namespace RCF {
             if (in.getRemainingArchiveLength() != 0)
             {
                 T *pt = NULL;
+                Deleter<T> deleter(pt);
                 deserialize(in, pt);
+                deleter.dismiss();
                 mPs.assign(pt);
             }
         }
@@ -856,7 +831,7 @@ namespace RCF {
 
         Cm_Ret()
         { 
-            RCF::ClientStub * pClientStub = getCurrentClientStubPtr();
+            RCF::ClientStub * pClientStub = getTlsClientStubPtr();
             std::vector<char> & vec = pClientStub->getRetValVec();
             mPs.allocate(vec);
         }
@@ -942,9 +917,7 @@ namespace RCF {
 
         typedef typename RemovePointer<PtrT>::type T;
 
-#ifndef __BORLANDC__
         BOOST_MPL_ASSERT(( IsPointer<PtrT> ));
-#endif
 
         BOOST_MPL_ASSERT(( boost::mpl::not_< IsPointer<T> > ));
 
@@ -983,9 +956,7 @@ namespace RCF {
         typedef typename RemoveCv<CT>::type T;
         BOOST_MPL_ASSERT(( IsReference<CRefT> ));
 
-#ifndef __BORLANDC__
         BOOST_MPL_ASSERT(( IsConst<CT> ));
-#endif
 
         BOOST_MPL_ASSERT(( boost::mpl::not_< IsPointer<T> > ));
 
@@ -1123,83 +1094,16 @@ namespace RCF {
 
         enum { value = type::value };
     };
-    
-
-#ifdef __BORLANDC__
-
-    // ServerMarshal
 
     template<typename T>
-    struct ServerMarshal
+    struct ServerMarshalRet
     {
-        typedef Sm_Value<T> type;
+        typedef typename
+        boost::mpl::if_<
+            boost::is_same<void, T>,
+            Sm_Ret<Void>,
+            Sm_Ret<T> >::type type;
     };
-
-    template<typename T>
-    struct ServerMarshal<T*>
-    {
-        typedef Sm_Ptr<T *> type;
-    };
-
-    template<typename T>
-    struct ServerMarshal<T &>
-    {
-        typedef Sm_Ref<T &> type;
-    };
-
-    template<typename T>
-    struct ServerMarshal<const T &>
-    {
-        typedef Sm_CRef<const T &> type;
-    };
-
-    // ClientMarshal
-
-    template<typename T>
-    struct ClientMarshal
-    {
-        typedef Cm_Value<T> type;
-    };
-
-    template<typename T>
-    struct ClientMarshal<T*>
-    {
-        typedef Cm_Ptr<T *> type;
-    };
-
-    template<typename T>
-    struct ClientMarshal<T &>
-    {
-        typedef Cm_Ref<T &> type;
-    };
-
-    template<typename T>
-    struct ClientMarshal<const T &>
-    {
-        typedef Cm_CRef<const T &> type;
-    };
-
-    // ReferenceTo
-
-    template<typename T>
-    struct ReferenceTo
-    {
-        typedef const T & type;
-    };
-
-    template<typename T>
-    struct ReferenceTo<T &>
-    {
-        typedef T & type;
-    };
-
-    template<typename T>
-    struct ReferenceTo<const T &>
-    {
-        typedef const T & type;
-    };
-
-#else
 
     template<typename T>
     struct ServerMarshal
@@ -1273,12 +1177,10 @@ namespace RCF {
         >::type type;
     };
 
-#endif
-
     class I_Parameters
     {
     public:
-        virtual ~I_Parameters() noexcept(false) {}
+        virtual ~I_Parameters() {}
         virtual void read(SerializationProtocolIn &in) = 0;
         virtual void write(SerializationProtocolOut &out) = 0;
         virtual bool enrolFutures(RCF::ClientStub *pClientStub) = 0;
@@ -1330,7 +1232,57 @@ namespace RCF {
         enum { value = type::value };
     };
 
-    typedef std::map<const void *, I_Future *> Candidates;
+    class Candidates 
+    {
+    public:
+        I_Future * find(const void * pv)
+        {
+            I_Future * pFuture = NULL;
+            for (std::size_t i=0; i<mCandidateList.size(); ++i)
+            {
+                if (mCandidateList[i].first == pv)
+                {
+                    RCF_ASSERT(!pFuture);
+                    pFuture = mCandidateList[i].second;
+                }
+            }
+            return pFuture;
+        }
+
+        void erase(const void * pv)
+        {
+            for (std::size_t i=0; i<mCandidateList.size(); ++i)
+            {
+                if (mCandidateList[i].first == pv)
+                {
+                    mCandidateList.erase( mCandidateList.begin() + i );
+                    return;
+                }
+            }
+            RCF_ASSERT(0);
+        }
+
+        void add(const void * pv, I_Future * pFuture)
+        {
+            for (std::size_t i=0; i<mCandidateList.size(); ++i)
+            {
+                if (mCandidateList[i].first == pv)
+                {
+                    mCandidateList[i].second = pFuture;
+                    return;
+                }
+            }
+            mCandidateList.push_back( std::make_pair(pv, pFuture) );
+        }
+
+    private:
+
+        typedef std::vector< std::pair<const void *, I_Future *> > CandidateList;
+        CandidateList mCandidateList;
+    };
+
+    //typedef std::vector< std::pair<const void *, I_Future *> > Candidates;
+
     RCF_EXPORT Mutex & gCandidatesMutex();
     RCF_EXPORT Candidates & gCandidates();
 
@@ -1464,14 +1416,10 @@ namespace RCF {
 
                 {
                     Lock lock(gCandidatesMutex());
-
-                    std::map<const void *,I_Future *>::iterator iter = 
-                        gCandidates().find(pv);
-
-                    if ( iter != gCandidates().end() ) 
+                    pFuture = gCandidates().find(pv);
+                    if (pFuture)
                     {
-                        pFuture = iter->second;
-                        gCandidates().erase(iter);
+                        gCandidates().erase(pv);
                     }
                 }
 
@@ -1591,6 +1539,12 @@ namespace RCF {
                     a1,a2,a3,a4,a5,a6,a7,a8,
                     a9,a10,a11,a12,a13,a14,a15);
 
+            if (!clientStub.mpParameters)
+            {
+                Exception e(_RcfError_ClientStubParms());
+                RCF_THROW(e);
+            }
+
             return static_cast<ParametersT &>(*clientStub.mpParameters);
         }
     };
@@ -1683,7 +1637,7 @@ namespace RCF {
             return false;
         }
 
-        Sm_Ret<R>                               r;
+        typename ServerMarshalRet<R>::type      r;
         typename ServerMarshal<A1>::type        a1;
         typename ServerMarshal<A2>::type        a2;
         typename ServerMarshal<A3>::type        a3;
@@ -1738,436 +1692,33 @@ namespace RCF {
                 ( &session.mParametersVec[0] ) 
                 ParametersT(session);
 
+            if (!session.mpParameters)
+            {
+                Exception e(_RcfError_ServerStubParms());
+                RCF_THROW(e);
+            }
+
             return static_cast<ParametersT &>(*session.mpParameters);
         }
     };
 
-    class I_Future
-    {
-    public:
-        virtual ~I_Future() {}
-        virtual void setClientStub(ClientStub *pClientStub) = 0;
-    };
-
-    template<typename T>
-    class FutureImpl;
-
-    template<typename T>
-    class Future
-    {
-    public:
-        Future() : mStatePtr(new State())
-        {}
-
-        Future(T *pt) : mStatePtr( new State(pt))
-        {}
-
-        Future(T *pt, ClientStub *pClientStub) : mStatePtr( new State(pt))
-        {
-            pClientStub->enrol(mStatePtr.get());
-        }
-
-        Future(const T &t) : mStatePtr( new State(t))
-        {}
-
-        operator T&() 
-        { 
-            return mStatePtr->operator T&();
-        }
-
-        T& operator*()
-        {
-            return mStatePtr->operator T&();
-        }
-
-        Future &operator=(const Future &rhs)
-        {
-            mStatePtr = rhs.mStatePtr;
-            return *this;
-        }
-    
-        Future &operator=(const FutureImpl<T> &rhs)
-        {
-            rhs.assignTo(*this);
-            return *this;
-        }
-
-        Future(const FutureImpl<T> &rhs) : mStatePtr( new State())
-        {
-            rhs.assignTo(*this);
-        }
-
-        bool ready()
-        {
-            return mStatePtr->ready();
-        }
-
-        void wait(boost::uint32_t timeoutMs = 0)
-        {
-            mStatePtr->wait(timeoutMs);
-        }
-
-        void cancel()
-        {
-            mStatePtr->cancel();
-        }
-
-        void clear()
-        {
-            mStatePtr->clear();
-        }
-
-        ClientStub & getClientStub()
-        {
-            return mStatePtr->getClientStub();
-        }
-
-    private:
-
-#if defined(_MSC_VER) && _MSC_VER < 1310
-
-    public:
-#else
-
-        template<typename U>
-        friend class FutureImpl;
-#endif
-
-        class State : public I_Future, boost::noncopyable
-        {
-        public:
-            State() : 
-                mpt(RCF_DEFAULT_INIT), 
-                mtPtr( new T() ), 
-                mpClientStub(RCF_DEFAULT_INIT)
-            {}
-
-            State(T *pt) : 
-                mpt(pt), 
-                mpClientStub(RCF_DEFAULT_INIT)
-            {}
-
-            State(const T &t) : 
-                mpt(RCF_DEFAULT_INIT), 
-                mtPtr( new T(t) ), 
-                mpClientStub(RCF_DEFAULT_INIT)
-            {}
-
-            ~State()
-            {
-                RCF_DTOR_BEGIN
-                unregisterFromCandidates();                            
-                RCF_DTOR_END
-            }
-
-            operator T&()
-            {
-                // If a call has been made, check that it has completed, and
-                // that there was no exception.
-
-                if (mpClientStub)
-                {
-                    RCF_ASSERT(mpClientStub->ready());
-                    //RCF_ASSERT(!mpClientStub->hasAsyncException());
-
-                    std::auto_ptr<Exception> ePtr = 
-                        mpClientStub->getAsyncException();
-
-                    if (ePtr.get())
-                    {
-                        ePtr->throwSelf();
-                    }
-                }
-
-                T *pt = mpt ? mpt : mtPtr.get();
-                {
-                    Lock lock(gCandidatesMutex());
-                    gCandidates()[pt] = this;
-                }
-                
-                return *pt;
-            }
-
-            void setClientStub(ClientStub *pClientStub)
-            {
-                mpClientStub = pClientStub;
-            }
-
-            void setClientStub(ClientStub *pClientStub, T * pt)
-            {
-                unregisterFromCandidates();
-
-                mpClientStub = pClientStub;
-                mpt = pt;
-                mtPtr.reset();
-            }
-
-        private:
-
-            T *                     mpt;
-            boost::scoped_ptr<T>    mtPtr;
-            RCF::ClientStub *       mpClientStub;
-
-        public:
-
-            bool ready()
-            {
-                return mpClientStub->ready();
-            }
-
-            void wait(boost::uint32_t timeoutMs = 0)
-            {
-                mpClientStub->wait(timeoutMs);
-            }
-
-            void cancel()
-            {
-                mpClientStub->cancel();                
-            }
-
-            ClientStub & getClientStub()
-            {
-                return *mpClientStub;
-            }
-
-            void unregisterFromCandidates()
-            {
-                T *pt = mpt ? mpt : mtPtr.get();
-                Lock lock(gCandidatesMutex());
-                Candidates::iterator iter = gCandidates().find(pt);
-                if (iter != gCandidates().end())
-                {
-                    gCandidates().erase(iter);
-                }
-            }
-
-        };
-
-        boost::shared_ptr<State> mStatePtr;
-    };
-
-    void mySendHook(ClientStub * pClientStub);
-
-    template<typename T>
-    class FutureImpl
-    {
-    public:
-        FutureImpl(
-            T &t, 
-            ClientStub &clientStub, 
-            const std::string &subInterface,
-            int fnId,
-            RemoteCallSemantics rcs) :
-                mpT(&t),
-                mpClientStub(&clientStub),
-                mSubInterface(subInterface),
-                mFnId(fnId),
-                mRcs(rcs),
-                mOwn(true)
-        {
-            // TODO: put this in the initializer list instead?
-            clientStub.init(subInterface, fnId,rcs);
-        }
-
-        FutureImpl(const FutureImpl &rhs) :
-            mpT(rhs.mpT),
-            mpClientStub(rhs.mpClientStub),
-            mSubInterface(rhs.mSubInterface),
-            mFnId(rhs.mFnId),
-            mRcs(rhs.mRcs),
-            mOwn(rhs.mOwn)
-        {
-            rhs.mOwn = false;
-        }
-
-        FutureImpl &operator=(const FutureImpl &rhs)
-        {
-            mpT = rhs.mpT;
-            mpClientStub = rhs.mpClientStub;
-            mSubInterface = rhs.mSubInterface;
-            mFnId = rhs.mFnId;
-            mRcs = rhs.mRcs;
-
-            mOwn = rhs.mOwn;
-            rhs.mOwn = false;
-            return *this;
-        }
-
-        T get()
-        {
-            return operator T();
-        }
-
-        // Conversion to T kicks off a sync call.
-        operator T() const
-        {
-            mOwn = false;
-            call();
-            T t = *mpT;
-            mpClientStub->clearParameters();
-            return t;
-        }
-
-        // Assignment to Future<> kicks off an async call.
-        void assignTo(Future<T> &future) const
-        {
-            mOwn = false;
-            mpClientStub->setAsync(true);
-            future.mStatePtr->setClientStub(mpClientStub, mpT);
-            call();
-        }
-
-        // Void or ignored return value, kicks off a sync call.
-        ~FutureImpl()
-        {
-            if(mOwn)
-            {
-                call();
-
-                if (!mpClientStub->getAsync())
-                {
-                    mpClientStub->clearParameters();
-                }
-            }
-        }
-
-    private:
-
-        void call() const
-        {
-
-#ifdef RCF_USE_BOOST_FILESYSTEM
-
-            // File uploads are done before the call itself.
-            mpClientStub->processUploadStreams();
-
-#endif
-
-            // TODO
-            bool async = mpClientStub->getAsync();
-
-            mpClientStub->setTries(0);
-
-            if (async)
-            {
-                callAsync();
-            }
-            else
-            {
-                callSync();
-            }
-        }
-
-        void callSync() const
-        {
-            // ClientStub::onConnectCompleted() uses the contents of mEncodedByteBuffers
-            // to determine what stage the current call is in. So mEncodedByteBuffers
-            // needs to be cleared after a remote call, even if an exception is thrown.
-
-            // Error handling code here will generally also need to be present in 
-            // ClientStub::onError().
-
-            RCF_LOG_3()(mpClientStub)(mpClientStub->mRequest) 
-                << "RcfClient - sending synchronous request.";
-
-            try
-            {
-                mpClientStub->call(mRcs);
-            }
-            catch(const RCF::RemoteException & e)
-            {
-                mpClientStub->mEncodedByteBuffers.resize(0);
-                if (shouldDisconnectOnRemoteError( e.getError() ))
-                {
-                    mpClientStub->disconnect();
-                }
-                throw; 
-            }
-            catch(const RCF::Exception &)
-            {
-                mpClientStub->mEncodedByteBuffers.resize(0);
-                mpClientStub->disconnect();
-                throw;
-            }
-            catch(...)
-            {
-                mpClientStub->mEncodedByteBuffers.resize(0);
-                mpClientStub->disconnect();
-                throw;
-            }
-        }
-
-        void callAsync() const
-        {
-            RCF_LOG_3()(mpClientStub)(mpClientStub->mRequest) 
-                << "RcfClient - sending asynchronous request.";
-
-            std::auto_ptr<RCF::Exception> ape;
-
-            try
-            {
-                mpClientStub->call(mRcs);
-            }
-            catch(const RCF::Exception & e)
-            {
-                ape.reset( e.clone().release() );
-            }
-            catch(...)
-            {
-                ape.reset( new Exception(_RcfError_NonStdException()) );
-            }
-
-            if (ape.get())
-            {
-                mpClientStub->setAsyncException(ape);
-
-                if (mpClientStub->mAsyncCallback)
-                {
-                    boost::function0<void> cb = mpClientStub->mAsyncCallback;
-                    mpClientStub->mAsyncCallback = boost::function0<void>();
-
-                    cb();
-                }
-            }
-        }
-
-        T *                     mpT;
-        ClientStub *            mpClientStub;
-        std::string             mSubInterface;
-        int                     mFnId;
-        RemoteCallSemantics     mRcs;
-
-        mutable bool            mOwn;
-    };
-
-    template<typename T, typename U>
-    bool operator==(const FutureImpl<T> & fi, const U & u)
-    {
-        return fi.operator T() == u;
-    }
-
-    template<typename T, typename U>
-    bool operator==(const U & u, const FutureImpl<T> & fi)
-    {
-        return u == fi.operator T();
-    }
-
-    template<typename T>
-    std::ostream & operator<<(std::ostream & os, const FutureImpl<T> & fi)
-    {
-        return os << fi.operator T();
-    }
-
     // Bidirectional connections - converting between RcfClient and RcfSession.
 
     RCF_EXPORT void convertRcfSessionToRcfClient(
-        boost::function1<void, ClientTransportAutoPtr> func,
+        OnCallbackConnectionCreated func,
         RemoteCallSemantics rcs = RCF::Twoway);
+
 
     RCF_EXPORT RcfSessionPtr convertRcfClientToRcfSession(
         ClientStub & clientStub, 
-        I_ServerTransport & serverTransport,
+        ServerTransport & serverTransport,
         bool keepClientConnection = false);
+
+    RCF_EXPORT RcfSessionPtr convertRcfClientToRcfSession(
+        ClientStub & clientStub, 
+        RcfServer & server,
+        bool keepClientConnection = false);
+
 
     template<typename RcfClientT>
     inline RcfSessionPtr convertRcfClientToRcfSession(
@@ -2177,14 +1728,14 @@ namespace RCF {
     {
         return convertRcfClientToRcfSession(
             client.getClientStub(),
-            server.getServerTransport(),
+            server,
             keepClientConnection);
     }
 
     template<typename RcfClientT>
     inline RcfSessionPtr convertRcfClientToRcfSession(
         RcfClientT & client, 
-        I_ServerTransport & serverTransport,
+        ServerTransport & serverTransport,
         bool keepClientConnection = false)
     {
         return convertRcfClientToRcfSession(
@@ -2193,9 +1744,42 @@ namespace RCF {
             keepClientConnection);
     }
 
+
+
+    RCF_EXPORT void createCallbackConnectionImpl(
+        ClientStub & client, 
+        ServerTransport & callbackServer);
+
+    RCF_EXPORT void createCallbackConnectionImpl_Legacy(
+        ClientStub & client, 
+        ServerTransport & callbackServer);
+
+    RCF_EXPORT void createCallbackConnectionImpl(
+        ClientStub & client, 
+        RcfServer & callbackServer);
+
+
+    
+    template<typename RcfClientT>
+    void createCallbackConnection(
+        RcfClientT & client, 
+        RcfServer & callbackServer)
+    {
+        createCallbackConnectionImpl(
+            client.getClientStub(), 
+            callbackServer);
+    }
+
+    template<typename RcfClientT>
+    void createCallbackConnectionImpl(
+        RcfClientT & client, 
+        ServerTransport & callbackServer)
+    {
+        createCallbackConnection(
+            client.getClientStub(), 
+            callbackServer);
+    }
+
 } // namespace RCF
 
-#if defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 6))
-#pragma GCC diagnostic pop
-#endif
 #endif // ! INCLUDE_RCF_MARSHAL_HPP

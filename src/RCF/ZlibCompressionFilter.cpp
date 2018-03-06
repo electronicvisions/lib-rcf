@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -17,12 +20,109 @@
 
 #include "zlib.h"
 
+#include <RCF/DynamicLib.hpp>
 #include <RCF/Exception.hpp>
+#include <RCF/Globals.hpp>
 #include <RCF/InitDeinit.hpp>
 #include <RCF/RecursionLimiter.hpp>
 #include <RCF/Tools.hpp>
 
 namespace RCF {
+
+    typedef boost::shared_ptr<DynamicLib> DynamicLibPtr;
+
+    class ZlibDll
+    {
+    public:
+        ZlibDll();
+
+        void                loadFunctionPtrs();
+
+        typedef int         (*Pfn_deflateInit_)(z_streamp strm, int level, const char *version, int stream_size);
+        typedef int         (*Pfn_deflate)(z_streamp strm, int flush);
+        typedef int         (*Pfn_deflateEnd)(z_streamp strm);
+        typedef int         (*Pfn_inflateInit_)(z_streamp strm, const char *version, int stream_size);
+        typedef int         (*Pfn_inflate)(z_streamp strm, int flush);
+        typedef int         (*Pfn_inflateEnd)(z_streamp strm);
+
+        Pfn_deflateInit_    pfn_deflateInit_;
+        Pfn_deflate         pfn_deflate;
+        Pfn_deflateEnd      pfn_deflateEnd;
+
+        Pfn_inflateInit_    pfn_inflateInit_;
+        Pfn_inflate         pfn_inflate;
+        Pfn_inflateEnd      pfn_inflateEnd;
+
+        DynamicLibPtr       mDynamicLibPtr;
+    };
+
+    ZlibDll::ZlibDll()
+    {
+
+#ifndef RCF_ZLIB_STATIC 
+
+        mDynamicLibPtr.reset( new DynamicLib( getGlobals().getZlibDllName() ) );
+
+#endif
+
+        loadFunctionPtrs();
+    }
+
+#ifdef RCF_ZLIB_STATIC
+
+// Load static function pointers.
+// Requires linking to zlib or building with zlib source.
+#define RCF_ZLIB_LOAD_FUNCTION RCF_LOAD_LIB_FUNCTION
+
+#else
+
+// Load dynamic function pointers directly from zlib DLL.
+// Requires zlib DLL to be present at runtime.
+// Does not require linking to zlib.
+#define RCF_ZLIB_LOAD_FUNCTION RCF_LOAD_DLL_FUNCTION
+
+#endif
+
+    void ZlibDll::loadFunctionPtrs()
+    {
+
+#ifndef RCF_ZLIB_STATIC
+        RCF_ASSERT(mDynamicLibPtr);
+#endif
+
+        RCF_ZLIB_LOAD_FUNCTION(deflateInit_)
+        RCF_ZLIB_LOAD_FUNCTION(deflate)
+        RCF_ZLIB_LOAD_FUNCTION(deflateEnd)
+
+        RCF_ZLIB_LOAD_FUNCTION(inflateInit_)
+        RCF_ZLIB_LOAD_FUNCTION(inflate)
+        RCF_ZLIB_LOAD_FUNCTION(inflateEnd)
+
+    }
+
+    ZlibDll & Globals::getZlibDll()
+    {
+        Lock lock(getRootMutex());
+
+        if (!mpZlibDll)
+        {
+            mpZlibDll = new ZlibDll();
+        }
+        return *mpZlibDll;
+    }
+
+#if RCF_FEATURE_ZLIB==1
+
+    void Globals::deleteZlibDll()
+    {
+        if (mpZlibDll)
+        {
+            delete mpZlibDll;
+            mpZlibDll = NULL;
+        }
+    }
+
+#endif
 
     class ZlibCompressionReadFilter
     {
@@ -91,9 +191,9 @@ namespace RCF {
         bool serverSide) :
             mFilter(filter),
             mDstream(),
-            mBytesRequested(RCF_DEFAULT_INIT),
+            mBytesRequested(),
             mZerr(Z_OK),
-            mDecompressionStateInited(RCF_DEFAULT_INIT)
+            mDecompressionStateInited()
     {
         RCF_UNUSED_VARIABLE(serverSide);
 
@@ -107,7 +207,7 @@ namespace RCF {
         RCF_DTOR_BEGIN
             if (mDecompressionStateInited)
             {
-                mZerr = inflateEnd(&mDstream);
+                mZerr = mFilter.mZlibDll.pfn_inflateEnd(&mDstream);
                 RCF_VERIFY(
                     mZerr == Z_OK,
                     FilterException(
@@ -132,7 +232,7 @@ namespace RCF {
     {
         if (mDecompressionStateInited)
         {
-            mZerr = inflateEnd(&mDstream);
+            mZerr = mFilter.mZlibDll.pfn_inflateEnd(&mDstream);
 
             RCF_VERIFY(
                 mZerr == Z_OK,
@@ -148,7 +248,7 @@ namespace RCF {
         mDstream.zalloc = NULL;
         mDstream.zfree = NULL;
         mDstream.opaque = NULL;
-        mZerr = inflateInit(&mDstream);
+        mZerr = mFilter.mZlibDll.pfn_inflateInit_(&mDstream, ZLIB_VERSION, sizeof(mDstream));
         RCF_VERIFY(
             mZerr == Z_OK,
             FilterException(
@@ -249,7 +349,7 @@ namespace RCF {
         mDstream.avail_in = static_cast<uInt>(mPostBuffer.getLength());
         mDstream.next_out = (Bytef*) mPreBuffer.getPtr();
         mDstream.avail_out = static_cast<uInt>(mPreBuffer.getLength());
-        mZerr = inflate(&mDstream, Z_SYNC_FLUSH);
+        mZerr = mFilter.mZlibDll.pfn_inflate(&mDstream, Z_SYNC_FLUSH);
         RCF_VERIFY(
             mZerr == Z_OK || mZerr == Z_STREAM_END || mZerr == Z_BUF_ERROR,
             FilterException(
@@ -283,10 +383,10 @@ namespace RCF {
         bool stateful) :
             mFilter(filter),
             mCstream(),
-            mTotalBytesIn(RCF_DEFAULT_INIT),
-            mTotalBytesOut(RCF_DEFAULT_INIT),
+            mTotalBytesIn(),
+            mTotalBytesOut(),
             mZerr(Z_OK),
-            mCompressionStateInited(RCF_DEFAULT_INIT),
+            mCompressionStateInited(),
             mStateful(stateful)
     {
         memset(&mCstream, 0, sizeof(mCstream));
@@ -297,7 +397,7 @@ namespace RCF {
         RCF_DTOR_BEGIN
             if (mCompressionStateInited)
             {
-                mZerr = deflateEnd(&mCstream);
+                mZerr = mFilter.mZlibDll.pfn_deflateEnd(&mCstream);
                 RCF_VERIFY(
                     mZerr == Z_OK || mZerr == Z_DATA_ERROR,
                     FilterException(
@@ -317,7 +417,7 @@ namespace RCF {
     {
         if (mCompressionStateInited)
         {
-            mZerr = deflateEnd(&mCstream);
+            mZerr = mFilter.mZlibDll.pfn_deflateEnd(&mCstream);
             RCF_VERIFY(
                 mZerr == Z_OK || mZerr == Z_DATA_ERROR,
                 FilterException(
@@ -328,7 +428,7 @@ namespace RCF {
         mCstream.zalloc = NULL;
         mCstream.zfree = NULL;
         mCstream.opaque = NULL;
-        mZerr = deflateInit(&mCstream, Z_DEFAULT_COMPRESSION);
+        mZerr = mFilter.mZlibDll.pfn_deflateInit_(&mCstream, Z_DEFAULT_COMPRESSION, ZLIB_VERSION, sizeof(mCstream));
         RCF_VERIFY(
             mZerr == Z_OK,
             FilterException(
@@ -425,8 +525,8 @@ namespace RCF {
             mCstream.avail_out = static_cast<uInt>(outRemaining);
 
             mZerr = (i<mPreBuffers.size()-1) ?
-                deflate(&mCstream, Z_NO_FLUSH) :
-                deflate(&mCstream, Z_SYNC_FLUSH);
+                mFilter.mZlibDll.pfn_deflate(&mCstream, Z_NO_FLUSH) :
+                mFilter.mZlibDll.pfn_deflate(&mCstream, Z_SYNC_FLUSH);
 
             RCF_VERIFY(
                 mZerr == Z_OK || mZerr == Z_BUF_ERROR,
@@ -434,8 +534,6 @@ namespace RCF {
                     _RcfError_Zlib(), mZerr, RcfSubsystem_Zlib,
                     "deflate() failed"))
                 (mZerr)(inBuffer.getLength())(outBuffer.getLength());
-
-            RCF_ASSERT_GTEQ(mCstream.avail_out , 0);
 
             std::size_t bytesIn = inBuffer.getLength() - mCstream.avail_in;
             std::size_t bytesOut = outRemaining - mCstream.avail_out;
@@ -452,7 +550,7 @@ namespace RCF {
             mCstream.next_out = (Bytef*) &outBuffer.getPtr()[outPos];
             mCstream.avail_out = static_cast<uInt>(outRemaining);
 
-            mZerr = deflate(&mCstream, Z_FINISH);
+            mZerr = mFilter.mZlibDll.pfn_deflate(&mCstream, Z_FINISH);
             RCF_VERIFY(
                 mZerr == Z_BUF_ERROR || mZerr == Z_STREAM_END,
                 FilterException(
@@ -472,56 +570,13 @@ namespace RCF {
         outBuffer = ByteBuffer(outBuffer, 0, mTotalBytesOut);
     }
 
-    const FilterDescription & ZlibStatelessCompressionFilter::sGetFilterDescription()
-    {
-        return *spFilterDescription;
-    }
-
-    const FilterDescription & ZlibStatefulCompressionFilter::sGetFilterDescription()
-    {
-        return *spFilterDescription;
-    }
-
-    const FilterDescription *ZlibStatelessCompressionFilter::spFilterDescription = NULL;
-    const FilterDescription *ZlibStatefulCompressionFilter::spFilterDescription = NULL;
-
-    static void initZlibCompressionFilterDescriptions()
-    {
-        RCF_ASSERT(!ZlibStatelessCompressionFilter::spFilterDescription);
-        RCF_ASSERT(!ZlibStatefulCompressionFilter::spFilterDescription);
-
-        ZlibStatelessCompressionFilter::spFilterDescription =
-            new FilterDescription(
-                "Zlib stateless compression filter",
-                RcfFilter_ZlibCompressionStateless,
-                false);
-
-        ZlibStatefulCompressionFilter::spFilterDescription =
-            new FilterDescription(
-                "Zlib stateful compression filter",
-                RcfFilter_ZlibCompressionStateful,
-                false);
-    }
-
-    static void deinitZlibCompressionFilterDescriptions()
-    {
-        delete ZlibStatelessCompressionFilter::spFilterDescription;
-        ZlibStatelessCompressionFilter::spFilterDescription = NULL;
-
-        delete ZlibStatefulCompressionFilter::spFilterDescription;
-        ZlibStatefulCompressionFilter::spFilterDescription = NULL;
-    }
-
-    RCF_ON_INIT_DEINIT(
-        initZlibCompressionFilterDescriptions(),
-        deinitZlibCompressionFilterDescriptions())
-
 #ifdef _MSC_VER
 #pragma warning( push )
 #pragma warning( disable : 4355 )  // warning C4355: 'this' : used in base member initializer list
 #endif
 
     ZlibCompressionFilterBase::ZlibCompressionFilterBase(bool stateful, bool serverSide) :
+        mZlibDll(getGlobals().getZlibDll()),
         mPreState(Ready),
         mReadFilter( new ZlibCompressionReadFilter(*this, serverSide) ),
         mWriteFilter( new ZlibCompressionWriteFilter(*this, stateful) )
@@ -531,17 +586,17 @@ namespace RCF {
 #pragma warning( pop )
 #endif
 
-    const FilterDescription & ZlibStatelessCompressionFilter::getFilterDescription() const
+    int ZlibStatelessCompressionFilter::getFilterId() const
     {
-        return sGetFilterDescription();
+        return RcfFilter_ZlibCompressionStateless;
     }
 
-    const FilterDescription & ZlibStatefulCompressionFilter::getFilterDescription() const
+    int ZlibStatefulCompressionFilter::getFilterId() const
     {
-        return sGetFilterDescription();
+        return RcfFilter_ZlibCompressionStateful;
     }
 
-    void ZlibCompressionFilterBase::reset()
+    void ZlibCompressionFilterBase::resetState()
     {
         mPreState = Ready;
         mReadFilter->reset();
@@ -582,29 +637,29 @@ namespace RCF {
     ZlibStatelessCompressionFilterFactory::ZlibStatelessCompressionFilterFactory()
     {}
 
-    FilterPtr ZlibStatelessCompressionFilterFactory::createFilter()
+    FilterPtr ZlibStatelessCompressionFilterFactory::createFilter(RcfServer &)
     {
         return FilterPtr( new ZlibStatelessCompressionFilter(
             (ServerSide *) NULL));
     }
 
-    const FilterDescription & ZlibStatelessCompressionFilterFactory::getFilterDescription()
+    int ZlibStatelessCompressionFilterFactory::getFilterId()
     {
-        return ZlibStatelessCompressionFilter::sGetFilterDescription();
+        return RcfFilter_ZlibCompressionStateless;
     }
 
     ZlibStatefulCompressionFilterFactory::ZlibStatefulCompressionFilterFactory()
     {}
 
-    FilterPtr ZlibStatefulCompressionFilterFactory::createFilter()
+    FilterPtr ZlibStatefulCompressionFilterFactory::createFilter(RcfServer &)
     {
         return FilterPtr( new ZlibStatefulCompressionFilter( 
             (ServerSide *) NULL));
     }
 
-    const FilterDescription & ZlibStatefulCompressionFilterFactory::getFilterDescription()
+    int ZlibStatefulCompressionFilterFactory::getFilterId()
     {
-        return ZlibStatefulCompressionFilter::sGetFilterDescription();
+        return RcfFilter_ZlibCompressionStateful;
     }
 
 } // namespace RCF

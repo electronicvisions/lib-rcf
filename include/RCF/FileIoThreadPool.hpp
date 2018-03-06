@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -58,7 +61,6 @@ namespace RCF {
         std::deque< FileIoRequestPtr >  mOpsInProgress;
         
         RCF::ThreadPool                 mThreadPool;
-        bool                            mStopFlag;
     
         RCF::Mutex                      mCompletionMutex;
         RCF::Condition                  mCompletionCondition;
@@ -74,11 +76,11 @@ namespace RCF {
         FileIoRequest();    
         ~FileIoRequest();   
 
-        bool initiated();
-        bool completed();
+        bool isInitiated();
+        bool isCompleted();
         void complete();
-        void read(IfstreamPtr finPtr, RCF::ByteBuffer buffer);
-        void write(OfstreamPtr foutPtr, RCF::ByteBuffer buffer);
+        void initiateRead(IfstreamPtr finPtr, RCF::ByteBuffer buffer);
+        void initateWrite(OfstreamPtr foutPtr, RCF::ByteBuffer buffer);
 
         boost::uint64_t getBytesTransferred();
 

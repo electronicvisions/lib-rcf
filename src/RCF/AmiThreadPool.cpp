@@ -2,520 +2,398 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
 #include <RCF/AmiThreadPool.hpp>
 
-#include <RCF/ConnectionOrientedClientTransport.hpp>
+#include <RCF/AmiIoHandler.hpp>
+#include <RCF/AsioHandlerCache.hpp>
+#include <RCF/ClientStub.hpp>
+#include <RCF/ConnectedClientTransport.hpp>
 #include <RCF/Exception.hpp>
+#include <RCF/InitDeinit.hpp>
 #include <RCF/IpAddress.hpp>
+#include <RCF/TcpEndpoint.hpp>
 #include <RCF/ThreadLocalData.hpp>
 #include <RCF/ThreadPool.hpp>
 
+namespace RCF {
+
+    void AmiNotification::set(
+        Cb cb, 
+        LockPtr lockPtr, 
+        MutexPtr mutexPtr)
+    {
+        RCF_ASSERT(lockPtr.get() && lockPtr->locked() && mutexPtr.get());
+        mCb = cb;
+        mLockPtr = lockPtr;
+        mMutexPtr = mutexPtr;
+    }
+
+    void AmiNotification::run()
+    {
+        if (mLockPtr)
+        {
+            Lock & lock = *mLockPtr;
+            RCF_ASSERT(lock.locked());
+            lock.unlock();
+            Cb cb = mCb;
+            clear();
+            if (cb)
+            {
+                cb();
+            }
+        }
+    }
+
+    void AmiNotification::clear()
+    {
+        mLockPtr.reset();
+        mMutexPtr.reset();
+        mCb = Cb();
+    }
+
+    AsioHandlerCache * gpAmiIoHandlerCache = NULL;
+    AsioHandlerCache * gpAmiTimerHandlerCache = NULL;
+
+    void initAmiHandlerCache()
+    {
+        gpAmiIoHandlerCache = new AsioHandlerCache(); 
+        gpAmiTimerHandlerCache = new AsioHandlerCache();
+    }
+
+    void deinitAmiHandlerCache()
+    {
+        delete gpAmiIoHandlerCache; 
+        gpAmiIoHandlerCache = NULL; 
+
+        delete gpAmiTimerHandlerCache; 
+        gpAmiTimerHandlerCache = NULL;
+    }
+
+    void * asio_handler_allocate(std::size_t size, AmiIoHandler * pHandler)
+    {
+        RCF_UNUSED_VARIABLE(pHandler);
+        return gpAmiIoHandlerCache->allocate(size);
+    }
+
+    void asio_handler_deallocate(void * pointer, std::size_t size, AmiIoHandler * pHandler)
+    {
+        RCF_UNUSED_VARIABLE(pHandler);
+        return gpAmiIoHandlerCache->deallocate(pointer, size);
+    }
+
+    void * asio_handler_allocate(std::size_t size, AmiTimerHandler * pHandler)
+    {
+        RCF_UNUSED_VARIABLE(pHandler);
+        return gpAmiTimerHandlerCache->allocate(size);
+    }
+
+    void asio_handler_deallocate(void * pointer, std::size_t size, AmiTimerHandler * pHandler)
+    {
+        RCF_UNUSED_VARIABLE(pHandler);
+        return gpAmiTimerHandlerCache->deallocate(pointer, size);
+    }
+
+    AmiIoHandler::AmiIoHandler(OverlappedAmiPtr overlappedPtr) : 
+        mOverlappedPtr(overlappedPtr), 
+        mIndex(overlappedPtr->mIndex)
+    {
+    }
+
+    AmiIoHandler::AmiIoHandler(
+        OverlappedAmiPtr overlappedPtr, 
+        const AsioErrorCode & ec) : 
+            mOverlappedPtr(overlappedPtr), 
+            mIndex(overlappedPtr->mIndex),
+            mEc(ec)
+    {
+    }
+
+    void AmiIoHandler::operator()()
+    {
+        mOverlappedPtr->onCompletion(mIndex, mEc, 0);
+    }
+
+    void AmiIoHandler::operator()(
+        const AsioErrorCode & ec)
+    {
+        mOverlappedPtr->onCompletion(mIndex, ec, 0);
+    }
+
+    void AmiIoHandler::operator()(
+        const AsioErrorCode & ec, 
+        std::size_t bytesTransferred)
+    {
+        mOverlappedPtr->onCompletion(mIndex, ec, bytesTransferred);
+    }
+
+    AmiTimerHandler::AmiTimerHandler(OverlappedAmiPtr overlappedPtr) : 
+        mOverlappedPtr(overlappedPtr), 
+        mIndex(overlappedPtr->mIndex)
+    {
+    }
+
+    void AmiTimerHandler::operator()(
+        const AsioErrorCode & ec)
+    {
+        mOverlappedPtr->onTimerExpired(mIndex, ec);
+    }
+
+    static bool gEnableMultithreadedBlockingConnects = false;
+
+    void AmiThreadPool::setEnableMultithreadedBlockingConnects(bool enable)
+    {
+        gEnableMultithreadedBlockingConnects = enable;
+    }
+
+    bool AmiThreadPool::getEnableMultithreadedBlockingConnects()
+    {
+        return gEnableMultithreadedBlockingConnects;
+    }
+
 #ifdef BOOST_WINDOWS
 
-#if defined(__MINGW32__) || (defined(_MSC_VER) && _MSC_VER == 1200) || (defined(_WIN32_WINNT) && _WIN32_WINNT <= 0x0500)
+    class Win32ThreadImpersonator
+    {
+    public:
+        Win32ThreadImpersonator(HANDLE hToken) : mClosed(false)
+        {
+            BOOL ok = SetThreadToken(NULL, hToken);
+            if (!ok)
+            {
+                DWORD dwErr = GetLastError();
+                RCF_THROW( Exception( 
+                    _RcfError_Win32ApiError("SetThreadToken()"), 
+                    dwErr) ); 
+            }
+        }
 
-typedef
-BOOL
-(PASCAL FAR * LPFN_CONNECTEX) (
-                               IN RCF_SOCKET s,
-                               IN const struct sockaddr FAR *name,
-                               IN int namelen,
-                               IN PVOID lpSendBuffer OPTIONAL,
-                               IN DWORD dwSendDataLength,
-                               OUT LPDWORD lpdwBytesSent,
-                               IN LPOVERLAPPED lpOverlapped
-                               );
+        void close()
+        {
+            if ( !mClosed )
+            {
+                mClosed = true;
+                BOOL ok = SetThreadToken(NULL, NULL);
+                if ( !ok )
+                {
+                    DWORD dwErr = GetLastError();
+                    RCF_THROW(Exception(
+                        _RcfError_Win32ApiError("SetThreadToken()"),
+                        dwErr));
+                }
+            }
+        }
 
-#define WSAID_CONNECTEX \
-{0x25a207b9,0xddf3,0x4660,{0x8e,0xe9,0x76,0xe5,0x8c,0x74,0x06,0x3e}}
+        ~Win32ThreadImpersonator()
+        {
+            RCF_DTOR_BEGIN
+                close();
+            RCF_DTOR_END
+        }
+
+    private:
+
+        bool mClosed;
+    };
 
 #endif
 
-
-namespace RCF {
-
-    Mutex gAmiInitRefCountMutex;
-    std::size_t gAmiInitRefCount = 0;
-
-    void amiInit()
+    void OverlappedAmi::onCompletion(
+        std::size_t index,
+        const AsioErrorCode & ec, 
+        std::size_t bytesTransferred)
     {
-        Lock lock(gAmiInitRefCountMutex);
-        if (gAmiInitRefCount == 0)
+
+        RecursiveLock lock(mMutex);
+
+        //mAsioBuffers.mVecPtr->resize(0);
+        //mByteBuffers.resize(0);
+
+        if (mIndex == index && mpTransport)
         {
-            gAmiThreadPoolPtr.reset( new AmiThreadPool() );
-            AmiThreadPool::start(1);
+            ++mIndex;
+
+            if (mpTransport->mAsioTimerPtr)
+            {
+                mpTransport->mAsioTimerPtr->cancel();
+            }
+
+#ifdef BOOST_WINDOWS
+            // Do we need to impersonate?
+            boost::scoped_ptr<Win32ThreadImpersonator> impersonator;
+            if (mpTransport->mpClientStub->isClientStub())
+            {
+                ClientStub * pStub = static_cast<ClientStub *>(mpTransport->mpClientStub);
+                HANDLE hImpersonationToken = pStub->getWindowsImpersonationToken();
+                if (hImpersonationToken != INVALID_HANDLE_VALUE)
+                {
+                    impersonator.reset( new Win32ThreadImpersonator(hImpersonationToken) );
+                }
+            }
+#endif
+
+            if (ec)
+            {
+                try
+                {
+                    RCF::Exception e;
+
+                    switch (mOpType)
+                    {
+                    case Wait:
+                        RCF_ASSERT(0);
+                        break;
+
+                    case Connect:
+                        e = RCF::Exception( _RcfError_ClientConnectFail(), ec.value());
+                        break;
+
+                    case Write:
+                        e = RCF::Exception( _RcfError_ClientWriteFail(), ec.value());
+                        break;
+
+                    case Read:
+                        e = RCF::Exception( _RcfError_ClientReadFail(), ec.value());
+                        break;
+
+                    default:
+                        RCF_ASSERT(0);
+                    };
+
+                    mOpType = None;
+
+                    mpTransport->mpClientStub->onError(e);
+                }
+                catch(const std::exception &e)
+                {
+                    mpTransport->mpClientStub->onError(e);
+                }
+                catch(...)
+                {
+                    RCF::Exception e( _RcfError_NonStdException() );
+                    mpTransport->mpClientStub->onError(e);
+                }
+            }
+            else
+            {
+                mOpType = None;
+
+                try
+                {
+                    mpTransport->onCompletion( static_cast<int>(bytesTransferred) );
+                }
+                catch(const std::exception &e)
+                {
+                    mpTransport->mpClientStub->onError(e);
+                }
+                catch(...)
+                {
+                    RCF::Exception e( _RcfError_NonStdException() );
+                    mpTransport->mpClientStub->onError(e);
+                }
+            }
+
+            getTlsAmiNotification().run();
         }
-        ++gAmiInitRefCount;
+
     }
 
-    void amiDeinit()
+    void OverlappedAmi::onTimerExpired(
+        std::size_t index,
+        const AsioErrorCode & ec)
     {
-        Lock lock(gAmiInitRefCountMutex);
-        --gAmiInitRefCount;
-        if (gAmiInitRefCount == 0)
+        RecursiveLock lock(mMutex);
+
+        //mAsioBuffers.mVecPtr->resize(0);
+        //mByteBuffers.resize(0);
+
+        if (mpTransport && mIndex == index)
         {
-            AmiThreadPool::stop();
-            gAmiThreadPoolPtr.reset();
+            if (!ec)
+            {
+                ++mIndex;
+                mpTransport->onTimerExpired();
+                getTlsAmiNotification().run();
+            }
         }
     }
 
-    AmiThreadPool::AmiThreadPool() :
-        mStopFlag()
+    void OverlappedAmi::ensureLifetime(const ByteBuffer & byteBuffer)
     {
+        mByteBuffers.resize(0);
+        mByteBuffers.push_back(byteBuffer);
+    }
+
+    void OverlappedAmi::ensureLifetime(const std::vector<ByteBuffer> & byteBuffers)
+    {
+        mByteBuffers.resize(0);
+        mByteBuffers = byteBuffers;
+    }
+
+    AmiThreadPool::AmiThreadPool() : mThreadPool(1)
+    {
+        mThreadPool.setThreadName("RCF AMI");
+        mThreadPool.enableMuxerType(Mt_Asio);
     }
 
     AmiThreadPool::~AmiThreadPool()
     {
     }
 
-    void AmiThreadPool::cycleIo()
+    void AmiThreadPool::start()
     {
-        // Set our thread name.
-        setWin32ThreadName( DWORD(-1), "RCF AMI IO Thread");
-
-        while (!mStopFlag)
-        {
-            try
-            {
-                DWORD           dwMilliseconds  = 500;
-                DWORD           dwNumBytes      = 0;
-                ULONG_PTR       completionKey   = 0;
-                OVERLAPPED *    pOverlapped     = 0;
-
-                BOOL ret = mIocp.GetStatus(
-                    &completionKey, 
-                    &dwNumBytes, 
-                    &pOverlapped, 
-                    dwMilliseconds);
-
-                DWORD dwErr= GetLastError();
-
-                // TODO: proper error handling here.
-                // ...
-
-                RCF_UNUSED_VARIABLE(ret);
-
-                RCF_ASSERT(
-                    pOverlapped || (!pOverlapped && dwErr == WAIT_TIMEOUT))
-                    (pOverlapped)(dwErr);
-
-                I_OverlappedAmi *pAmi = static_cast<I_OverlappedAmi *>(pOverlapped);
-
-                if (pAmi && ret)
-                {        
-                    pAmi->onCompletion(dwNumBytes);
-                }
-                else if (pAmi && !ret)
-                {
-                    RCF::Exception e(_RcfError_Socket(), dwErr);
-                    pAmi->onError(e);
-                }
-            }
-            catch(...)
-            {
-            }
-        }
-    }
-
-    AmiThreadPool::TimerEntry AmiThreadPool::addTimerEntry(
-        OverlappedAmiPtr overlappedAmiptr, 
-        boost::uint32_t timeoutMs)
-    {
-        Lock lock(mTimerMutex);
-        boost::uint32_t timeNowMs = Platform::OS::getCurrentTimeMs();
-        boost::uint32_t endTimeMs = timeNowMs + timeoutMs;
-
-        TimerEntry timerEntry(endTimeMs, overlappedAmiptr);
-        mTimerHeap.add(timerEntry);
-        mTimerCondition.notify_all();
-        return timerEntry;
-    }
-
-    void AmiThreadPool::removeTimerEntry(
-        const TimerEntry & timerEntry)
-    {
-        mTimerHeap.remove(timerEntry);
-    }
-
-    void AmiThreadPool::cycleTimer()
-    {
-        // Set our thread name.
-        setWin32ThreadName( DWORD(-1), "RCF AMI Timer Thread");
-
-        while (!mStopFlag)
-        {
-
-            TimerEntry timerEntry;
-
-            while (mTimerHeap.popExpiredEntry(timerEntry))
-            {
-                OverlappedAmiPtr overlappedAmiPtr = timerEntry.second;
-
-                RCF_ASSERT(overlappedAmiPtr);
-
-                overlappedAmiPtr->onTimerExpired(timerEntry);
-
-                getCurrentAmiNotification().run();
-            }
-
-            boost::uint32_t timeoutMs = RCF_MIN(
-                boost::uint32_t(1000), 
-                mTimerHeap.getNextEntryTimeoutMs());
-
-            if (!mStopFlag)
-            {
-                Lock lock(mTimerMutex);
-                mTimerCondition.timed_wait(lock, timeoutMs);
-            }
-
-        }
-    }
-
-    void AmiThreadPool::start(std::size_t threadCount)
-    {
-        RCF_UNUSED_VARIABLE(threadCount);
-
-        AmiThreadPool & amiThreadPool = *gAmiThreadPoolPtr;
-
-        amiThreadPool.mStopFlag = false;
-
-        amiThreadPool.mIoThreadPtr.reset( new RCF::Thread( boost::bind(
-            &AmiThreadPool::cycleIo,
-            &amiThreadPool)));
-
-        amiThreadPool.mTimerThreadPtr.reset( new RCF::Thread( boost::bind(
-            &AmiThreadPool::cycleTimer,
-            &amiThreadPool)));
-
-        amiThreadPool.mConnectThreadPtr.reset( new RCF::Thread( boost::bind(
-            &AmiThreadPool::cycleConnect,
-            &amiThreadPool)));
+        RCF_ASSERT(!mThreadPool.isStarted());
+        mThreadPool.start();
     }
 
     void AmiThreadPool::stop()
     {
-        AmiThreadPool & amiThreadPool = *gAmiThreadPoolPtr;
-
-        amiThreadPool.mStopFlag = true;
-
-        amiThreadPool.mIoThreadPtr->join();
-        amiThreadPool.mIoThreadPtr.reset();
-
-        amiThreadPool.mTimerThreadPtr->join();
-        amiThreadPool.mTimerThreadPtr.reset();
-
-        amiThreadPool.mConnectThreadPtr->join();
-        amiThreadPool.mConnectThreadPtr.reset();
+        RCF_ASSERT(mThreadPool.isStarted());
+        mThreadPool.stop();
     }
 
-
-    Exception AmiThreadPool::connect(
-        int fd, 
-        sockaddr & addr, 
-        Platform::OS::BsdSockets::socklen_t addrSize, 
-        OverlappedAmiPtr overlappedAmiPtr)
-    {
-        bool useConnectEx = false;
-
-        if (useConnectEx)
-        {
-            // TODO: need to figure out which local network interface to bind to!
-            IpAddress local("127.0.0.1", 0);
-            
-            sockaddr * pSockAddr = NULL;
-            Platform::OS::BsdSockets::socklen_t sockAddrSize = 0;
-            local.getSockAddr(pSockAddr, sockAddrSize);
-
-            int ret = ::bind(fd, pSockAddr, sockAddrSize);
-            int err = WSAGetLastError();
-
-            if (ret != 0)
-            {
-                return Exception(_RcfError_Socket(), err);
-            }
-
-            LPFN_CONNECTEX lpfnConnectEx = NULL;
-
-            GUID GuidConnectEx = WSAID_CONNECTEX;
-            DWORD dwBytes = 0;
-
-            ret = WSAIoctl(
-                fd,
-                SIO_GET_EXTENSION_FUNCTION_POINTER,
-                &GuidConnectEx,
-                sizeof(GuidConnectEx),
-                &lpfnConnectEx,
-                sizeof(lpfnConnectEx),
-                &dwBytes,
-                NULL,
-                NULL);
-
-            err = Platform::OS::BsdSockets::GetLastError();
-
-            if (ret != 0)
-            {
-                return Exception(_RcfError_Socket(), err);
-            }
-            
-            DWORD dwSent = 0;
-
-            BOOL ok = lpfnConnectEx(
-                fd,
-                &addr,
-                addrSize,
-                NULL,
-                0,
-                &dwSent,
-                overlappedAmiPtr.get());
-
-            err = WSAGetLastError();
-
-            if (ok || (!ok && err == ERROR_IO_PENDING))
-            {
-                // OK
-            }
-            else
-            {
-                return Exception(_RcfError_Socket(), err);
-            }
-
-            // TODO: according to MSDN docs for ConnectEx(), we need to call the
-            // the following code when the connect completes:
-
-            //err = setsockopt( s,
-            //    SOL_SOCKET,
-            //    SO_UPDATE_CONNECT_CONTEXT,
-            //    NULL,
-            //    0 );            
-
-        }
-        else
-        {
-            int ret = Platform::OS::BsdSockets::connect(
-                fd, 
-                &addr, 
-                addrSize);
-
-            int err = Platform::OS::BsdSockets::GetLastError();
-
-            RCF_ASSERT(ret);
-
-            if (
-                    (ret == -1 && err == Platform::OS::BsdSockets::ERR_EWOULDBLOCK)
-                ||  (ret == -1 && err == Platform::OS::BsdSockets::ERR_EINPROGRESS))
-            {
-                return addConnectFd(fd, overlappedAmiPtr);
-            }
-            else
-            {
-                return Exception(_RcfError_Socket(), err);
-            }
-        }
-
-        return Exception();
+    AsioIoService & AmiThreadPool::getIoService() 
+    { 
+        return * mThreadPool.getIoService(); 
     }
 
-    void AmiThreadPool::cancelConnect(int fd)
-    {
-        OverlappedAmiPtr overlappedAmiPtr;
-        {
-            Lock lock(mConnectFdsMutex);
-            Fds::iterator iter = mConnectFds.find(fd);
-            if (iter != mConnectFds.end())
-            {
-                overlappedAmiPtr = iter->second;
-            }
-        }
-        if (overlappedAmiPtr)
-        {
-            Lock lock(overlappedAmiPtr->mMutex);
-            overlappedAmiPtr->mThisPtr.reset();
-        }
+    AmiThreadPool * gpAmiThreadPool;
 
-        removeConnectFd(fd);
+    AmiThreadPool & getAmiThreadPool()
+    {
+        return *gpAmiThreadPool;
+    }
+    /*
+    AsyncTimer::AsyncTimer() : mDummyPtr( new RcfClient<I_Null>( RCF::TcpEndpoint(0)))
+    {
     }
 
-    Exception AmiThreadPool::addConnectFd(int fd, OverlappedAmiPtr overlappedAmiPtr)
+    AsyncTimer::~AsyncTimer()
     {
-        Lock lock(mConnectFdsMutex);
-        RCF_ASSERT(mConnectFds.find(fd) == mConnectFds.end());
-
-        if (mConnectFds.size() >= FD_SETSIZE)
-        {
-            std::ostringstream os;
-            os << "FD_SETSIZE = " << FD_SETSIZE;
-            std::string msg = os.str();
-
-            return Exception(_RcfError_FdSetSize(FD_SETSIZE), msg);
-        }
-
-        mConnectFds.insert( std::make_pair(fd, overlappedAmiPtr) );
-        return Exception();
-        
     }
 
-    void AmiThreadPool::removeConnectFd(int fd)
+    void AsyncTimer::set(boost::function0<void> onTimer, boost::uint32_t timeoutMs)
     {
-        Lock lock(mConnectFdsMutex);
-        mConnectFds.erase(fd);
+        mDummyPtr->getClientStub().wait(onTimer, timeoutMs);
     }
 
-    struct Event
+    void AsyncTimer::cancel()
     {
-        Event() : 
-            mFd(RCF_DEFAULT_INIT), 
-            mError(RCF_DEFAULT_INIT)
-        {
-        }
-
-        Event(int fd, int error, OverlappedAmiPtr overlappedAmiPtr) :
-            mFd(fd),
-            mError(error),
-            mOverlappedPtr(overlappedAmiPtr)
-        {
-        }
-
-        int                 mFd;
-        int                 mError;
-        OverlappedAmiPtr    mOverlappedPtr;
-    };
-
-#if defined(_MSC_VER) && _MSC_VER <= 1200
-#define for if (0) {} else for
-#endif
-
-    void AmiThreadPool::cycleConnect()
-    {
-        // Set our thread name.
-        setWin32ThreadName( DWORD(-1), "RCF AMI Connect Thread");
-
-        while (!mStopFlag)
-        {
-            int maxFd = 0;
-
-            fd_set fdSet;
-            
-            FD_ZERO(&fdSet);
-
-            {
-                Lock lock(mConnectFdsMutex);
-
-                RCF_ASSERT_LTEQ(mConnectFds.size() , FD_SETSIZE)(FD_SETSIZE);
-
-                for (Fds::iterator iter = mConnectFds.begin(); iter != mConnectFds.end(); ++iter)
-                {
-                    int fd = iter->first;
-
-                    if (fd > maxFd)
-                    {
-                        maxFd = fd;
-                    }
-                    
-                    RCF_SOCKET sock = static_cast<RCF_SOCKET>(fd); 
-                    FD_SET( sock , &fdSet);
-                }                
-            }
-
-            // TODO: add a handle that we can use to cut the timeout short.
-            // ...
-
-            unsigned int timeoutMs = 100;
-
-            timeval timeout = {0};
-            timeout.tv_sec = timeoutMs/1000;
-            timeout.tv_usec = 1000*(timeoutMs%1000);
-
-            int readyCount = select(maxFd + 1, NULL, &fdSet, NULL, &timeout);
-            int err = Platform::OS::BsdSockets::GetLastError();
-
-            if (readyCount == -1)
-            {
-                // Either no file descriptors at all, or some are duds. Sleep a little so we 
-                // don't get into a hot loop.
-                Sleep(100);
-            }
-
-            typedef std::vector<Event> Events;
-            Events events;
-
-            if (readyCount > 0)
-            {
-                Lock lock(mConnectFdsMutex);
-                for (Fds::iterator iter = mConnectFds.begin(); iter != mConnectFds.end(); ++iter)
-                {
-                    int fd = iter->first;
-                    OverlappedAmiPtr overlappedAmiPtr = iter->second;
-                    if ( FD_ISSET(iter->first, &fdSet) )
-                    {
-                        int connectError = 0;
-                        Platform::OS::BsdSockets::socklen_t len = sizeof(int); 
-                        int ret = getsockopt(fd, SOL_SOCKET, SO_ERROR, (char*)(&connectError), &len);
-                        err = Platform::OS::BsdSockets::GetLastError();
-                        RCF_ASSERT_EQ( ret , 0 );
-
-                        if (    connectError == Platform::OS::BsdSockets::ERR_EWOULDBLOCK
-                            ||  connectError == Platform::OS::BsdSockets::ERR_EINPROGRESS)
-                        {
-                            continue;
-                        }
-                        
-                        events.push_back( Event(fd, connectError, overlappedAmiPtr));
-                    }
-                }
-            }
-
-            for (Events::iterator iter = events.begin(); iter != events.end(); ++iter)
-            {
-                int fd = iter->mFd;
-                removeConnectFd(fd);
-            }
-
-            for (Events::iterator iter = events.begin(); iter != events.end(); ++iter)
-            {
-                
-                int fd = iter->mFd;
-                RCF_UNUSED_VARIABLE(fd);
-
-                int error = iter->mError;
-                OverlappedAmiPtr overlappedAmiPtr = iter->mOverlappedPtr;
-
-                // Call the callback, either OK or with an error.
-                if (error == 0)
-                {
-                    overlappedAmiPtr->onCompletion(0);
-                }
-                else
-                {
-                    RCF::Exception e(_RcfError_Socket(), error);
-                    overlappedAmiPtr->onError(e);
-                }
-
-                getCurrentAmiNotification().run();
-            }            
-        }
+        mDummyPtr.reset( new RcfClient<I_Null>( RCF::TcpEndpoint(0)) );
     }
-
-#if defined(_MSC_VER) && _MSC_VER <= 1200
-#undef for
-#endif
-
-} // namespace RCF
-
-#endif // BOOST_WINDOWS
-
-namespace RCF {
-
-    boost::scoped_ptr<AmiThreadPool> gAmiThreadPoolPtr;
+    */
 
 } // namespace RCF

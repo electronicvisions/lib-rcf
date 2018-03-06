@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -28,6 +31,10 @@
 
 namespace RCF {
 
+    using ASIO_NS::local::stream_protocol;
+    typedef stream_protocol::socket                 UnixLocalSocket;
+    typedef boost::shared_ptr<UnixLocalSocket>      UnixLocalSocketPtr;
+
     class RCF_EXPORT UnixLocalClientTransport : 
         public BsdClientTransport
     {
@@ -35,20 +42,22 @@ namespace RCF {
         UnixLocalClientTransport(const UnixLocalClientTransport &rhs);
         UnixLocalClientTransport(const std::string &fileName);
         UnixLocalClientTransport(const sockaddr_un &remoteAddr);
-        UnixLocalClientTransport(int fd, const std::string & fileName);
+        UnixLocalClientTransport(UnixLocalSocketPtr socketPtr, const std::string & fileName);
 
         ~UnixLocalClientTransport();
+
+        TransportType getTransportType();
 
         ClientTransportAutoPtr clone() const;
 
         void                    implConnect(unsigned int timeoutMs);
 
         void                    implConnect(
-                                    I_ClientTransportCallback &clientStub, 
+                                    ClientTransportCallback &clientStub, 
                                     unsigned int timeoutMs);
 
         void                    implConnectAsync(
-                                    I_ClientTransportCallback &clientStub, 
+                                    ClientTransportCallback &clientStub, 
                                     unsigned int timeoutMs);
 
         void                    implClose();
@@ -57,9 +66,16 @@ namespace RCF {
         void                    setRemoteAddr(const sockaddr_un &remoteAddr);
         const sockaddr_un &     getRemoteAddr() const;
 
+        bool                    isAssociatedWithIoService();
+        void                    associateWithIoService(AsioIoService & ioService);
+
         std::string             getPipeName() const;
 
     private:
+
+        void                    setupSocket();
+        void                    setupSocket(Exception & e);
+
         sockaddr_un             mRemoteAddr;
         const std::string       mFileName;
     };

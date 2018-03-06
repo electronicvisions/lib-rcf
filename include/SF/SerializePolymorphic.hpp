@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -20,9 +23,6 @@ namespace SF {
 
     class Archive;
 
-    //template<typename Base, typename Derived>
-    //void registerBaseAndDerived(Base * = 0, Derived * = 0);
-
     class I_SerializerPolymorphic
     {
     public:
@@ -30,41 +30,16 @@ namespace SF {
         virtual bool invoke(void **ppvb, Archive &ar) = 0;
     };
 
-#if defined(_MSC_VER) && _MSC_VER <= 1200
-
     template<typename Base, typename Derived>
     class SerializerPolymorphic : public I_SerializerPolymorphic
     {
     public:
-        static void instantiate() {}
-        bool invoke(void **ppvb, Archive &ar);
+
+        SerializerPolymorphic() 
+        {}
+
+        virtual bool invoke(void **ppvb, Archive &ar);
     };
-
-#else
-
-    template<typename Base, typename Derived>
-    void registerBaseAndDerived();
-
-    template<typename Base, typename Derived>
-    class SerializerPolymorphic : public I_SerializerPolymorphic
-    {
-    public:
-        static SerializerPolymorphic &instantiate() { return instance; }
-        SerializerPolymorphic() {}
-        bool invoke(void **ppvb, Archive &ar);
-
-        static SerializerPolymorphic instance;
-        SerializerPolymorphic(int)
-        {
-            registerBaseAndDerived<Base, Derived>();
-        }
-    };
-
-    // on gcc 3.2, this requires the SerializerPolymorphic ctor to be public
-    template<class Base, class Derived>
-    SerializerPolymorphic<Base, Derived> SerializerPolymorphic<Base, Derived>::instance(0);
-
-#endif
 
 }
 

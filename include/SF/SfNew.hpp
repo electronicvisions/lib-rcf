@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -27,7 +30,7 @@ namespace SF {
     class Archive;
 
     template<typename T, typename R>
-    R sfNewImpl(T*, R*, Archive &, boost::mpl::true_ *)
+    R sfNewImpl(T*, R*, Archive &, RCF::TrueType *)
     {
         RCF::Exception e(RCF::_SfError_NoCtor());
         RCF_THROW(e)(typeid(T));
@@ -35,7 +38,7 @@ namespace SF {
     }
 
     template<typename T, typename R>
-    R sfNewImpl(T*, R*, Archive &, boost::mpl::false_ *)
+    R sfNewImpl(T*, R*, Archive &, RCF::FalseType *)
     {
         return new T;
     }
@@ -44,7 +47,7 @@ namespace SF {
     R sfNew(T*t, R*r, Archive &ar)
     {
 #ifdef BOOST_NO_IS_ABSTRACT
-        return sfNewImpl(t, r, ar, (boost::mpl::false_ *) NULL);
+        return sfNewImpl(t, r, ar, (RCF::FalseType *) NULL);
 #else
         typedef typename boost::is_abstract<T>::type type;
         return sfNewImpl(t, r, ar, (type *) NULL);

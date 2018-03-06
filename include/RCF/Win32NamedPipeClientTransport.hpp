@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -16,31 +19,36 @@
 #ifndef INCLUDE_RCF_WIN32NAMEDPIPECLIENTTRANSPORT_HPP
 #define INCLUDE_RCF_WIN32NAMEDPIPECLIENTTRANSPORT_HPP
 
-#include <RCF/ConnectionOrientedClientTransport.hpp>
+#include <RCF/ConnectedClientTransport.hpp>
 
 #include <RCF/util/Tchar.hpp>
+
+#include <RCF/AsioFwd.hpp>
 
 namespace RCF {
 
     class RCF_EXPORT Win32NamedPipeClientTransport :
-        public ConnectionOrientedClientTransport
+        public ConnectedClientTransport
     {
     public:
+
         Win32NamedPipeClientTransport(
             const Win32NamedPipeClientTransport & rhs);
 
         Win32NamedPipeClientTransport(
             const tstring & pipeName);
 
-        Win32NamedPipeClientTransport(HANDLE hPipe);
+        Win32NamedPipeClientTransport(AsioPipeHandlePtr socketPtr, const tstring & pipeName);
 
         ~Win32NamedPipeClientTransport();
+
+        TransportType getTransportType();
 
         ClientTransportAutoPtr clone() const;
 
         HANDLE getNativeHandle() const;
 
-        HANDLE releaseHandle();
+        AsioPipeHandlePtr releaseSocket();
 
         void setDisconnectBeforeClosing(bool disconnectBeforeClosing);
 
@@ -48,6 +56,9 @@ namespace RCF {
         void setPipeName(const tstring & pipeName);
 
         void setSecurityAttributes(LPSECURITY_ATTRIBUTES pSec);
+
+        void            associateWithIoService(AsioIoService & ioService);
+        bool            isAssociatedWithIoService();
 
     private:
 
@@ -68,11 +79,11 @@ namespace RCF {
         void implClose();
 
         void implConnect(
-            I_ClientTransportCallback &clientStub,
+            ClientTransportCallback &clientStub,
             unsigned int timeoutMs);
 
         void implConnectAsync(
-            I_ClientTransportCallback &clientStub,
+            ClientTransportCallback &clientStub,
             unsigned int timeoutMs);
 
         // I_ClientTransport
@@ -87,6 +98,11 @@ namespace RCF {
         HANDLE                  mhEvent;
 
         LPSECURITY_ATTRIBUTES   mpSec;
+
+        bool                    mAsyncMode;
+
+        AsioPipeHandlePtr       mSocketPtr; 
+        AsioIoService *         mpIoService;
     };
 
 } // namespace RCF

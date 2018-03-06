@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -16,17 +19,7 @@
 #ifndef INCLUDE_UTIL_LOG_HPP
 #define INCLUDE_UTIL_LOG_HPP
 
-#include <fstream>
 #include <map>
-#ifdef __DEPRECATED
-#define __MY__DEPRECATED __DEPRECATED
-#undef __DEPRECATED
-#endif
-#include <strstream>
-#ifdef __MY__DEPRECATED
-#define __DEPRECATED __MY__DEPRECATED
-#undef __MY__DEPRECATED
-#endif
 #include <string>
 #include <vector>
 
@@ -38,21 +31,63 @@
 #include <boost/shared_ptr.hpp>
 
 #include <RCF/Export.hpp>
+#include <RCF/MemStream.hpp>
+#include <RCF/ThreadLibrary.hpp>
+#include <RCF/Tools.hpp>
 
 #include <RCF/util/Tchar.hpp>
-#include <RCF/util/ThreadLibrary.hpp>
 #include <RCF/util/VariableArgMacro.hpp>
 
-// Strange CodeWarrior issue - needs the following definition.
-#ifdef __MWERKS__
-namespace std {
-    std::ostream &operator<<(std::ostream &os, const std::runtime_error &e);
-};
+#ifdef BOOST_WINDOWS
+#include <Windows.h>
 #endif
 
-namespace RCF { class ByteBuffer; }
+namespace RCF { 
 
-namespace util {
+    // Trace std::vector
+    template<typename T>
+    void printToOstream(MemOstream & os, const std::vector<T> &v)
+    {
+        os << "(";
+        for (std::size_t i=0; i<v.size(); ++i)
+        {
+            os << v[i] << ", ";
+        }
+        os << ")";
+    }
+
+    // Trace std::deque
+    template<typename T>
+    void printToOstream(MemOstream & os, const std::deque<T> &d)
+    {
+        os << "(";
+        for (std::size_t i=0; i<d.size(); ++i)
+        {
+            os << d[i] << ", ";
+        }
+        os << ")";
+    }
+
+    class Exception;
+    class RemoteException;
+    class SerializationException;
+
+    RCF_EXPORT void printToOstream(MemOstream & os, const std::type_info & ti);
+    RCF_EXPORT void printToOstream(MemOstream & os, const std::exception & e);
+    RCF_EXPORT void printToOstream(MemOstream & os, const Exception &e);
+    RCF_EXPORT void printToOstream(MemOstream & os, const RemoteException &e);
+    RCF_EXPORT void printToOstream(MemOstream & os, const SerializationException &e);
+   
+    class ByteBuffer;
+
+    class LogBuffers
+    {
+    public:
+        MemOstream mTlsUserBuffer;
+        MemOstream mTlsLoggerBuffer;
+        MemOstream mTlsVarArgBuffer1;
+        MemOstream mTlsVarArgBuffer2;
+    };
 
     //******************************************************************************
     // LogManager
@@ -66,6 +101,7 @@ namespace util {
     {
     private:
         LogManager();
+        ~LogManager();
 
     public:
         static void init();
@@ -85,87 +121,104 @@ namespace util {
         void activateLogger(LoggerPtr loggerPtr);
         void deactivateLogger(LoggerPtr loggerPtr);
         bool isLoggerActive(LoggerPtr loggerPtr);
+
+        const std::string   DefaultLogFormat;
+        
+        Mutex               DefaultLoggerPtrMutex;
+        LoggerPtr           DefaultLoggerPtr;
     };
 
     //******************************************************************************
     // LogTarget
 
     class LogTarget;
-    typedef boost::scoped_ptr<LogTarget> LogTargetPtr;
+    typedef boost::shared_ptr<LogTarget> LogTargetPtr;
 
+    /// Base class for log targets. Log targets are passed to the enableLogging()
+    /// function, to configure RCF logging.
     class RCF_EXPORT LogTarget
     {
     public:
         virtual ~LogTarget() {}
         virtual LogTarget * clone() const = 0;
-        virtual void write(const RCF::ByteBuffer & output) = 0;
+        virtual void write(const ByteBuffer & output) = 0;
     };
 
+    /// Configures log output to be directed to standard output.
     class RCF_EXPORT LogToStdout : public LogTarget
     {
     public:
         LogToStdout(bool flushAfterEachWrite = true);
         LogTarget * clone() const;
-        void write(const RCF::ByteBuffer & output);
+        void write(const ByteBuffer & output);
 
-        static Mutex sIoMutex;
+        static Mutex   sIoMutex;
 
     private:
-        bool mFlush;
+        bool                mFlush;
     };
 
 #ifdef BOOST_WINDOWS
 
+    /// Configures log output to be directed to Windows debug output.
     class RCF_EXPORT LogToDebugWindow : public LogTarget
     {
     public:
         LogTarget * clone() const;
-        void write(const RCF::ByteBuffer & output);
+        void write(const ByteBuffer & output);
     };
 
+    /// Configures log output to be directed to the Windows event log.
     class RCF_EXPORT LogToEventLog : public LogTarget
     {
     public:
         LogToEventLog(const std::string & appName, int eventLogLevel);
         ~LogToEventLog();
 
-        LogTarget * clone() const;
-        void write(const RCF::ByteBuffer & output);
+        LogTarget *     clone() const;
+        void            write(const ByteBuffer & output);
 
     private:
-        std::string mAppName;
-        int mEventLogLevel;
-        HANDLE mhEventLog;
+        std::string     mAppName;
+        int             mEventLogLevel;
+        HANDLE          mhEventLog;
     };
 
 #endif
 
+    /// Configures log output to be directed to a log file.
     class RCF_EXPORT LogToFile : public LogTarget
     {
     public:
         LogToFile(const std::string & filePath, bool flushAfterEachWrite = false);
         LogToFile(const LogToFile & rhs);
-        LogTarget * clone() const;
-        void write(const RCF::ByteBuffer & output);
+        ~LogToFile();
+
+        LogTarget *     clone() const;
+        void            write(const ByteBuffer & output);
 
     private:
-        std::string mFilePath;
-        bool mOpened;
-        std::ofstream mFout;
-        bool mFlush;
+        
+        Mutex           mMutex;
+
+        std::string     mFilePath;
+        bool            mOpened;
+        FILE *          mFp;
+        bool            mFlush;
     };
 
-    typedef boost::function1<void, const RCF::ByteBuffer &> LogFunctor;
+    typedef boost::function1<void, const ByteBuffer &> LogFunctor;
 
     class RCF_EXPORT LogToFunc : public LogTarget
     {
     public:
         LogToFunc(LogFunctor logFunctor);
-        LogTarget * clone() const;
-        void write(const RCF::ByteBuffer & output);
+
+        LogTarget *     clone() const;
+        void            write(const ByteBuffer & output);
 
     private:
-        LogFunctor mLogFunctor;
+        LogFunctor      mLogFunctor;
     };
 
     //******************************************************************************
@@ -183,27 +236,19 @@ namespace util {
         template<typename T>
         const LogEntry& operator<<(const T& t) const
         {
-            const_cast<std::ostrstream&>(*mpOstream) << t;
+            const_cast<MemOstream&>(*mpOstream) << t;
             return *this;
         }
 
 #ifndef BOOST_NO_STD_WSTRING
         const LogEntry& operator<<(const std::wstring& t) const
         {
-            const_cast<std::ostrstream&>(*mpOstream) << wstringToString(t);
+            const_cast<MemOstream&>(*mpOstream) << wstringToString(t);
             return *this;
         }
 #endif
 
-        // Special streaming for std::endl etc.
-        typedef std::ostream& (*Pfn)(std::ostream&);
-        const LogEntry& operator<<(Pfn pfn) const
-        {
-            const_cast<std::ostrstream&>(*mpOstream) << pfn;
-            return *this;
-        }
-
-        std::ostrstream & getOstream()
+        MemOstream & getOstream()
         {
             return *mpOstream;
         }
@@ -219,23 +264,26 @@ namespace util {
         int                 mLine;
         const char *        mFunc;
 
-        int                 mThreadId;
+        ThreadId            mThreadId;
         time_t              mTime;
         boost::uint32_t     mTimeMs;
 
-        std::ostrstream *   mpOstream;
+        MemOstream *        mpOstream;
     };
 
     //******************************************************************************
     // Logger
 
-    typedef boost::function2<void, const LogEntry &, RCF::ByteBuffer&> LogFormatFunctor;
+    typedef boost::function2<void, const LogEntry &, ByteBuffer&> LogFormatFunctor;
 
     class RCF_EXPORT Logger : public boost::enable_shared_from_this<Logger>
     {
     public:
-        Logger(int name, int level, const LogTarget& logTarget, const std::string logFormat);
+        Logger(int name, int level, const LogTarget& logTarget, const std::string & logFormat = "");
         Logger(int name, int level, const LogTarget& logTarget, LogFormatFunctor logFormatFunctor);
+
+        Logger(int name, int level, LogTargetPtr logTargetPtr, const std::string & logFormat = "");
+        Logger(int name, int level, LogTargetPtr logTargetPtr, LogFormatFunctor logFormatFunctor);
 
         void setName(int name);
         void setLevel(int level);
@@ -277,9 +325,11 @@ namespace util {
         const char * mName;
         const T& mValue;
 
-        friend std::ostream& operator<<(std::ostream & os, const LogNameValue& lnv)
+        friend MemOstream& operator<<(MemOstream & os, const LogNameValue& lnv)
         {
-            os << "(" << lnv.mName << " = " << lnv.mValue << ")";
+            os << "(" << lnv.mName << " = ";
+            printToOstream(os, lnv.mValue);
+            os << ")";
             return os;
         }
     };
@@ -290,9 +340,9 @@ namespace util {
         return LogNameValue<T>(name, value);
     }
 
-    #define NAMEVALUE(x) util::makeNameValue(#x, x)
+    #define NAMEVALUE(x) RCF::makeNameValue(#x, x)
 
-    class LogVarsFunctor : public util::VariableArgMacroFunctor
+    class LogVarsFunctor : public VariableArgMacroFunctor
     {
     public:
 
@@ -307,10 +357,10 @@ namespace util {
 
         ~LogVarsFunctor()
         {
-            if (mArgs->pcount() > 0)
+            if (mArgs->tellp() > 0)
             {
                 mLogEntry << " [Args: ";
-                mLogEntry.getOstream().write(mArgs->str(), mArgs->pcount());
+                mLogEntry.getOstream().write(mArgs->str(), mArgs->tellp());
                 mLogEntry << "]";
             }
         }
@@ -319,13 +369,6 @@ namespace util {
         const LogVarsFunctor & operator<<(const T & t) const
         {
             const_cast<LogEntry &>(mLogEntry) << t;
-            return *this;
-        }
-
-        typedef std::ostream& (*Pfn)(std::ostream&);
-        const LogVarsFunctor & operator<<(Pfn pfn) const
-        {
-            const_cast<LogEntry &>(mLogEntry) << pfn;
             return *this;
         }
 
@@ -345,22 +388,41 @@ namespace util {
 #endif
 
 #if defined(__GNUC__) && (__GNUC__ < 3 || (__GNUC__ == 3 && __GNUC_MINOR__ < 4))
-#define UTIL_LOG_GCC_33_HACK (const util::VariableArgMacro<util::LogVarsFunctor> &)
+#define UTIL_LOG_GCC_33_HACK (const RCF::VariableArgMacro<RCF::LogVarsFunctor> &)
 #else
 #define UTIL_LOG_GCC_33_HACK
 #endif
 
     #define UTIL_LOG(name, level)                                               \
-        if (util::LogManager::instance().isEnabled(name, level))                \
-            UTIL_LOG_GCC_33_HACK util::VariableArgMacro<util::LogVarsFunctor>(  \
+        if (RCF::LogManager::instance().isEnabled(name, level))                \
+            UTIL_LOG_GCC_33_HACK RCF::VariableArgMacro<RCF::LogVarsFunctor>(  \
                 name, level, __FILE__, __LINE__, BOOST_CURRENT_FUNCTION)        \
-                .cast( (util::VariableArgMacro<util::LogVarsFunctor> *) NULL )  \
+                .cast( (RCF::VariableArgMacro<RCF::LogVarsFunctor> *) NULL )  \
                 .UTIL_LOG_A
 
     #define UTIL_LOG_A(x)                         UTIL_LOG_OP(x, B)
     #define UTIL_LOG_B(x)                         UTIL_LOG_OP(x, A)
     #define UTIL_LOG_OP(x, next)                  UTIL_LOG_A.notify_((x), #x).UTIL_LOG_ ## next
 
-} // namespace util
+
+#ifdef BOOST_WINDOWS
+    typedef LogToDebugWindow DefaultLogTarget;
+#else
+    typedef LogToStdout DefaultLogTarget;
+#endif
+
+    /// Configures logging for the RCF runtime.
+    /// logTarget is where the log output will appear.
+    /// loglevel is the detail level of the log, ranging from 0 (no logging), 1 (errors-only logging) to 4 (maximum detail logging).
+    /// logFormat is an optional parameter describing the format of the log output.
+    RCF_EXPORT void enableLogging(
+        const LogTarget &       logTarget = DefaultLogTarget(), 
+        int                     logLevel = 2, 
+        const std::string &     logFormat = "");
+
+    /// Disables logging for the RCF runtime.
+    RCF_EXPORT void disableLogging();
+
+} // namespace RCF
 
 #endif // ! INCLUDE_UTIL_LOG_HPP

@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -24,70 +27,85 @@
 #include <sys/stat.h>
 
 #include <RCF/Exception.hpp>
+#include <RCF/FileIoThreadPool.hpp>
 #include <RCF/ObjectFactoryService.hpp>
 #include <RCF/RcfServer.hpp>
-#include <RCF/util/Platform/OS/Sleep.hpp>
+#include <RCF/ServerInterfaces.hpp>
+#include <RCF/ThreadLocalData.hpp>
 
 #include <boost/filesystem/convenience.hpp>
 #include <boost/filesystem/operations.hpp>
 
-#ifdef RCF_USE_SF_SERIALIZATION
-namespace boost {
-    namespace serialization {
+#include <boost/config.hpp>
+#include <boost/version.hpp>
 
-        void serialize(SF::Archive &ar, path &p)
+namespace SF {
+
+#if RCF_FEATURE_SF==1
+
+    void serialize(SF::Archive &ar, boost::filesystem::path &p)
+    {
+        if (ar.isWrite())
         {
-            if (ar.isWrite())
-            {
-                std::string s = p.string();
-                ar & s;
-            }
-            else
-            {
-                std::string s;
-                ar & s;
-                p = path(s);
-            }
+            std::string s = p.string();
+            ar & s;
         }
-
+        else
+        {
+            std::string s;
+            ar & s;
+            p = boost::filesystem::path(s);
+        }
     }
-}
+
 #endif
+
+}
 
 namespace RCF {
 
     namespace fs = boost::filesystem;
 
-    FileUploadInfo::~FileUploadInfo()
+#if BOOST_VERSION <= 104500
+
+    std::string nativeString(const fs::path & p)
     {
-        mFileStream->close();
-
-        // Best effort only.
-        try
-        {
-            if (!mCompleted && mUploadId == 0)
-            {
-                fs::remove_all(mUploadPath);
-            }
-        }
-        catch(const std::exception & e)
-        {
-            std::string error = e.what();
-        }
-        catch(...)
-        {
-
-        }
+        return p.file_string();
     }
 
-    FileDownloadInfo::~FileDownloadInfo()
+#else
+
+    // path::native() on Windows does not appear to convert all forward slashes 
+    // to backward slashes, as file_string did in previous Boost.Filesystem 
+    // versions. So we roll our own.
+    
+#ifdef BOOST_WINDOWS
+
+    std::string nativeString(const fs::path & p)
     {
+        std::string strPath = p.string();
+        std::size_t pos = std::string::npos;
+        while ((pos = strPath.find('/')) != std::string::npos)
+        {
+            strPath.replace(pos, 1, "\\");
+        }
+        return strPath;
     }
 
-    FileTransferService::FileTransferService(
-        const fs::path & uploadDirectory) :
-            mUploadDirectory(uploadDirectory),
-            mTransferWindowS(5)
+#else
+
+    std::string nativeString(const fs::path & p)
+    {
+        return p.native();
+    }
+
+#endif
+
+#endif
+
+    FileTransferService::FileTransferService() :
+            mUploadDirectory(),
+            mTransferWindowS(5)            
     {
     }
 
@@ -96,7 +114,7 @@ namespace RCF {
     fs::path makeTempDir(const fs::path & basePath, const std::string & prefix)
     {
         std::size_t tries = 0;
-        while (tries++ < 10)
+        while (tries++ < 500)
         {
             std::ostringstream os;
             os 
@@ -118,7 +136,7 @@ namespace RCF {
         }
 
         // TODO
-        RCF_ASSERT(0);
+        RCF_ASSERT(0 && "Too many leftover temp folders!");
         return fs::path();
     }
 
@@ -127,36 +145,107 @@ namespace RCF {
         boost::uint64_t & bytesAlreadyTransferred,
         FileChunk & startPos);
 
+    void FileTransferService::processZeroSizeEntries(RCF::FileUploadInfo & uploadInfo)
+    {
+        if (uploadInfo.mCurrentPos != 0)
+        {
+            return;
+        }
+        
+        while (     0 <= uploadInfo.mCurrentFile 
+                &&  uploadInfo.mCurrentFile < uploadInfo.mManifest.mFiles.size())
+        {
+            FileInfo & info = uploadInfo.mManifest.mFiles[uploadInfo.mCurrentFile];
+            if (info.mFileSize == 0)
+            {
+                fs::path targetPath = uploadInfo.mUploadPath / info.mFilePath;
+                if (info.mRenameFile.size() > 0)
+                {
+                    targetPath = uploadInfo.mUploadPath / info.mRenameFile;
+                }
+
+                if (info.mIsDirectory)
+                {
+                    fs::create_directories(targetPath);
+                }
+                else
+                {
+                    fs::path targetDir = (targetPath / "..").normalize();
+                    fs::create_directories(targetDir);
+
+                    std::ofstream fout( 
+                        nativeString(targetPath).c_str(), 
+                        std::ios::binary | std::ios::trunc );
+
+                    fout.close();
+
+                    std::time_t writeTime = static_cast<std::time_t>(info.mLastWriteTime);
+                    fs::last_write_time(targetPath, writeTime);
+                }
+
+                ++uploadInfo.mCurrentFile;
+                continue;
+            }
+            
+            break;
+        }
+    }
+
+    void FileTransferService::checkForUploadCompletion(FileUploadInfoPtr uploadInfoPtr)
+    {
+        FileUploadInfo & uploadInfo = *uploadInfoPtr;
+
+        if (uploadInfo.mCurrentFile == uploadInfo.mManifest.mFiles.size())
+        {
+            RCF_LOG_3()(uploadInfo.mCurrentFile) 
+                << "FileTransferService - upload completed.";
+
+            uploadInfo.mCompleted = true;
+
+            if (uploadInfo.mSessionLocalId)
+            {
+                RcfSession& session = getTlsRcfSession();
+                Lock lock(session.mMutex);
+                session.mSessionUploads[uploadInfo.mSessionLocalId] = uploadInfoPtr;
+                session.mUploadInfoPtr.reset();
+            }
+
+            if (uploadInfo.mUploadId.size() > 0)
+            {
+                removeUpload(uploadInfo.mUploadId);
+            }
+        }
+    }
+
     void FileTransferService::BeginUpload(
         const FileManifest & manifest,
         const std::vector<FileChunk> & chunks,
         FileChunk & startPos,
         boost::uint32_t & maxMessageLength,
-        boost::uint32_t & uploadId,
+        std::string & uploadId,
         boost::uint32_t & bps,
         boost::uint32_t sessionLocalId)
     {
 
         RCF_LOG_3()(sessionLocalId) << "FileTransferService::BeginUpload() - entry.";
 
+        RCF_UNUSED_VARIABLE(chunks);
+
         namespace fs = boost::filesystem;
 
-        I_SessionState & sessionState = getCurrentRcfSession().getSessionState();
-        maxMessageLength = sessionState.getServerTransport().getMaxMessageLength();
+        NetworkSession & networkSession = getTlsRcfSession().getNetworkSession();
+        maxMessageLength = (boost::uint32_t) networkSession.getServerTransport().getMaxMessageLength();
 
-        FileUploadInfoPtr uploadInfoPtr( new FileUploadInfo(mUploadThrottle) );
+        RCF::BandwidthQuotaPtr quotaPtr = mUploadQuotaCallback ? 
+            mUploadQuotaCallback(RCF::getCurrentRcfSession()) : 
+            mUploadQuota;
+
+        FileUploadInfoPtr uploadInfoPtr( new FileUploadInfo(quotaPtr) );
         uploadInfoPtr->mManifest = manifest;
-        uploadInfoPtr->mTimeStampMs = Platform::OS::getCurrentTimeMs();
+        uploadInfoPtr->mTimeStampMs = RCF::getCurrentTimeMs();
         uploadInfoPtr->mSessionLocalId = sessionLocalId;
 
-        // Check the access callback (if any).
-        if (    !mUploadCallback.empty()
-            &&  !mUploadCallback(*uploadInfoPtr))
-        {
-            RCF_THROW( Exception(_RcfError_AccessDenied()) );
-        }
-
-        if (uploadId)
+        if (uploadId.size() > 0)
         {
             fs::path uploadPath = findUpload(uploadId);
             if (!uploadPath.empty())
@@ -175,9 +264,7 @@ namespace RCF {
         if (uploadInfoPtr->mUploadPath.empty())
         {
             // Create a temp folder to upload to.
-            uploadInfoPtr->mUploadPath = makeTempDir(
-                fs::path(mUploadDirectory), 
-                "RCF-Upload-");
+            uploadInfoPtr->mUploadPath = makeTempDir(fs::path(mUploadDirectory), "");
 
             uploadId = addUpload(uploadInfoPtr->mUploadPath);
             startPos = FileChunk();
@@ -188,17 +275,19 @@ namespace RCF {
         uploadInfoPtr->mCurrentPos = startPos.mOffset;
 
         {
-            RcfSession& session = getCurrentRcfSession();
+            RcfSession& session = getTlsRcfSession();
             Lock lock(session.mMutex);
             session.mUploadInfoPtr = uploadInfoPtr;
         }
 
-        Throttle::Reservation & reservation = uploadInfoPtr->mReservation;
-        reservation.allocate();
-        bps = reservation.getBps();
-        if (bps == boost::uint32_t(-1))
+        bps = uploadInfoPtr->mQuotaPtr->calculateLineSpeedLimit();
+
+        processZeroSizeEntries(*uploadInfoPtr);
+        checkForUploadCompletion(uploadInfoPtr);
+
+        if (mOnFileUploadProgress)
         {
-            bps = 0;
+            mOnFileUploadProgress(getCurrentRcfSession(), *uploadInfoPtr);
         }
 
         RCF_LOG_3()(startPos.mFileIndex)(startPos.mOffset)(maxMessageLength)(uploadId)(bps) 
@@ -215,7 +304,7 @@ namespace RCF {
         namespace fs = boost::filesystem;
 
         // Find the upload.
-        FileUploadInfoPtr uploadInfoPtr = getCurrentRcfSession().mUploadInfoPtr;
+        FileUploadInfoPtr uploadInfoPtr = getTlsRcfSession().mUploadInfoPtr;
         
         if (!uploadInfoPtr)
         {
@@ -226,17 +315,12 @@ namespace RCF {
 
         if (uploadInfo.mCompleted)
         {
-            // TODO: better error message.
-            RCF_THROW( Exception(_RcfError_NoUpload()) );
+            RCF_THROW( Exception(_RcfError_UploadAlreadyCompleted()) );
         }
 
-        Throttle::Reservation & reservation = uploadInfo.mReservation;
-        reservation.allocate();
-        bps = reservation.getBps();
-        if (bps == boost::uint32_t(-1))
-        {
-            bps = 0;
-        }
+        
+        RCF::BandwidthQuotaPtr quotaPtr = uploadInfo.mQuotaPtr;
+        bps = quotaPtr->calculateLineSpeedLimit();
 
         for (std::size_t i=0; i<chunks.size(); ++i)
         {
@@ -244,31 +328,37 @@ namespace RCF {
 
             if (chunk.mFileIndex != uploadInfo.mCurrentFile)
             {
-                // TODO: better error message.
-                RCF_THROW( Exception(_RcfError_FileOffset()) );
+                processZeroSizeEntries(uploadInfo);
+                if (chunk.mFileIndex != uploadInfo.mCurrentFile)
+                {
+                    RCF_THROW( Exception(_RcfError_FileIndex(uploadInfo.mCurrentFile, chunk.mFileIndex)) );
+                }
             }
+
+            RCF_ASSERT_EQ( chunk.mFileIndex , uploadInfo.mCurrentFile );
 
             FileInfo file = uploadInfo.mManifest.mFiles[uploadInfo.mCurrentFile];
 
+            fs::path filePath = uploadInfo.mUploadPath / file.mFilePath;
+
             if (uploadInfo.mCurrentPos == 0 || uploadInfo.mResume)
             {
-                RCF_ASSERT(uploadInfo.mWriteOp->completed());
+                RCF_ASSERT(uploadInfo.mWriteOp->isCompleted());
 
-                fs::path filePath =  file.mFilePath;
-                filePath = uploadInfo.mUploadPath / filePath;
+                if (file.mRenameFile.size() > 0)
+                {
+                    filePath = uploadInfo.mUploadPath / file.mRenameFile;
+                }
 
                 if ( !fs::exists( filePath.branch_path() ) )
                 {
                     fs::create_directories( filePath.branch_path() );
                 }
 
-                if (file.mRenameFile.size() > 0)
-                {
-                    filePath = filePath.branch_path() / file.mRenameFile;
-                }
-
                 RCF_LOG_3()(uploadInfo.mCurrentFile)(filePath) 
                     << "FileTransferService::UploadChunks() - opening file.";
+
+                uploadInfo.mFileStreamPath = filePath;
 
                 if (uploadInfo.mResume)
                 {
@@ -285,7 +375,7 @@ namespace RCF {
 
                 if (! uploadInfo.mFileStream->good())
                 {
-                    RCF_THROW( Exception(_RcfError_FileWrite(filePath.string(), 0)));
+                    RCF_THROW( Exception(_RcfError_FileWrite(nativeString(filePath), 0)));
                 }
 
                 if (uploadInfo.mResume && uploadInfo.mCurrentPos > 0)
@@ -303,7 +393,7 @@ namespace RCF {
             OfstreamPtr fout = uploadInfoPtr->mFileStream;
 
             // Wait for previous write to complete.
-            if (uploadInfo.mWriteOp->initiated())
+            if (uploadInfo.mWriteOp->isInitiated())
             {
                 uploadInfo.mWriteOp->complete();
 
@@ -311,8 +401,7 @@ namespace RCF {
                 if (bytesWritten == 0)
                 {
                     fout->close();
-                    // TODO: args
-                    RCF_THROW( Exception(_RcfError_FileWrite("", 0)) );
+                    RCF_THROW( Exception(_RcfError_FileWrite(nativeString(filePath), uploadInfo.mCurrentPos)) );
                 }
             }
 
@@ -321,15 +410,14 @@ namespace RCF {
             // Check stream state.
             if (!fout->good())
             {
-                // TODO: args
-                RCF_THROW( Exception(_RcfError_FileWrite("", 0)) );
+                RCF_THROW( Exception(_RcfError_FileWrite(nativeString(uploadInfo.mFileStreamPath), uploadInfo.mCurrentPos)) );
             }
 
             // Check the offset position.
             uploadInfo.mCurrentPos = fout->tellp();
             if (chunk.mOffset != uploadInfo.mCurrentPos)
             {
-                RCF_THROW( Exception(_RcfError_FileOffset()) );
+                RCF_THROW( Exception(_RcfError_FileOffset(uploadInfo.mCurrentPos, chunk.mOffset)) );
             }
 
             // Check the chunk size.
@@ -340,9 +428,9 @@ namespace RCF {
                 RCF_THROW( Exception(_RcfError_UploadFileSize()) );
             }
 
-            uploadInfo.mWriteOp->write(uploadInfo.mFileStream, chunk.mData);
+            uploadInfo.mWriteOp->initateWrite(uploadInfo.mFileStream, chunk.mData);
 
-            uploadInfoPtr->mTimeStampMs = Platform::OS::getCurrentTimeMs();
+            uploadInfoPtr->mTimeStampMs = RCF::getCurrentTimeMs();
 
             // Check if last chunk.
             uploadInfo.mCurrentPos += chunk.mData.getLength();
@@ -353,30 +441,22 @@ namespace RCF {
 
                 uploadInfo.mWriteOp->complete();
                 fout->close();
+
+                std::time_t writeTime = static_cast<std::time_t>(file.mLastWriteTime);
+                fs::last_write_time(filePath, writeTime);
+                
                 ++uploadInfo.mCurrentFile;
                 uploadInfo.mCurrentPos = 0;
 
-                if (uploadInfo.mCurrentFile == uploadInfo.mManifest.mFiles.size())
-                {
-                    RCF_LOG_3()(uploadInfo.mCurrentFile) 
-                        << "FileTransferService::UploadChunks() - upload completed.";
+                processZeroSizeEntries(uploadInfo);
 
-                    uploadInfo.mCompleted = true;
-
-                    if (uploadInfo.mSessionLocalId)
-                    {
-                        RcfSession& session = getCurrentRcfSession();
-                        Lock lock(session.mMutex);
-                        session.mSessionUploads[uploadInfo.mSessionLocalId] = uploadInfoPtr;
-                        session.mUploadInfoPtr.reset();
-                    }
-
-                    if (uploadInfo.mUploadId)
-                    {
-                        removeUpload(uploadInfo.mUploadId);
-                    }
-                }
+                checkForUploadCompletion(uploadInfoPtr);                
             }
+        }
+
+        if (mOnFileUploadProgress)
+        {
+            mOnFileUploadProgress(getCurrentRcfSession(), uploadInfo);
         }
 
         RCF_LOG_3() << "FileTransferService::UploadChunks() - exit.";
@@ -384,14 +464,18 @@ namespace RCF {
 
     namespace fs = boost::filesystem;
 
-    boost::uint32_t FileTransferService::addUpload(const fs::path & uploadPath)
+    std::string FileTransferService::addUpload(const fs::path & uploadPath)
     {
         Lock lock(mUploadsInProgressMutex);
-
-        boost::uint32_t uploadId = 0;
+        std::string uploadId;
         while (true)
         {
-            uploadId = rand();
+            // Largest 32 bit number: 4294967296 (10 digits).
+            boost::uint32_t n = static_cast<boost::uint32_t>(rand());
+            std::ostringstream os;
+            os << std::setw(10) << std::setfill('0') << n;
+            uploadId = os.str();
+
             if (mUploadsInProgress.find(uploadId) == mUploadsInProgress.end())
             {
                 break;
@@ -401,12 +485,11 @@ namespace RCF {
         return uploadId;
     }
 
-    void FileTransferService::removeUpload(boost::uint32_t uploadId)
+    void FileTransferService::removeUpload(const std::string & uploadId)
     {
         Lock lock(mUploadsInProgressMutex);
 
-        std::map<boost::uint32_t, fs::path>::iterator iter = 
-            mUploadsInProgress.find(uploadId);
+        UploadsInProgress::iterator iter = mUploadsInProgress.find(uploadId);
 
         if (iter != mUploadsInProgress.end())
         {
@@ -414,12 +497,11 @@ namespace RCF {
         }
     }
 
-    fs::path FileTransferService::findUpload(boost::uint32_t uploadId)
+    fs::path FileTransferService::findUpload(const std::string & uploadId)
     {
         Lock lock(mUploadsInProgressMutex);
 
-        std::map<boost::uint32_t, fs::path>::iterator iter = 
-            mUploadsInProgress.find(uploadId);
+        UploadsInProgress::iterator iter = mUploadsInProgress.find(uploadId);
 
         if (iter != mUploadsInProgress.end())
         {
@@ -434,6 +516,7 @@ namespace RCF {
         const FileTransferRequest & request,
         std::vector<FileChunk> & chunks,
         boost::uint32_t & maxMessageLength,
+        boost::uint32_t & bps,
         boost::uint32_t sessionLocalId)
     {
         RCF_LOG_3()(sessionLocalId) << "FileTransferService::BeginDownload() - entry.";
@@ -442,10 +525,14 @@ namespace RCF {
 
         if (sessionLocalId)
         {
-            RcfSession& session = getCurrentRcfSession();
+            BandwidthQuotaPtr quotaPtr = mDownloadQuotaCallback ? 
+                mDownloadQuotaCallback(RCF::getCurrentRcfSession()) : 
+                mDownloadQuota;
+
+            RcfSession& session = getTlsRcfSession();
             Lock lock(session.mMutex);
             FileStream & fs = session.mSessionDownloads[sessionLocalId];
-            downloadInfoPtr.reset( new FileDownloadInfo(mDownloadThrottle) );
+            downloadInfoPtr.reset( new FileDownloadInfo(quotaPtr) );
             downloadInfoPtr->mManifest = fs.mImplPtr->mManifest;
             downloadInfoPtr->mDownloadPath = downloadInfoPtr->mManifest.mManifestBase;
             downloadInfoPtr->mSessionLocalId = sessionLocalId;
@@ -466,12 +553,19 @@ namespace RCF {
             di.mCurrentPos = di.mManifest.mFiles[0].mFileStartPos;
         }
 
+        bps = di.mQuotaPtr->calculateLineSpeedLimit();
+
         // TODO: optional first chunks.
         RCF_UNUSED_VARIABLE(request);
         chunks.clear();
 
-        I_SessionState & sessionState = getCurrentRcfSession().getSessionState();
-        maxMessageLength = sessionState.getServerTransport().getMaxMessageLength();
+        NetworkSession & networkSession = getTlsRcfSession().getNetworkSession();
+        maxMessageLength = (boost::uint32_t) networkSession.getServerTransport().getMaxMessageLength();
+
+        if (mOnFileDownloadProgress)
+        {
+            mOnFileDownloadProgress(getCurrentRcfSession(), di);
+        }
 
         RCF_LOG_3()(manifest.mFiles.size())(maxMessageLength) 
             << "FileTransferService::BeginDownload() - exit.";
@@ -483,7 +577,7 @@ namespace RCF {
         RCF_LOG_3()(startPos.mFileIndex)(startPos.mOffset) 
             << "FileTransferService::TrimDownload() - entry.";
 
-        FileDownloadInfoPtr downloadInfoPtr = getCurrentRcfSession().mDownloadInfoPtr;
+        FileDownloadInfoPtr downloadInfoPtr = getTlsRcfSession().mDownloadInfoPtr;
 
         if (!downloadInfoPtr)
         {
@@ -512,13 +606,14 @@ namespace RCF {
     void FileTransferService::DownloadChunks(
         const FileTransferRequest & request,
         std::vector<FileChunk> & chunks,
-        boost::uint32_t & adviseWaitMs)
+        boost::uint32_t & adviseWaitMs,
+        boost::uint32_t & bps)
     {
-        RCF_LOG_3()(request.mFile)(request.mPos) 
+        RCF_LOG_3()(request.mFile)(request.mPos)(request.mChunkSize) 
             << "FileTransferService::DownloadChunks() - entry.";
 
         // Find the download.
-        FileDownloadInfoPtr & diPtr = getCurrentRcfSession().mDownloadInfoPtr;
+        FileDownloadInfoPtr & diPtr = getTlsRcfSession().mDownloadInfoPtr;
 
         if (!diPtr)
         {
@@ -535,12 +630,22 @@ namespace RCF {
 
         adviseWaitMs = 0;
 
+        // Skip past any zero-length entries.
+        while (     di.mCurrentFile < di.mManifest.mFiles.size() 
+            &&  di.mManifest.mFiles[di.mCurrentFile].mFileSize == 0)
+        {
+            ++di.mCurrentFile;
+        }
 
         // Check offset.
-        if (    request.mFile != di.mCurrentFile 
-            ||  request.mPos != di.mCurrentPos)
+        if (request.mFile != di.mCurrentFile)
         {
-            RCF_THROW( Exception(_RcfError_FileOffset()) );
+            RCF_THROW( Exception(_RcfError_FileIndex(di.mCurrentFile, request.mFile)) );
+        }
+
+        if (request.mPos != di.mCurrentPos)
+        {
+            RCF_THROW( Exception(_RcfError_FileOffset(di.mCurrentPos, request.mPos)) );
         }
 
         chunks.clear();
@@ -548,60 +653,57 @@ namespace RCF {
         boost::uint32_t chunkSize = request.mChunkSize;
 
         // Trim the chunk size, according to throttle settings.
-        Throttle::Reservation & reservation = di.mReservation;
-        reservation.allocate();
-        boost::uint32_t bps = reservation.getBps();
-        if (bps != boost::uint32_t(-1))
+        bps = di.mQuotaPtr->calculateLineSpeedLimit();
+
+        if (bps)
         {
-            const boost::uint32_t mThrottleRateBytesPerS = bps;
+            RCF_LOG_3()(bps)(mTransferWindowS)(di.mTransferWindowBytesTotal)(di.mTransferWindowBytesSoFar) 
+                << "FileTransferService::DownloadChunks() - checking throttle setting.";
 
-            if (mThrottleRateBytesPerS)
+            if (di.mTransferWindowTimer.elapsed(mTransferWindowS*1000))
             {
-                if (di.mTransferWindowTimer.elapsed(mTransferWindowS*1000))
-                {
-                    RCF_ASSERT_GTEQ(di.mTransferWindowBytesTotal , di.mTransferWindowBytesSoFar);
+                RCF_ASSERT_GTEQ(di.mTransferWindowBytesTotal , di.mTransferWindowBytesSoFar);
 
-                    boost::uint32_t carryOver = 
-                        di.mTransferWindowBytesTotal - di.mTransferWindowBytesSoFar;
-
-                    di.mTransferWindowTimer.restart();
-
-                    di.mTransferWindowBytesTotal = mThrottleRateBytesPerS * mTransferWindowS;
-                    di.mTransferWindowBytesTotal += carryOver;
-
-                    di.mTransferWindowBytesSoFar = 0;
-
-                    RCF_LOG_3()(mTransferWindowS)(di.mTransferWindowBytesTotal)(di.mTransferWindowBytesSoFar)(carryOver) 
-                        << "FileTransferService::DownloadChunks() - new throttle transfer window.";
-                }
-
-                if (di.mTransferWindowBytesTotal == 0)
-                {
-                    di.mTransferWindowBytesTotal = mThrottleRateBytesPerS * mTransferWindowS;
-                }
-
-                boost::uint32_t bytesWindowRemaining = 
+                boost::uint32_t carryOver = 
                     di.mTransferWindowBytesTotal - di.mTransferWindowBytesSoFar;
 
-                if (bytesWindowRemaining < chunkSize)
-                {
-                    boost::uint32_t windowStartMs = di.mTransferWindowTimer.getStartTimeMs();
-                    boost::uint32_t windowEndMs = windowStartMs + 1000*mTransferWindowS;
-                    boost::uint32_t nowMs = getCurrentTimeMs();
-                    if (nowMs < windowEndMs)
-                    {
-                        adviseWaitMs = windowEndMs - nowMs;
+                di.mTransferWindowTimer.restart();
 
-                        RCF_LOG_3()(adviseWaitMs) 
-                            << "FileTransferService::DownloadChunks() - advising client wait.";
-                    }
-                }
+                di.mTransferWindowBytesTotal = bps * mTransferWindowS;
+                di.mTransferWindowBytesTotal += carryOver;
 
-                RCF_LOG_3()(chunkSize)(bytesWindowRemaining)(di.mTransferWindowBytesTotal) 
-                    << "FileTransferService::DownloadChunks() - trimming chunk size to transfer window.";
+                di.mTransferWindowBytesSoFar = 0;
 
-                chunkSize = RCF_MIN(chunkSize, bytesWindowRemaining);
+                RCF_LOG_3()(mTransferWindowS)(di.mTransferWindowBytesTotal)(di.mTransferWindowBytesSoFar)(carryOver) 
+                    << "FileTransferService::DownloadChunks() - new throttle transfer window.";
             }
+
+            if (di.mTransferWindowBytesTotal == 0)
+            {
+                di.mTransferWindowBytesTotal = bps * mTransferWindowS;
+            }
+
+            boost::uint32_t bytesWindowRemaining = 
+                di.mTransferWindowBytesTotal - di.mTransferWindowBytesSoFar;
+
+            if (bytesWindowRemaining < chunkSize)
+            {
+                boost::uint32_t windowStartMs = di.mTransferWindowTimer.getStartTimeMs();
+                boost::uint32_t windowEndMs = windowStartMs + 1000*mTransferWindowS;
+                boost::uint32_t nowMs = getCurrentTimeMs();
+                if (nowMs < windowEndMs)
+                {
+                    adviseWaitMs = windowEndMs - nowMs;
+
+                    RCF_LOG_3()(adviseWaitMs) 
+                        << "FileTransferService::DownloadChunks() - advising client wait.";
+                }
+            }
+
+            RCF_LOG_3()(chunkSize)(bytesWindowRemaining)(di.mTransferWindowBytesTotal) 
+                << "FileTransferService::DownloadChunks() - trimming chunk size to transfer window.";
+
+            chunkSize = RCF_MIN(chunkSize, bytesWindowRemaining);
         }
 
         boost::uint32_t totalBytesRead = 0;
@@ -620,19 +722,21 @@ namespace RCF {
                 FileInfo & currentFileInfo = di.mManifest.mFiles[di.mCurrentFile];
                 fs::path filePath = currentFileInfo.mFilePath;
                 fs::path totalPath = manifestBase / filePath;
+                boost::uint64_t fileSize = currentFileInfo.mFileSize;
 
-                RCF_LOG_3()(di.mCurrentFile)(totalPath)
+                RCF_LOG_3()(di.mCurrentFile)(fileSize)(totalPath)
                     << "FileTransferService::DownloadChunks() - opening file.";
+
+                di.mFileStreamPath = totalPath;
 
                 di.mFileStream->clear();
                 di.mFileStream->open(
                     totalPath.string().c_str(),
                     std::ios::in | std::ios::binary);
 
-                // TODO: error handling.
                 RCF_VERIFY(
                     di.mFileStream->good(), 
-                    Exception(_RcfError_FileOpen(totalPath.file_string())));
+                    Exception(_RcfError_FileOpen(nativeString(totalPath))));
 
                 if (di.mCurrentPos != 0)
                 {
@@ -643,7 +747,7 @@ namespace RCF {
 
                     RCF_VERIFY(
                         di.mFileStream->good(), 
-                        Exception(_RcfError_FileSeek(totalPath.file_string(), diPtr->mCurrentPos)));
+                        Exception(_RcfError_FileSeek(nativeString(totalPath), diPtr->mCurrentPos)));
                 }
             }
             
@@ -651,20 +755,20 @@ namespace RCF {
             boost::uint64_t bytesRemainingInFile =  fileSize - di.mCurrentPos;
             boost::uint64_t bytesRemainingInChunk = chunkSize - totalBytesRead;
 
-            if (di.mReadOp->initiated())
+            if (di.mReadOp->isInitiated())
             {
                 RCF_LOG_3() 
                     << "FileTransferService::DownloadChunks() - completing read.";
 
                 // Wait for async read to complete.
                 di.mReadOp->complete();
+
                 std::size_t bytesRead = static_cast<std::size_t>(
                     di.mReadOp->getBytesTransferred());
 
                 if (bytesRead == 0)
                 {
-                    // TODO: args
-                    RCF_THROW( Exception(_RcfError_FileRead("", 0)));
+                    RCF_THROW( Exception(_RcfError_FileRead(nativeString(di.mFileStreamPath), di.mCurrentPos)));
                 }
                 di.mSendBuffer.swap(di.mReadBuffer);
                 di.mSendBufferRemaining = ByteBuffer(di.mSendBuffer, 0, bytesRead);
@@ -700,9 +804,7 @@ namespace RCF {
 
                 if (fin->fail() && !fin->eof())
                 {
-                    // TODO: error handling
-                    // TODO: args
-                    RCF_THROW( Exception(_RcfError_FileRead("", 0)) );
+                    RCF_THROW( Exception(_RcfError_FileRead(nativeString(di.mFileStreamPath), di.mCurrentPos)) );
                 }
 
                 byteBuffer = ByteBuffer(byteBuffer, 0, bytesRead);
@@ -714,7 +816,7 @@ namespace RCF {
             fileChunk.mData = byteBuffer;
             chunks.push_back(fileChunk);
 
-            totalBytesRead += byteBuffer.getLength();
+            totalBytesRead += (boost::uint32_t) byteBuffer.getLength();
             diPtr->mCurrentPos += byteBuffer.getLength();
 
             if (diPtr->mCurrentPos == currentFileInfo.mFileSize)
@@ -725,6 +827,13 @@ namespace RCF {
                 fin->close();
                 ++di.mCurrentFile;
                 di.mCurrentPos = 0;
+
+                // Skip past any zero-length entries.
+                while (     di.mCurrentFile < di.mManifest.mFiles.size() 
+                        &&  di.mManifest.mFiles[di.mCurrentFile].mFileSize == 0)
+                {
+                    ++di.mCurrentFile;
+                }
 
                 if (di.mCurrentFile < di.mManifest.mFiles.size())
                 {
@@ -741,13 +850,11 @@ namespace RCF {
             RCF_LOG_3()(di.mCurrentFile) 
                 << "FileTransferService::DownloadChunks() - download completed.";
 
-            di.mReservation.release();
-
             // TODO: this is broken if there is more than one FileStream.
             if (diPtr->mSessionLocalId)
             {
                 std::map<boost::uint32_t, FileDownload> & downloads = 
-                    getCurrentRcfSession().mSessionDownloads;
+                    getTlsRcfSession().mSessionDownloads;
 
                 std::map<boost::uint32_t, FileDownload>::iterator iter = 
                     downloads.find(diPtr->mSessionLocalId);
@@ -760,10 +867,11 @@ namespace RCF {
         }
 
         // Initiate read for next chunk.
-        if (    di.mSendBufferRemaining.isEmpty()
+        if (    diPtr.get()
+            &&  di.mSendBufferRemaining.isEmpty()
             &&  di.mCurrentFile < di.mManifest.mFiles.size()
             &&  0 < di.mCurrentPos
-            &&  ! di.mReadOp->initiated())
+            &&  ! di.mReadOp->isInitiated())
         {
             boost::uint64_t fileSize = di.mManifest.mFiles[di.mCurrentFile].mFileSize;
             if (di.mCurrentPos < fileSize)
@@ -785,50 +893,45 @@ namespace RCF {
                 RCF_LOG_3()(di.mCurrentFile)(di.mCurrentPos)(fileSize)(bytesToRead) 
                     << "FileTransferService::DownloadChunks() - initiate read for next chunk.";
 
-                di.mReadOp->read(di.mFileStream, ByteBuffer(di.mReadBuffer, 0, bytesToRead));
+                di.mReadOp->initiateRead(di.mFileStream, ByteBuffer(di.mReadBuffer, 0, bytesToRead));
             }
+        }
+
+        if (mOnFileDownloadProgress)
+        {
+            mOnFileDownloadProgress(getCurrentRcfSession(), di);
         }
 
         RCF_LOG_3()(chunks.size()) 
             << "FileTransferService::DownloadChunks() - exit.";
     }
 
-    void FileTransferService::setDownloadThrottleSettings(const ThrottleSettings & settings)
+    void FileTransferService::onServerStart(RcfServer & server)
     {
-        mDownloadThrottle.set(settings);
+        mUploadDirectory = server.getFileUploadDirectory();
+        if (mUploadDirectory.empty())
+        {
+            mUploadDirectory = fs::initial_path() / "RCF-Uploads";
+        }
+
+        mUploadQuota.reset(new BandwidthQuota( server.getFileUploadBandwidthLimit() ));
+        mDownloadQuota.reset(new BandwidthQuota( server.getFileDownloadBandwidthLimit() ));
+
+        mUploadQuotaCallback = server.mFileUploadQuotaCb;
+        mDownloadQuotaCallback = server.mFileDownloadQuotaCb;
+
+        mOnFileDownloadProgress = server.mOnFileDownloadProgress;
+        mOnFileUploadProgress = server.mOnFileUploadProgress;
+
+        server.bind<I_FileTransferService>(*this);
     }
 
-    void FileTransferService::getDownloadThrottleSettings(ThrottleSettings & settings)
+    void FileTransferService::onServerStop(RcfServer & server)
     {
-        mDownloadThrottle.get(settings);
+        server.unbind<I_FileTransferService>();
     }
 
-    void FileTransferService::setUploadThrottleSettings(const ThrottleSettings & settings)
-    {
-        mUploadThrottle.set(settings);
-    }
-
-    void FileTransferService::getUploadThrottleSettings(ThrottleSettings & settings)
-    {
-        mUploadThrottle.get(settings);
-    }
-
-    void FileTransferService::setUploadCallback(UploadAccessCallback uploadCallback)
-    {
-        mUploadCallback = uploadCallback;
-    }
-
-    void FileTransferService::onServiceAdded(RcfServer &server)
-    {
-        server.bind( (I_FileTransferService *) NULL, *this);
-    }
-
-    void FileTransferService::onServiceRemoved(RcfServer &server)
-    {
-        server.unbind( (I_FileTransferService *) NULL);
-    }
-
-#ifdef RCF_USE_SF_SERIALIZATION
+#if RCF_FEATURE_SF==1
 
     void FileManifest::serialize(SF::Archive & ar) 
     {
@@ -837,7 +940,18 @@ namespace RCF {
 
     void FileInfo::serialize(SF::Archive & ar) 
     {
-        ar & mFilePath & mFileStartPos & mFileSize & mFileCrc & mRenameFile;
+        ar 
+            & mIsDirectory 
+            & mFilePath 
+            & mFileStartPos 
+            & mFileSize 
+            & mFileCrc 
+            & mRenameFile;
+
+        if (ar.getRuntimeVersion() >= 11)
+        {
+            ar & mLastWriteTime;
+        }
     }
 
     void FileChunk::serialize(SF::Archive & ar)
@@ -852,12 +966,39 @@ namespace RCF {
 
 #endif
 
+    fs::path getRelativePath(const fs::path & basePath, const fs::path & fullPath)
+    {
+        fs::path::iterator baseIter = basePath.begin();
+        fs::path::iterator fullIter = fullPath.begin();
+
+        while ( baseIter != basePath.end() ) 
+        {
+            if (fullIter == fullPath.end())
+            {
+                return fs::path();
+            }
+            if (*baseIter != *fullIter) 
+            {
+                return fs::path();
+            }
+            ++fullIter; 
+            ++baseIter;
+        }
+
+        fs::path relativePath;
+        while (fullIter != fullPath.end())
+        {
+            relativePath /= *fullIter;
+            ++fullIter;
+        }
+        return relativePath;
+    }
+
     FileManifest::FileManifest(boost::filesystem::path pathToFiles) 
     {
         if (!fs::exists(pathToFiles))
         {
-            RCF::Exception e( _RcfError_FileOpen(pathToFiles.file_string()) );
-            RCF_THROW(e)(pathToFiles.file_string());
+            RCF_THROW( RCF::Exception( _RcfError_FileOpen(nativeString(pathToFiles)) ) );
         }
 
         if (fs::is_directory(pathToFiles))
@@ -869,23 +1010,28 @@ namespace RCF {
             { 
 
                 fs::path fullPath = *iter;
-                if ( !fs::is_directory(fullPath) )
+                
+                FileInfo fileInfo;
+
+                if ( fs::is_directory(fullPath) )
                 {
-                    FileInfo fileInfo;
+                    fileInfo.mIsDirectory = true;
+                    fileInfo.mFileSize = 0;
+                    fileInfo.mFileCrc = 0;
+                }
+                else
+                {
+                    fileInfo.mIsDirectory = false;
                     fileInfo.mFileSize = fs::file_size(fullPath);
                     fileInfo.mFileCrc = 0;
-
-                    // TODO: this is a bit of a kludge.
-                    std::string base = (pathToFiles / "..").normalize().string();
-                    std::string full = fullPath.string();
-                    RCF_ASSERT_EQ(full.substr(0, base.length()) , base);
-                    std::string relative = full.substr(base.length()+1);
-                    fs::path relativePath(relative);
-
-                    fileInfo.mFilePath = relativePath;
-
-                    mFiles.push_back(fileInfo);
+                    fileInfo.mLastWriteTime = fs::last_write_time(fullPath);
                 }
+
+                fs::path basePath = (pathToFiles / "..").normalize();
+                fs::path relativePath = getRelativePath(basePath, fullPath);
+                fileInfo.mFilePath = relativePath;
+
+                mFiles.push_back(fileInfo);
             }
         }
         else
@@ -893,7 +1039,14 @@ namespace RCF {
             FileInfo fileInfo;
             fileInfo.mFileSize = fs::file_size(pathToFiles);
             fileInfo.mFileCrc = 0;
+            fileInfo.mLastWriteTime = fs::last_write_time(pathToFiles);
+
+#if BOOST_VERSION <= 104300
             fileInfo.mFilePath = pathToFiles.leaf();
+#else
+            fileInfo.mFilePath = pathToFiles.filename();
+#endif
+
             mFiles.push_back(fileInfo);
         }
 
@@ -919,7 +1072,7 @@ namespace RCF {
         return totalByteSize;
     }
 
-    FileUploadInfo::FileUploadInfo(Throttle & uploadThrottle) : 
+    FileUploadInfo::FileUploadInfo(BandwidthQuotaPtr quotaPtr) : 
         mFileStream( new std::ofstream() ),
         mWriteOp( new FileIoRequest() ),
         mCompleted(false),
@@ -928,11 +1081,37 @@ namespace RCF {
         mCurrentFile(0),
         mCurrentPos(0),
         mSessionLocalId(0),
-        mUploadId(0),
-        mReservation(uploadThrottle)
-    {}
+        mQuotaPtr(quotaPtr)
+    {
+        mQuotaPtr->addUpload(this);
+    }
 
-    FileDownloadInfo::FileDownloadInfo(Throttle & downloadThrottle) :
+    FileUploadInfo::~FileUploadInfo()
+    {
+        mFileStream->close();
+
+        mQuotaPtr->removeUpload(this);
+        mQuotaPtr.reset();
+
+        // Best effort only.
+        try
+        {
+            if (!mCompleted && mUploadId.empty())
+            {
+                fs::remove_all(mUploadPath);
+            }
+        }
+        catch(const std::exception & e)
+        {
+            std::string error = e.what();
+        }
+        catch(...)
+        {
+
+        }
+    }
+
+    FileDownloadInfo::FileDownloadInfo(BandwidthQuotaPtr quotaPtr) :
         mFileStream( new std::ifstream() ),
         mReadOp( new FileIoRequest() ),
         mCurrentFile(0),
@@ -940,131 +1119,17 @@ namespace RCF {
         mResume(false),
         mTransferWindowBytesSoFar(0),
         mTransferWindowBytesTotal(0),
-        mReservation(downloadThrottle),
         mCancel(false),
-        mSessionLocalId(0)
-    {}
-
-    Throttle::Reservation::Reservation(Throttle & throttle) : 
-        mThrottle(throttle), 
-        mBps(0),
-        mReserved(false),
-        mChangeCounter(0)
+        mSessionLocalId(0),
+        mQuotaPtr(quotaPtr)
     {
+        mQuotaPtr->addDownload(this);
     }
 
-    Throttle::Reservation::~Reservation()
+    FileDownloadInfo::~FileDownloadInfo()
     {
-        release();
-    }
-
-    void Throttle::Reservation::allocate()
-    {
-        // See if we can upgrade our existing reservation, or create one if necessary.
-        if (mBps != boost::uint32_t(-1))
-        {
-            Lock lock(mThrottle.mMutex);
-            if (mThrottle.mSettings.empty())
-            {
-                release(false);
-                
-                mBps = boost::uint32_t(-1);
-                mReserved = false;
-            }
-            else
-            {
-                for (
-                    Settings::reverse_iterator iter = mThrottle.mSettings.rbegin(); 
-                    iter != mThrottle.mSettings.rend(); 
-                    ++iter)
-                {
-                    boost::uint32_t bps = iter->first;
-                    boost::uint32_t maxAllowed = iter->second.first;
-                    boost::uint32_t & booked = iter->second.second;
-
-                    if (bps <= mBps)
-                    {
-                        break;
-                    }
-                    
-                    if (booked < maxAllowed)
-                    {
-                        release(false);
-
-                        ++booked;
-                        mBps = bps;
-                        mReserved = true;
-                        mChangeCounter = mThrottle.mChangeCounter;
-
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    void Throttle::Reservation::release(bool sync)
-    {
-        if (mReserved)
-        {
-            if (sync)
-            {
-                Lock lock(mThrottle.mMutex);
-                releaseImpl();
-            }
-            else
-            {
-                releaseImpl();
-            }
-        }
-    }
-
-    void Throttle::Reservation::releaseImpl()
-    {
-        RCF_ASSERT(mReserved);
-        if (mChangeCounter == mThrottle.mChangeCounter)
-        {
-            Settings::iterator iter = mThrottle.mSettings.find(mBps);
-            RCF_ASSERT(iter != mThrottle.mSettings.end());
-            boost::uint32_t & booked = iter->second.second;
-            --booked;
-            RCF_ASSERT_NEQ(booked , boost::uint32_t(-1));
-            mBps = 0;
-            mReserved = false;
-        }
-    }
-
-    boost::uint32_t Throttle::Reservation::getBps()
-    {
-        return mBps;
-    }
-
-    Throttle::Throttle() : mChangeCounter(1)
-    {
-    }
-
-    void Throttle::set(const ThrottleSettings & settings)
-    {
-        Lock lock(mMutex);
-        ++mChangeCounter;
-        mSettings.clear();
-        for (std::size_t i=0; i<settings.size(); ++i)
-        {
-            boost::uint32_t users = settings[i].first;
-            boost::uint32_t bps = settings[i].second;
-            mSettings[bps].first = users;
-            mSettings[bps].second = 0;
-        }
-    }
-
-    void Throttle::get(ThrottleSettings& settings)
-    {
-        settings.clear();
-        Lock lock(mMutex);
-        for (Settings::iterator iter = mSettings.begin(); iter != mSettings.end(); ++iter)
-        {
-            settings.push_back( std::make_pair(iter->second.first, iter->first) );
-        }
+        mQuotaPtr->removeDownload(this);
+        mQuotaPtr.reset();
     }
 
     void FileTransferService::setTransferWindowS(boost::uint32_t transferWindowS)
@@ -1075,6 +1140,51 @@ namespace RCF {
     boost::uint32_t FileTransferService::getTransferWindowS()
     {
         return mTransferWindowS;
+    }
+
+    BandwidthQuota::BandwidthQuota() : mQuotaBps(0)
+    {
+    }
+
+    BandwidthQuota::BandwidthQuota(boost::uint32_t quotaBps) : mQuotaBps(quotaBps)
+    {
+    }
+
+    void BandwidthQuota::addUpload(FileUploadInfo * pUpload)
+    {
+        Lock lock(mMutex);
+        mUploadsInProgress.insert(pUpload);
+    }
+    void BandwidthQuota::removeUpload(FileUploadInfo * pUpload)
+    {
+        Lock lock(mMutex);
+        mUploadsInProgress.erase(pUpload);
+    }
+
+    void BandwidthQuota::addDownload(FileDownloadInfo * pDownload)
+    {
+        Lock lock(mMutex);
+        mDownloadsInProgress.insert(pDownload);
+    }
+
+    void BandwidthQuota::removeDownload(FileDownloadInfo * pDownload)
+    {
+        Lock lock(mMutex);
+        mDownloadsInProgress.erase(pDownload);
+    }
+
+    void BandwidthQuota::setQuota(boost::uint32_t quotaBps)
+    {
+        Lock lock(mMutex);
+        mQuotaBps = quotaBps;
+    }
+
+    boost::uint32_t BandwidthQuota::calculateLineSpeedLimit()
+    {
+        Lock lock(mMutex);
+        std::size_t transfers = mUploadsInProgress.size() + mDownloadsInProgress.size();
+        RCF_ASSERT(transfers > 0);
+        return mQuotaBps / (boost::uint32_t) transfers;
     }
 
 } // namespace RCF

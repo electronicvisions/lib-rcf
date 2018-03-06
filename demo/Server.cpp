@@ -4,8 +4,7 @@
 #include <string>
 #include <vector>
 
-#include <RCF/RcfServer.hpp>
-#include <RCF/TcpEndpoint.hpp>
+#include <RCF/RCF.hpp>
 
 #include "MyService.hpp"
 
@@ -24,6 +23,8 @@ public:
 
 int main()
 {
+    RCF::RcfInitDeinit rcfInit;
+
     // Start a TCP server on port 50001, and expose MyServiceImpl.
     MyServiceImpl myServiceImpl;
     RCF::RcfServer server( RCF::TcpEndpoint("0.0.0.0", 50001) );

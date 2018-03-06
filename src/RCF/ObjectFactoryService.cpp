@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -25,35 +28,16 @@
 #include <RCF/StubEntry.hpp>
 #include <RCF/StubFactory.hpp>
 
-#ifdef RCF_USE_PROTOBUF
-#include <RCF/protobuf/RcfMessages.pb.h>
-#endif
-
 namespace RCF {
 
-    ObjectFactoryService::ObjectFactoryService(
-        unsigned int numberOfTokens,
-        unsigned int clientStubTimeoutS,
-        unsigned int cleanupIntervalS,
-        float cleanupThreshold) :
-            mTokenFactory(numberOfTokens),
-            mClientStubTimeoutS(clientStubTimeoutS),            
-            mCleanupIntervalS(cleanupIntervalS),
-            mCleanupThreshold(cleanupThreshold),
+    ObjectFactoryService::ObjectFactoryService() :
+            mTokenFactory(),
+            mClientStubTimeoutS(0),            
+            mCleanupIntervalS(0),
+            mCleanupThreshold(0.0),
             mStubMapMutex(WriterPriority),
-            mStopFlag(RCF_DEFAULT_INIT)
+            mLazyStarted(false)
     {
-        RCF_ASSERT(0.0 <= cleanupThreshold && mCleanupThreshold <= 1.0);
-
-        // up-front initialization, before threads get into the picture
-        typedef std::vector<Token>::const_iterator Iter;
-        for (
-            Iter iter = mTokenFactory.getTokenSpace().begin();
-            iter != mTokenFactory.getTokenSpace().end();
-            ++iter)
-        {
-            mStubMap[*iter].first.reset(new Mutex());
-        }
     }
 
     // remotely accessible
@@ -63,13 +47,23 @@ namespace RCF {
     {
         RCF_LOG_3()(objectName);
 
+        {
+            Lock lock(mCleanupThresholdMutex);
+            if (!mLazyStarted)
+            {
+                mTaskEntries[0].start();
+                mLazyStarted = true;
+            }
+        }
+
         // TODO: seems unnecessary to be triggering a sweep here
-        std::size_t nAvail = mTokenFactory.getAvailableTokenCount();
-        std::size_t nTotal = mTokenFactory.getTokenSpace().size();
+        std::size_t nAvail = mTokenFactory->getAvailableTokenCount();
+        std::size_t nTotal = mTokenFactory->getTokenSpace().size();
         float used = float(nTotal - nAvail) / float(nTotal);
         if (used > mCleanupThreshold)
         {
-            mCleanupThresholdCondition.notify_one();
+            Lock lock(mCleanupThresholdMutex);
+            mCleanupThresholdCondition.notify_all(lock);
         }
 
         boost::int32_t ret = RcfError_Ok;
@@ -84,7 +78,7 @@ namespace RCF {
             
             if (ret == RcfError_Ok)
             {
-                getCurrentRcfSession().setCachedStubEntryPtr(stubEntryPtr);
+                getTlsRcfSession().setCachedStubEntryPtr(stubEntryPtr);
 
                 RCF_LOG_3()(objectName)(token) << "Dynamically bound object created.";
             }
@@ -96,14 +90,14 @@ namespace RCF {
 
         return ret;
     }
-
+    
     boost::int32_t ObjectFactoryService::addObject(
         TokenMappedPtr tokenMappedPtr, 
         Token & token)
     {
         // TODO: exception safety
         Token myToken;
-        bool ok = mTokenFactory.requestToken(myToken);
+        bool ok = mTokenFactory->requestToken(myToken);
         if (ok)
         {
             WriteLock writeLock(mStubMapMutex);
@@ -119,19 +113,6 @@ namespace RCF {
         }
     }
 
-    Token ObjectFactoryService::addObjectImpl(RcfClientPtr rcfClientPtr)
-    {
-        Token myToken;
-        bool ok = mTokenFactory.requestToken(myToken);
-        RCF_VERIFY(ok, Exception(_RcfError_TokenRequestFailed()));
-        WriteLock writeLock(mStubMapMutex);
-        RCF_UNUSED_VARIABLE(writeLock);
-        RCF_ASSERT(mStubMap.find(myToken) != mStubMap.end())(myToken);
-        StubEntryPtr stubEntryPtr(new StubEntry(rcfClientPtr));
-        mStubMap[myToken].second = stubEntryPtr;
-        return myToken;        
-    }
-
     // remotely accessible
     boost::int32_t ObjectFactoryService::CreateSessionObject(
         const std::string &objectName)
@@ -140,7 +121,7 @@ namespace RCF {
         if (stubFactoryPtr.get())
         {
             RcfClientPtr rcfClientPtr( stubFactoryPtr->makeServerStub());
-            getCurrentRcfSession().setDefaultStubEntryPtr(
+            getTlsRcfSession().setDefaultStubEntryPtr(
                 StubEntryPtr( new StubEntry(rcfClientPtr)));
             return RcfError_Ok;
         }
@@ -155,7 +136,7 @@ namespace RCF {
         if (stubFactoryPtr.get())
         {
             RcfClientPtr rcfClientPtr( stubFactoryPtr->makeServerStub());
-            getCurrentRcfSession().setDefaultStubEntryPtr(
+            getTlsRcfSession().setDefaultStubEntryPtr(
                 StubEntryPtr( new StubEntry(rcfClientPtr)));
             return RcfError_Ok;
         }
@@ -170,12 +151,12 @@ namespace RCF {
 
         if (mStubMap.find(token) == mStubMap.end())
         {
-            return RcfError_Unspecified;
+            return RcfError_DynamicObjectNotFound;
         }
         else
         {
             mStubMap[token].second.reset();
-            mTokenFactory.returnToken(token);
+            mTokenFactory->returnToken(token);
             RCF_LOG_3()(token) << "Dynamically bound object deleted.";
             return RcfError_Ok;
         }
@@ -184,14 +165,14 @@ namespace RCF {
     // remotely accessible
     boost::int32_t ObjectFactoryService::DeleteSessionObject()
     {
-        getCurrentRcfSession().setDefaultStubEntryPtr(StubEntryPtr());
+        getTlsRcfSession().setDefaultStubEntryPtr(StubEntryPtr());
         return RcfError_Ok;
     }
 
     // remotely accessible
     boost::int32_t SessionObjectFactoryService::DeleteSessionObject()
     {
-        getCurrentRcfSession().setDefaultStubEntryPtr(StubEntryPtr());
+        getTlsRcfSession().setDefaultStubEntryPtr(StubEntryPtr());
         return RcfError_Ok;
     }
 
@@ -214,118 +195,61 @@ namespace RCF {
         return tokenMappedPtr;
     }
 
-#ifdef RCF_USE_PROTOBUF
-
-    class ObjectFactoryServicePb
-    {
-    public:
-        ObjectFactoryServicePb(ObjectFactoryService& ofs) : mOfs(ofs)
-        {
-        }
-
-        PbCreateRemoteObjectResponse CreateRemoteObject(const PbCreateRemoteObject & request)
-        {
-            Token token;
-            int error = mOfs.CreateObject(request.objectname(), token);
-
-            if (error != RCF::RcfError_Ok)
-            {
-                RemoteException e(( Error(error) ));
-                RCF_THROW(e);
-            }
-
-            PbCreateRemoteObjectResponse response;
-            response.set_token( token.getId() );
-            return response;
-            //return PbCreateRemoteObjectResponse();
-        }
-
-        void DeleteRemoteObject(const PbDeleteRemoteObject & request)
-        {
-            int error = mOfs.DeleteObject(request.token());
-
-            if (error != RCF::RcfError_Ok)
-            {
-                RemoteException e(( Error(error) ));
-                RCF_THROW(e);
-            }
-        }
-
-    private:
-
-        ObjectFactoryService & mOfs;
-
-    };
-
-    void onServiceAddedProto(ObjectFactoryService & ofs, RcfServer & server)
-    {
-        boost::shared_ptr<ObjectFactoryServicePb> ofsPbPtr( 
-            new ObjectFactoryServicePb(ofs) );
-
-        server.bind((I_ObjectFactoryPb *) NULL, ofsPbPtr);
-    }
-
-    void onServiceRemovedProto(ObjectFactoryService &, RcfServer & server)
-    {
-        server.unbind( (I_ObjectFactoryPb *) NULL);
-    }
-
-#else
-
-    void onServiceAddedProto(ObjectFactoryService &, RcfServer &)
-    {
-    }
-
-    void onServiceRemovedProto(ObjectFactoryService &, RcfServer &)
-    {
-    }
-
-#endif // RCF_USE_PROTOBUF
-
     void ObjectFactoryService::onServiceAdded(RcfServer &server)
     {
-        server.bind((I_ObjectFactory *) NULL, *this);
-
-        onServiceAddedProto(*this, server);
+        server.bind<I_ObjectFactory>(*this);
 
         mTaskEntries.clear();
 
         mTaskEntries.push_back(
             TaskEntry(
-            boost::bind(&ObjectFactoryService::cycleCleanup, this, _1, _2),
+            boost::bind(&ObjectFactoryService::cycleCleanup, this, _1),
             boost::bind(&ObjectFactoryService::stopCleanup, this),
-            "RCF Ofs cleanup"));
-
-        mStopFlag = false;
+            "RCF Ofs cleanup",
+            false));
     }
 
     void ObjectFactoryService::onServiceRemoved(RcfServer &server)
     {
-        server.unbind( (I_ObjectFactory *) NULL);
-
-        onServiceRemovedProto(*this, server);
+        server.unbind<I_ObjectFactory>();
     }
 
-    void ObjectFactoryService::onServerStart(RcfServer &)
+    void ObjectFactoryService::onServerStart(RcfServer & server)
     {
+        mTokenFactory.reset( new TokenFactory(server.getOfsMaxNumberOfObjects()) );
+        mClientStubTimeoutS = server.getOfsObjectTimeoutS();
+        mCleanupIntervalS = server.getOfsCleanupIntervalS();
+        mCleanupThreshold = server.getOfsCleanupThreshold();
+
+        RCF_ASSERT(0.0 <= mCleanupThreshold && mCleanupThreshold <= 1.0);
+
+        // up-front initialization, before threads get into the picture
+        typedef std::vector<Token>::const_iterator Iter;
+        for (
+            Iter iter = mTokenFactory->getTokenSpace().begin();
+            iter != mTokenFactory->getTokenSpace().end();
+            ++iter)
+        {
+            mStubMap[*iter].first.reset(new Mutex());
+        }
     }
 
     void ObjectFactoryService::onServerStop(RcfServer &)
     {
-        mStopFlag = false;
     }
 
     void ObjectFactoryService::stopCleanup()
     {
-        mStopFlag = true;
         Lock lock(mCleanupThresholdMutex);
-        mCleanupThresholdCondition.notify_one();
+        mCleanupThresholdCondition.notify_all(lock);
     }
 
-    bool ObjectFactoryService::cycleCleanup(
-        int timeoutMs,
-        const volatile bool &stopFlag)
+    void ObjectFactoryService::cycleCleanup(
+        int timeoutMs)
     {
+        RCF::ThreadInfoPtr tiPtr = getTlsThreadInfoPtr();
+        RCF::ThreadPool & threadPool = tiPtr->getThreadPool();
+
         if (timeoutMs == 0)
         {
             cleanupStubMap(mClientStubTimeoutS);
@@ -333,21 +257,24 @@ namespace RCF {
         else
         {
             Lock lock(mCleanupThresholdMutex);
-            if (!stopFlag && !mStopFlag)
+            if (!threadPool.shouldStop())
             {
-                unsigned int cleanupIntervalMs = 1000*mCleanupIntervalS;
-                mCleanupThresholdCondition.timed_wait(lock, cleanupIntervalMs);
-                if (!stopFlag && !mStopFlag)
+                if (mCleanupIntervalS)
                 {
-                    cleanupStubMap(mClientStubTimeoutS);
+                    unsigned int cleanupIntervalMs = 1000*mCleanupIntervalS;
+                    mCleanupThresholdCondition.timed_wait(lock, cleanupIntervalMs);
                 }
                 else
                 {
-                    return true;
+                    mCleanupThresholdCondition.wait(lock);
+                }
+                
+                if (!threadPool.shouldStop())
+                {
+                    cleanupStubMap(mClientStubTimeoutS);
                 }
             }
         }
-        return stopFlag || mStopFlag;
     }
 
     StubFactoryRegistry::StubFactoryRegistry() :
@@ -385,16 +312,16 @@ namespace RCF {
     void ObjectFactoryService::cleanupStubMap(unsigned int timeoutS)
     {
         // Clean up the stub map
-        std::size_t nAvail = mTokenFactory.getAvailableTokenCount();
-        std::size_t nTotal = mTokenFactory.getTokenSpace().size();
+        std::size_t nAvail = mTokenFactory->getAvailableTokenCount();
+        std::size_t nTotal = mTokenFactory->getTokenSpace().size();
         float used = float(nTotal - nAvail) / float(nTotal);
         if (used > mCleanupThreshold)
         {
             RCF_LOG_3() << "ObjectFactoryService - cleaning up stub map.";
             typedef std::vector<Token>::const_iterator Iter;
             for (
-                Iter iter = mTokenFactory.getTokenSpace().begin();
-                iter != mTokenFactory.getTokenSpace().end();
+                Iter iter = mTokenFactory->getTokenSpace().begin();
+                iter != mTokenFactory->getTokenSpace().end();
                 ++iter)
             {
                 Token token = *iter;
@@ -416,7 +343,7 @@ namespace RCF {
                 }
                 if (removeStub)
                 {
-                    mTokenFactory.returnToken(token);
+                    mTokenFactory->returnToken(token);
                 }
             }
         }

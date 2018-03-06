@@ -2,366 +2,345 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
 #include <RCF/Win32NamedPipeServerTransport.hpp>
 
-#include <RCF/CurrentSession.hpp>
-#include <RCF/RcfServer.hpp>
-#include <RCF/Win32NamedPipeEndpoint.hpp>
+#include <RCF/Asio.hpp>
+#include <RCF/RcfSession.hpp>
+#include <RCF/ThreadLocalData.hpp>
 #include <RCF/Win32NamedPipeClientTransport.hpp>
+#include <RCF/Win32NamedPipeEndpoint.hpp>
 
 namespace RCF {
 
-    void resetSessionStatePtr(IocpSessionStatePtr &sessionStatePtr);
+    // Win32NamedPipeNetworkSession
 
-    // Win32NamedPipeSessionState
-
-    Win32NamedPipeSessionState::Win32NamedPipeSessionState(
+    Win32NamedPipeNetworkSession::Win32NamedPipeNetworkSession(
         Win32NamedPipeServerTransport & transport,
-        HANDLE hPipe) : 
-            IocpSessionState(transport),
-            mTransport(transport),
-            mhPipe(hPipe)
+        AsioIoService & ioService) :
+            AsioNetworkSession(transport, ioService)
     {
-        mSessionPtr = mTransport.mpRcfServer->createSession();
-        mSessionPtr->setSessionState(*this);
+        const std::size_t       MaxPipeInstances    = PIPE_UNLIMITED_INSTANCES;
+        const DWORD             OutBufferSize       = 4096;
+        const DWORD             InBufferSize        = 4096;
+        const DWORD             DefaultTimeoutMs    = 0;
 
-        mEnableReconnect = false;
+        HANDLE hPipe = CreateNamedPipe( 
+            transport.mPipeName.c_str(),
+            PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
+            PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+            MaxPipeInstances,
+            OutBufferSize,
+            InBufferSize,
+            DefaultTimeoutMs,
+            transport.mpSec);
+
+        DWORD dwErr = GetLastError();
+
+        RCF_VERIFY(hPipe != INVALID_HANDLE_VALUE, Exception(_RcfError_Pipe(), dwErr));
+
+        mSocketPtr.reset( new AsioPipeHandle(ioService, hPipe) );
     }
 
-    Win32NamedPipeSessionState::~Win32NamedPipeSessionState()
+    Win32NamedPipeNetworkSession::~Win32NamedPipeNetworkSession()
     {
-        RCF_DTOR_BEGIN
-
-            mEnableReconnect = false;
-            postClose();
-
-            if (mPreState == Accepting)
-            {
-                {
-                    Lock lock(mTransport.mQueuedAcceptsMutex);
-                    --mTransport.mQueuedAccepts;
-                }
-                if (!mTransport.mPipeName.empty() && mTransport.isStarted())
-                {
-                    mTransport.createSessionState()->accept();
-                }
-            }
-
-        RCF_DTOR_END
     }
 
-    const I_RemoteAddress & Win32NamedPipeSessionState::getRemoteAddress()
+    const RemoteAddress & Win32NamedPipeNetworkSession::implGetRemoteAddress()
     {
         return mRemoteAddress;
     }
 
-    void Win32NamedPipeSessionState::accept()
+    void Win32NamedPipeNetworkSession::implRead(char * buffer, std::size_t bufferLen)
     {
-        mTransport.registerSession(mWeakThisPtr);
+        if ( !mSocketPtr )
+        {
+            RCF_LOG_4() << "Win32NamedPipeNetworkSession - connection has been closed.";
+            return;
+        }
 
-        mThisPtr = mWeakThisPtr.lock();
-        mError = 0;
+        RCF_LOG_4()(bufferLen) 
+            << "Win32NamedPipeNetworkSession - calling ReadFile().";
 
-        BOOL ok = ConnectNamedPipe(mhPipe, this);
+        ASIO_NS::windows::overlapped_ptr overlapped(
+            mSocketPtr->get_io_service(), 
+            ReadHandler(sharedFromThis()));
+
+        DWORD dwBytesRead = 0;
+
+        bool readOk = false;
+
+        HANDLE hPipe = mSocketPtr->native();
+
+        BOOL ok = ReadFile(
+            hPipe,
+            buffer,
+            static_cast<DWORD>(bufferLen),
+            &dwBytesRead,
+            overlapped.get());
+
+        DWORD realError = 0;
+        DWORD dwErr = 0;
+
+        if (!ok)
+        {
+            dwErr = GetLastError();
+
+            if (    dwErr != ERROR_IO_PENDING 
+                &&  dwErr != ERROR_MORE_DATA)
+            {
+                realError = dwErr;
+            }
+        }
+
+        if (    dwBytesRead
+            ||  (ok && dwBytesRead == 0 && bufferLen == 0)
+            ||  (!ok && realError == 0))
+        {
+            readOk = true;
+        }
+
+        if (readOk)
+        {
+            overlapped.release();
+        }
+        else
+        {
+            AsioErrorCode ec(
+                dwErr,
+                ASIO_NS::error::get_system_category());
+
+            overlapped.complete(ec, 0);
+        }
+    }
+
+    void Win32NamedPipeNetworkSession::implWrite(const std::vector<ByteBuffer> & buffers)
+    {
+        if ( !mSocketPtr )
+        {
+            RCF_LOG_4() << "Win32NamedPipeNetworkSession - connection has been closed.";
+            return;
+        }
+
+        RCF_LOG_4()(RCF::lengthByteBuffers(buffers))
+            << "Win32NamedPipeNetworkSession - calling WriteFile().";
+
+
+        ASIO_NS::windows::overlapped_ptr overlapped(
+            mSocketPtr->get_io_service(), 
+            WriteHandler(sharedFromThis()));
+
+        const ByteBuffer & byteBuffer = buffers.front();
+
+        DWORD dwBytesWritten = 0;
+
+        bool writeOk = false;
+
+        HANDLE hPipe = mSocketPtr->native();
+
+        BOOL ok = WriteFile(
+            hPipe,
+            byteBuffer.getPtr(),
+            static_cast<DWORD>(byteBuffer.getLength()),
+            &dwBytesWritten,
+            overlapped.get());
+
+        DWORD dwErr = GetLastError();;
+
+        if (!ok &&  (
+            dwErr == ERROR_IO_PENDING 
+            ||  dwErr == ERROR_MORE_DATA))
+        {
+            writeOk = true;
+        }
+        else if (dwBytesWritten)
+        {
+            writeOk = true;
+        }
+
+        if (writeOk)
+        {
+            overlapped.release();
+        }
+        else
+        {
+            AsioErrorCode ec(
+                dwErr,
+                ASIO_NS::error::get_system_category());
+
+            overlapped.complete(ec, 0);
+        }
+    }
+
+    void Win32NamedPipeNetworkSession::implWrite(AsioNetworkSession &toBeNotified, const char * buffer, std::size_t bufferLen)
+    {
+        ASIO_NS::windows::overlapped_ptr overlapped(
+            mSocketPtr->get_io_service(), 
+            boost::bind(
+                &AsioNetworkSession::onNetworkWriteCompleted,
+                toBeNotified.sharedFromThis(),
+                ASIO_NS::placeholders::error,
+                ASIO_NS::placeholders::bytes_transferred));
+
+        DWORD dwBytesWritten = 0;
+
+        bool writeOk = false;
+
+        HANDLE hPipe = mSocketPtr->native();
+
+        BOOL ok = WriteFile(
+            hPipe,
+            buffer,
+            static_cast<DWORD>(bufferLen),
+            &dwBytesWritten,
+            overlapped.get());
+
         DWORD dwErr = GetLastError();
 
-        if (!ok && dwErr != ERROR_IO_PENDING && dwErr != ERROR_PIPE_CONNECTED)
+        if (!ok &&  (
+            dwErr == ERROR_IO_PENDING 
+            ||  dwErr == ERROR_MORE_DATA))
         {
-            mError = dwErr;
+            writeOk = true;
         }
+        else if (dwBytesWritten)
+        {
+            writeOk = true;
+        }
+
+        if (writeOk)
+        {
+            overlapped.release();
+        }
+        else
+        {
+            AsioErrorCode ec(
+                dwErr,
+                ASIO_NS::error::get_system_category());
+
+            overlapped.complete(ec, 0);
+        }
+    }
+
+    void Win32NamedPipeNetworkSession::implAccept()
+    {
+        RCF_LOG_4()<< "Win32NamedPipeNetworkSession - calling ConnectNamedPipe().";
+
+        ASIO_NS::windows::overlapped_ptr overlapped(
+            mSocketPtr->get_io_service(), 
+            boost::bind(
+                &AsioNetworkSession::onAcceptCompleted,
+                sharedFromThis(),
+                ASIO_NS::placeholders::error));
+
+        HANDLE hPipe = mSocketPtr->native();
+        BOOL ok = ConnectNamedPipe(hPipe, overlapped.get());
+        DWORD dwErr = GetLastError();
 
         // ConnectNamedPipe() can complete either synchronously or
         // asynchronously. We need to cater for both possibilities.
 
         if ( !ok && dwErr == ERROR_IO_PENDING )
         {
-            mError = 0;
-            Lock lock(mTransport.mQueuedAcceptsMutex);
-            ++mTransport.mQueuedAccepts;
+            // Asynchronous accept.
+            overlapped.release();
         }
         else if (!ok && dwErr == ERROR_PIPE_CONNECTED)
         {
-            mError = 0;
-            Lock lock(mTransport.mQueuedAcceptsMutex);
-            ++mTransport.mQueuedAccepts;
-            mThisPtr.reset();
-            onAccept();
+            // Synchronous connect.
+            AsioErrorCode ec;
+            overlapped.complete(ec, 0);
         }
         else
         {
+            // ConnectNamedPipe() may return a synchronous error. In particular we sometimes
+            // get ERROR_NO_DATA ("The pipe is being closed"). So, here we need another 
+            // accept call.
+
             // MSDN says ConectNamedPipe will always return 0, in overlapped mode.
             RCF_ASSERT(!ok);
 
-            mThisPtr.reset();
-        }
-
-    }
-
-    void Win32NamedPipeSessionState::implOnAccept()
-    {
-        // Initiate another accept, if appropriate.
-        if (!mTransport.mPipeName.empty())
-        {
-            bool needAnotherAccept = false;
-            {
-                Lock lock(mTransport.mQueuedAcceptsMutex);
-                --mTransport.mQueuedAccepts;
-                if (mTransport.mQueuedAccepts <= 0)
-                {
-                    needAnotherAccept = true;
-                }
-            }
-            if (needAnotherAccept)
-            {
-                mTransport.createSessionState()->accept();
-            }
-        }
-
-        // simulate a completed write to kick things off
-        mPreState = IocpSessionState::WritingData;
-        mWriteBufferRemaining = 0;
-        transition();
-    }
-
-    void Win32NamedPipeSessionState::implRead(
-        const ByteBuffer &byteBuffer,
-        std::size_t bufferLen)
-    {
-        mPostState = Reading;
-
-        mThisPtr = mWeakThisPtr.lock();
-
-        bool readOk = false;
-
-        {
-            Lock lock(mMutex);
-
-            if (!mHasBeenClosed)
-            {
-                mError = 0;
-                DWORD dwBytesRead = 0;
-
-                BOOL ok = ReadFile(
-                    mhPipe, 
-                    byteBuffer.getPtr(), 
-                    static_cast<DWORD>(bufferLen),
-                    &dwBytesRead, 
-                    this);
-
-                DWORD dwErr = 0;
-
-                if (!ok)
-                {
-                    dwErr = GetLastError();
-
-                    if (    dwErr != ERROR_IO_PENDING 
-                        &&  dwErr != WSA_IO_PENDING 
-                        &&  dwErr != ERROR_MORE_DATA)
-                    {
-                        mError = dwErr;
-                    }
-                }
-
-                if (    dwBytesRead
-                    ||  (ok && dwBytesRead == 0 && bufferLen == 0)
-                    ||  (!ok && mError == 0))
-                {
-                    readOk = true;
-                }
-            }
-        }
-
-        if (!readOk)
-        {
-            mThisPtr.reset();
-            if (mEnableReconnect && mOwnFd)
-            {
-                reconnect();
-            }
-        }
-
-    }
-
-    void Win32NamedPipeSessionState::implWrite(
-        const std::vector<ByteBuffer> &byteBuffers,
-        IocpSessionState * pReflectee)
-    {
-        Win32NamedPipeSessionState * pXReflectee = 
-            static_cast<Win32NamedPipeSessionState *>(pReflectee);
-
-        mPostState = Writing;
-
-        const ByteBuffer & byteBuffer = byteBuffers.front();
-
-        mThisPtr = mWeakThisPtr.lock();
-
-        HANDLE & hPipe = pXReflectee ? pXReflectee->mhPipe : mhPipe ;
-
-        bool writeOk = false;
-
-        {
-            Lock lock(mMutex);
-
-            if (!mHasBeenClosed)
-            {
-                mError = 0;
-                DWORD dwBytesWritten = 0;
-
-                BOOL ok = WriteFile(
-                    hPipe,
-                    byteBuffer.getPtr(),
-                    static_cast<DWORD>(byteBuffer.getLength()),
-                    &dwBytesWritten,
-                    this);
-
-                DWORD dwErr = 0;
-
-                if (!ok)
-                {
-                    dwErr = GetLastError();
-
-                    if (    dwErr != ERROR_IO_PENDING 
-                        &&  dwErr != WSA_IO_PENDING 
-                        &&  dwErr != ERROR_MORE_DATA)
-                    {
-                        mError = dwErr;
-                    }
-                }
-
-                if (    dwBytesWritten
-                    ||  (!ok &&  mError == 0))
-                {
-                    writeOk = true;
-                }
-            }
-        }
-
-        if (!writeOk)
-        {
-            mThisPtr.reset();
-            if (mEnableReconnect && mOwnFd)
-            {
-                reconnect();
-            }
+            mTransport.createNetworkSession()->beginAccept();
         }
     }
 
-    void Win32NamedPipeSessionState::implDelayCloseAfterSend()
-    {
-        // TODO
-        // ...
-    }
-
-    void Win32NamedPipeSessionState::reconnect()
-    {
-        RCF_ASSERT(mEnableReconnect);
-        RCF_ASSERT(mOwnFd);
-
-        BOOL ok = DisconnectNamedPipe(mhPipe);
-        DWORD dwErr = GetLastError();
-
-        RCF_UNUSED_VARIABLE(ok);
-        RCF_UNUSED_VARIABLE(dwErr);
-        
-        mSessionPtr.reset();
-        mSessionPtr = mTransport.mpRcfServer->createSession();
-        mSessionPtr->setSessionState(*this);
-
-        resetState();
-
-        accept();
-    }
-
-    void Win32NamedPipeSessionState::implClose()
-    {
-        RCF_ASSERT(mOwnFd);
-
-        if (mEnableReconnect)
-        {
-            reconnect();
-        }
-        else
-        {
-            BOOL ok = CloseHandle(mhPipe);
-            DWORD dwErr = GetLastError();
-
-            RCF_ASSERT(ok)(dwErr);
-
-            mHasBeenClosed = true;
-        }
-    }
-
-    HANDLE Win32NamedPipeSessionState::getNativeHandle()
-    {
-        return mhPipe;
-    }
-
-    // TODO
-    bool Win32NamedPipeSessionState::implIsConnected()
-    {
+    bool Win32NamedPipeNetworkSession::implOnAccept()
+    {       
         return true;
     }
 
-    void Win32NamedPipeSessionState::implOnMessageLengthError()
+    bool Win32NamedPipeNetworkSession::implIsConnected()
     {
-        // Do a hard close on the connection. 
-
-        // It would be  nice to send an informative message back 
-        // to the client, as the TCP transports do, but it seems 
-        // rather difficult to do so reliably. If we write 
-        // something to the pipe, and then call FlushFileBuffers(), 
-        // we could potentially block indefinitely.
-
-        if (mEnableReconnect && mOwnFd)
-        {
-            reconnect();
-        }
+        //RCF_ASSERT(0 && "not implemented yet");
+        return true;
     }
 
-    ClientTransportAutoPtr Win32NamedPipeSessionState::implCreateClientTransport()
+    void Win32NamedPipeNetworkSession::implClose()
     {
-        HANDLE hPipe = INVALID_HANDLE_VALUE;
+        mSocketPtr.reset();
+    }
+
+    ClientTransportAutoPtr Win32NamedPipeNetworkSession::implCreateClientTransport()
+    {
+        std::auto_ptr<Win32NamedPipeClientTransport> pipeClientTransportPtr(
+            new Win32NamedPipeClientTransport(mSocketPtr, mRemotePipeName));
+
+        return ClientTransportAutoPtr(pipeClientTransportPtr.release());
+    }
+
+    void Win32NamedPipeNetworkSession::implTransferNativeFrom(ClientTransport & clientTransport)
+    {
+        
+        Win32NamedPipeClientTransport * pPipeClientTransport =
+            dynamic_cast<Win32NamedPipeClientTransport *>(&clientTransport);
+
+        if (pPipeClientTransport == NULL)
         {
-            Lock lock(mMutex);
-            if (mOwnFd && !mHasBeenClosed)
-            {
-                mOwnFd = false;
-                mEnableReconnect = false;
-                hPipe = mhPipe;
-            }
+            Exception e("incompatible client transport");
+            RCF_THROW(e)(typeid(clientTransport));
         }
 
-        std::auto_ptr<Win32NamedPipeClientTransport> w32PipeClientTransport(
-            new Win32NamedPipeClientTransport(hPipe));
+        Win32NamedPipeClientTransport & pipeClientTransport = *pPipeClientTransport;
 
-        w32PipeClientTransport->setNotifyCloseFunctor( boost::bind(
-            &IocpSessionState::notifyClose, 
-            IocpSessionStateWeakPtr(sharedFromThis())));
+        pipeClientTransport.associateWithIoService(mIoService);
+        mSocketPtr = pipeClientTransport.releaseSocket();
+        mRemotePipeName = pipeClientTransport.getPipeName();
+    }
 
-        w32PipeClientTransport->setPipeName(mRemotePipeName);
+    void Win32NamedPipeNetworkSession::closeSocket(AsioPipeHandlePtr socketPtr)
+    {
+        socketPtr->close();
+    }
 
-        return ClientTransportAutoPtr(w32PipeClientTransport.release());
+    HANDLE Win32NamedPipeNetworkSession::getNativeHandle()
+    {
+        return mSocketPtr->native();
     }
 
     // Win32NamedPipeServerTransport
 
+    tstring Win32NamedPipeServerTransport::getPipeName() const
+    {
+        return mPipeName;
+    }
+
     Win32NamedPipeServerTransport::Win32NamedPipeServerTransport(
         const tstring & pipeName) :
-            IocpServerTransport(),
-            mpSec(RCF_DEFAULT_INIT),
-            mQueuedAccepts(RCF_DEFAULT_INIT),
-            mPipeNameLock(INVALID_HANDLE_VALUE)
+            mPipeNameLock(INVALID_HANDLE_VALUE),
+            mpSec(NULL)
     {
         if (pipeName.empty())
         {
@@ -394,9 +373,53 @@ namespace RCF {
         }
     }
 
+    TransportType Win32NamedPipeServerTransport::getTransportType()
+    {
+        return Tt_Win32NamedPipe;
+    }
+
     ServerTransportPtr Win32NamedPipeServerTransport::clone()
     {
-        return ServerTransportPtr( new Win32NamedPipeServerTransport(mPipeName) );
+        return ServerTransportPtr(new Win32NamedPipeServerTransport(mPipeName));
+    }
+
+    AsioNetworkSessionPtr Win32NamedPipeServerTransport::implCreateNetworkSession()
+    {
+        return AsioNetworkSessionPtr( new Win32NamedPipeNetworkSession(*this, *mpIoService) );
+    }
+
+    void Win32NamedPipeServerTransport::implOpen()
+    {
+    }
+
+    ClientTransportAutoPtr Win32NamedPipeServerTransport::implCreateClientTransport(
+        const Endpoint &endpoint)
+    {
+        const Win32NamedPipeEndpoint & pipeEndpoint = 
+            dynamic_cast<const Win32NamedPipeEndpoint &>(endpoint);
+
+        return pipeEndpoint.createClientTransport();
+    }
+
+    void Win32NamedPipeServerTransport::onServerStart(RcfServer & server)
+    {
+        AsioServerTransport::onServerStart(server);
+
+        mpIoService = mTaskEntries[0].getThreadPool().getIoService();
+
+        RCF_ASSERT(mAcceptorPtr.get() == NULL);
+
+        if ( !mPipeName.empty() )
+        {
+            startAccepting();
+        }
+
+        RCF_LOG_2()(mPipeName) << "Win32NamedPipeServerTransport - listening on named pipe.";
+    }
+
+    void Win32NamedPipeServerTransport::onServerStop(RcfServer & server)
+    {
+        AsioServerTransport::onServerStop(server);
     }
 
     void Win32NamedPipeServerTransport::setSecurityAttributes(LPSECURITY_ATTRIBUTES pSec)
@@ -404,110 +427,15 @@ namespace RCF {
         mpSec = pSec;
     }
 
-    tstring    Win32NamedPipeServerTransport::getPipeName()
+    Win32NamedPipeImpersonator::Win32NamedPipeImpersonator() :
+        mPipeSession( dynamic_cast<Win32NamedPipeNetworkSession &>(
+            RCF::getTlsRcfSessionPtr()->getNetworkSession()))
     {
-        return mPipeName;
+        impersonate();
     }
 
-    Win32NamedPipeServerTransport::SessionStatePtr 
-    Win32NamedPipeServerTransport::createSessionState()
-    {
-        const std::size_t       MaxPipeInstances    = PIPE_UNLIMITED_INSTANCES;
-        const DWORD             OutBufferSize       = 4096;
-        const DWORD             InBufferSize        = 4096;
-        const DWORD             DefaultTimeoutMs    = 0;
-
-        HANDLE hPipe = CreateNamedPipe( 
-            mPipeName.c_str(),
-            PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
-            PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
-            MaxPipeInstances,
-            OutBufferSize,
-            InBufferSize,
-            DefaultTimeoutMs,
-            mpSec);
-
-        DWORD dwErr = GetLastError();
-
-        RCF_VERIFY(hPipe != INVALID_HANDLE_VALUE, Exception(_RcfError_Pipe(), dwErr));
-
-        mpIocp->AssociateDevice(hPipe, 0);
-        
-        SessionStatePtr sessionStatePtr(new SessionState(*this, hPipe));
-
-        sessionStatePtr->mWeakThisPtr = sessionStatePtr;
-
-        return sessionStatePtr;
-    }
-
-    void Win32NamedPipeServerTransport::onServerStart(RcfServer & server)
-    {
-        IocpServerTransport::onServerStart(server);
-
-        RCF_LOG_3() << "Win32NamedPipeServerTransport - listening on pipe " << mPipeName << ".";
-
-        mQueuedAccepts = 0;
-
-        if (!mPipeName.empty())
-        {
-            createSessionState()->accept();
-        }        
-    }
-
-    void Win32NamedPipeServerTransport::implOpen()
-    {
-    }
-
-    void Win32NamedPipeServerTransport::implClose()
-    {
-        Lock lock(mSessionsMutex);
-        std::set<IocpSessionStateWeakPtr>::iterator iter;
-        for (iter = mSessions.begin(); iter != mSessions.end(); ++iter)
-        {
-            IocpSessionStatePtr iocpSessionStatePtr((*iter).lock());
-            if (iocpSessionStatePtr)
-            {
-                SessionStatePtr sessionStatePtr = 
-                    boost::static_pointer_cast<SessionState>(
-                        iocpSessionStatePtr);
-
-                sessionStatePtr->mEnableReconnect = false;
-            }
-        }
-    }
-
-    IocpSessionStatePtr Win32NamedPipeServerTransport::implCreateServerSession(
-        I_ClientTransport & clientTransport)
-    {
-        Win32NamedPipeClientTransport & w32PipeClientTransport =
-            dynamic_cast<Win32NamedPipeClientTransport &>(clientTransport);
-
-        HANDLE hPipe = w32PipeClientTransport.releaseHandle();
-        RCF_ASSERT(hPipe);
-
-        SessionStatePtr sessionStatePtr( new Win32NamedPipeSessionState(*this, hPipe));
-
-        mpIocp->AssociateDevice(hPipe, 0);
-
-        sessionStatePtr->mEnableReconnect = false;
-
-        sessionStatePtr->mWeakThisPtr = sessionStatePtr;
-
-        sessionStatePtr->mRemotePipeName = w32PipeClientTransport.getPipeName();
-
-        return IocpSessionStatePtr(sessionStatePtr);
-    }
-
-    ClientTransportAutoPtr Win32NamedPipeServerTransport::implCreateClientTransport(
-        const I_Endpoint &endpoint)
-    {
-        const Win32NamedPipeEndpoint & w32PipeEndpoint =
-            dynamic_cast<const Win32NamedPipeEndpoint &>(endpoint);
-
-        return w32PipeEndpoint.createClientTransport();
-    }
-
-    Win32NamedPipeImpersonator::Win32NamedPipeImpersonator()
+    Win32NamedPipeImpersonator::Win32NamedPipeImpersonator(Win32NamedPipeNetworkSession & session) :
+        mPipeSession(session)
     {
         impersonate();
     }
@@ -521,12 +449,8 @@ namespace RCF {
 
     void Win32NamedPipeImpersonator::impersonate()
     {
-        Win32NamedPipeSessionState & sessionState = 
-            dynamic_cast<Win32NamedPipeSessionState &>(
-                RCF::getCurrentRcfSessionPtr()->getSessionState());
-
-
-        BOOL ok = ImpersonateNamedPipeClient(sessionState.mhPipe);
+        HANDLE hPipe = mPipeSession.mSocketPtr->native();
+        BOOL ok = ImpersonateNamedPipeClient(hPipe);
         DWORD dwErr = GetLastError();
         RCF_VERIFY(ok, RCF::Exception(_RcfError_Pipe(), dwErr));
     }
@@ -546,8 +470,10 @@ namespace RCF {
 
         BOOL ok = InitializeSecurityDescriptor( &mSd, SECURITY_DESCRIPTOR_REVISION );
         DWORD dwErr = GetLastError();
-        RCF_VERIFY(ok, Exception(_RcfError_Win32ApiError("InitializeSecurityDescriptor()", dwErr), dwErr));
+        RCF_VERIFY(ok, Exception(_RcfError_Win32ApiError("InitializeSecurityDescriptor()"), dwErr));
 
+#pragma warning(push)
+#pragma warning(disable: 6248) // C6248:  Setting a SECURITY_DESCRIPTOR's DACL to NULL will result in an unprotected object.
 
         ok = SetSecurityDescriptorDacl( 
             &mSd,
@@ -555,8 +481,10 @@ namespace RCF {
             (PACL) NULL,
             FALSE);
 
+#pragma warning(pop)
+
         dwErr = GetLastError();
-        RCF_VERIFY(ok, Exception(_RcfError_Win32ApiError("SetSecurityDescriptorDacl()", dwErr), dwErr));
+        RCF_VERIFY(ok, Exception(_RcfError_Win32ApiError("SetSecurityDescriptorDacl()"), dwErr));
 
         mSa.lpSecurityDescriptor = &mSd;
     }

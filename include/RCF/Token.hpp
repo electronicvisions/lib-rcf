@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -16,7 +19,6 @@
 #ifndef INCLUDE_RCF_TOKEN_HPP
 #define INCLUDE_RCF_TOKEN_HPP
 
-#include <iosfwd>
 #include <vector>
 
 #include <boost/noncopyable.hpp>
@@ -34,6 +36,8 @@ namespace SF {
 
 namespace RCF {
 
+    class MemOstream;
+
     class RCF_EXPORT Token
     {
     public:
@@ -44,13 +48,13 @@ namespace RCF {
         friend bool operator==(const Token &lhs, const Token &rhs);
         friend bool operator!=(const Token &lhs, const Token &rhs);
 
-#ifdef RCF_USE_SF_SERIALIZATION
+#if RCF_FEATURE_SF==1
 
         void serialize(SF::Archive &ar);
 
 #endif
 
-#ifdef RCF_USE_BOOST_SERIALIZATION
+#if RCF_FEATURE_BOOST_SERIALIZATION==1
 
         template<typename Archive> 
         void serialize(Archive &ar, const unsigned int)
@@ -60,7 +64,7 @@ namespace RCF {
 
 #endif
        
-        friend RCF_EXPORT std::ostream &operator<<(std::ostream &os, const Token &token);
+        friend RCF_EXPORT RCF::MemOstream &operator<<(RCF::MemOstream &os, const Token &token);
 
     private:
         int mId;
@@ -84,7 +88,5 @@ namespace RCF {
     };
 
 } // namespace RCF
-
-RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION(RCF::Token)
 
 #endif // ! INCLUDE_RCF_TOKEN_HPP

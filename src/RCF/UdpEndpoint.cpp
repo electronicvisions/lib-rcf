@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,10 +22,6 @@
 #include <RCF/SerializationProtocol.hpp>
 #include <RCF/UdpClientTransport.hpp>
 #include <RCF/UdpServerTransport.hpp>
-
-#ifdef RCF_USE_SF_SERIALIZATION
-#include <SF/Registry.hpp>
-#endif
 
 namespace RCF {
 
@@ -102,41 +101,17 @@ namespace RCF {
         return ServerTransportAutoPtr(udpServerTransportPtr.release());
     }
 
-    std::auto_ptr<I_ClientTransport> UdpEndpoint::createClientTransport() const
+    std::auto_ptr<ClientTransport> UdpEndpoint::createClientTransport() const
     {
-        return std::auto_ptr<I_ClientTransport>(
+        return std::auto_ptr<ClientTransport>(
             new UdpClientTransport(mIp));
     }
 
     std::string UdpEndpoint::asString() const
     {
-        std::ostringstream os;
-        os << "UDP endpoint " << mIp.string();
-        return os.str();
+        MemOstream os;
+        os << "udp://" << mIp.string() << ":" << getPort();
+        return os.string();
     }
-
-
-#ifdef RCF_USE_SF_SERIALIZATION
-
-    void UdpEndpoint::serialize(SF::Archive &ar)
-    {
-        // TODO: versioning.
-        // ...
-
-        serializeParent( (I_Endpoint*) 0, ar, *this);
-        ar & mIp;
-    }
-
-#endif
-
-    inline void initUdpEndpointSerialization()
-    {
-#ifdef RCF_USE_SF_SERIALIZATION
-        SF::registerType( (UdpEndpoint *) 0, "RCF::UdpEndpoint");
-        SF::registerBaseAndDerived( (I_Endpoint *) 0, (UdpEndpoint *) 0);
-#endif
-    }
-
-    RCF_ON_INIT_NAMED( initUdpEndpointSerialization(), InitUdpEndpointSerialization );
 
 } // namespace RCF

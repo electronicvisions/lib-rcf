@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -24,9 +27,16 @@ namespace RCF {
 
     PerformanceData *gpPerformanceData = NULL;
 
-    RCF_ON_INIT( gpPerformanceData = new PerformanceData() );
+    void initPerformanceData()
+    {
+        gpPerformanceData = new PerformanceData();
+    }
 
-    RCF_ON_DEINIT( delete gpPerformanceData; gpPerformanceData = NULL; );
+    void deinitPerformanceData()
+    {
+        delete gpPerformanceData;
+        gpPerformanceData = NULL;
+    }
 
     PerformanceData & getPerformanceData()
     {
@@ -35,8 +45,8 @@ namespace RCF {
 
     void PerformanceData::collect()
     {
-        getObjectPool().enumerateBuffers(mInBufferSizes);
-        getObjectPool().enumerateOstrstreams(mOutBufferSizes);
+        getObjectPool().enumerateReadBuffers(mInBufferSizes);
+        getObjectPool().enumerateWriteBuffers(mOutBufferSizes);
 
         std::size_t inBufferSize = 
             std::accumulate(mInBufferSizes.begin(), mInBufferSizes.end(), std::size_t(0));

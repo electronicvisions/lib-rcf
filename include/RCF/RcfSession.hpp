@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -23,15 +26,19 @@
 #include <boost/function.hpp>
 #include <boost/shared_ptr.hpp>
 
+#include <RCF/Filter.hpp>
 #include <RCF/Export.hpp>
 #include <RCF/MethodInvocation.hpp>
 #include <RCF/SerializationProtocol.hpp>
 #include <RCF/ServerTransport.hpp>
 #include <RCF/StubEntry.hpp>
 
-#ifdef RCF_USE_BOOST_FILESYSTEM
-#include <RCF/FileStream.hpp>
+#if RCF_FEATURE_FILETRANSFER==1
+#include <RCF/FileDownload.hpp>
+#include <RCF/FileUpload.hpp>
 #endif
+
+#include <typeinfo>
 
 namespace RCF {
 
@@ -49,7 +56,7 @@ namespace RCF {
     class I_Parameters;
 
     class UdpServerTransport;
-    class UdpSessionState;
+    class UdpNetworkSession;
 
     class FileTransferService;
     class FileUploadInfo;
@@ -61,6 +68,11 @@ namespace RCF {
     typedef boost::shared_ptr<FileDownloadInfo> FileDownloadInfoPtr;
 
     typedef std::pair<boost::uint32_t, RcfSessionWeakPtr>   PingBackTimerEntry;
+
+    class Certificate;
+    typedef boost::shared_ptr<Certificate> CertificatePtr;
+
+    class AsioNetworkSession;
 
     template<
         typename R, 
@@ -102,6 +114,20 @@ namespace RCF {
 
     class PingBackService;
 
+    struct TypeInfoCompare
+    {
+        bool operator()(
+            const std::type_info* lhs,
+            const std::type_info* rhs) const
+        { 
+            if (lhs->before(*rhs))
+            {
+                return true;
+            }
+            return false;
+        }
+    };
+
     class RCF_EXPORT RcfSession : 
         public boost::enable_shared_from_this<RcfSession>
     {
@@ -112,6 +138,89 @@ namespace RCF {
         typedef boost::function1<void, RcfSession&> OnWriteCompletedCallback;
         typedef boost::function1<void, RcfSession&> OnWriteInitiatedCallback;
         typedef boost::function1<void, RcfSession&> OnDestroyCallback;
+
+        typedef std::map<const std::type_info *, boost::any, TypeInfoCompare> SessionObjectMap;
+        SessionObjectMap mSessionObjects;
+
+    private:
+
+        template<typename T>
+        T * getSessionObjectImpl(bool createIfDoesntExist)
+        {
+            typedef boost::shared_ptr<T> TPtr;
+
+            const std::type_info & whichType = typeid(T);
+            const std::type_info * pWhichType = &whichType;
+
+            SessionObjectMap::iterator iter = mSessionObjects.find(pWhichType);
+            if (iter != mSessionObjects.end())
+            {
+                boost::any & a = iter->second;
+                TPtr * ptPtr = boost::any_cast<TPtr>(&a);
+                RCF_ASSERT(ptPtr && *ptPtr);
+                return ptPtr->get();
+            }
+            else if (createIfDoesntExist)
+            {
+                TPtr tPtr( new T() );
+                mSessionObjects[pWhichType] = tPtr;
+                return tPtr.get();
+            }
+            else
+            {
+                return NULL;
+            }
+        }
+
+    public:
+
+        template<typename T>
+        void deleteSessionObject()
+        {
+            typedef boost::shared_ptr<T> TPtr;
+
+            const std::type_info & whichType = typeid(T);
+            const std::type_info * pWhichType = &whichType;
+
+            SessionObjectMap::iterator iter = mSessionObjects.find(pWhichType);
+            if (iter != mSessionObjects.end())
+            {
+                mSessionObjects.erase(iter);
+            }
+        }
+
+        template<typename T>
+        T & createSessionObject()
+        {
+            deleteSessionObject<T>();
+            T * pt = getSessionObjectImpl<T>(true);
+            RCF_ASSERT(pt);
+            if ( !pt )
+            {
+                RCF_THROW(Exception(_RcfError_SessionObjectNotCreated(typeid(T).name())));
+            }
+            return *pt; 
+        }
+
+        template<typename T>
+        T & getSessionObject(bool createIfDoesntExist = false)
+        {
+            T * pt = getSessionObjectImpl<T>(createIfDoesntExist);
+            if (!pt)
+            {
+                RCF_THROW( Exception(_RcfError_SessionObjectDoesNotExist(typeid(T).name())));
+            }
+            return *pt; 
+        }
+
+        template<typename T>
+        T * querySessionObject()
+        {
+            T * pt = getSessionObjectImpl<T>(false);
+            return pt;
+        }
+
+
 
         //*******************************
         // callback tables - synchronized
@@ -128,8 +237,8 @@ namespace RCF {
 
         //*******************************
 
-        const RCF::I_RemoteAddress &
-                        getRemoteAddress();
+        const RemoteAddress &
+                        getClientAddress();
 
         RcfServer &     getRcfServer();
 
@@ -140,7 +249,8 @@ namespace RCF {
         void            setDefaultStubEntryPtr(StubEntryPtr stubEntryPtr);
         void            setCachedStubEntryPtr(StubEntryPtr stubEntryPtr);
 
-        void            enableSfSerializationPointerTracking(bool enable);
+        void            setEnableSfPointerTracking(bool enable);
+        bool            getEnableSfPointerTracking() const;
 
         boost::uint32_t getRuntimeVersion();
         void            setRuntimeVersion(boost::uint32_t version);
@@ -151,8 +261,8 @@ namespace RCF {
         bool            getNativeWstringSerialization();
         void            setNativeWstringSerialization(bool enable);
 
-        void            setUserData(boost::any userData);
-        boost::any      getUserData();
+        void            setUserData(const boost::any & userData);
+        boost::any &    getUserData();
 
         void            getMessageFilters(std::vector<FilterPtr> &filters);
         void            getTransportFilters(std::vector<FilterPtr> &filters);
@@ -194,9 +304,11 @@ namespace RCF {
         void            setResponseUserData(const std::string & userData);
         std::string     getResponseUserData();
 
+        bool            isOneway();
+
         void            cancelDownload();
 
-#ifdef RCF_USE_BOOST_FILESYSTEM
+#if RCF_FEATURE_FILETRANSFER==1
 
         void            addDownloadStream(
                             boost::uint32_t sessionLocalId, 
@@ -207,14 +319,6 @@ namespace RCF {
         Mutex                                   mStopCallInProgressMutex;
         bool                                    mStopCallInProgress;
         
-#if defined(_MSC_VER) && _MSC_VER < 1310
-
-        // vc6: Can't seem to get declare ServerParameters<> and 
-        // AllocateServerParameters<> as friends.
-    public:    
-
-#else
-
     private:
 
         template<
@@ -256,8 +360,9 @@ namespace RCF {
         friend class ServerParameters;
 
         friend class PingBackService;
+        friend class FilterService;
 
-#endif
+        friend class StubAccess;
 
         RcfServer &                             mRcfServer;
 
@@ -270,6 +375,7 @@ namespace RCF {
         boost::uint32_t                         mArchiveVersion;
 
         bool                                    mUseNativeWstringSerialization;
+        bool                                    mEnableSfPointerTracking;
         
         bool                                    mTransportFiltersLocked;
 
@@ -298,8 +404,12 @@ namespace RCF {
         void onReadCompleted();
         void onWriteCompleted();
 
-        void processRequest();
+        void processJsonRpcRequest();
 
+        void processRequest();
+        void processOobMessages();
+        void invokeServant();
+        
         void sendResponse();
         void sendResponseException(const std::exception &e);
         void sendResponseUncaughtException();
@@ -313,8 +423,10 @@ namespace RCF {
         void registerForPingBacks();
         void unregisterForPingBacks();
 
+        void verifyTransportProtocol(RCF::TransportProtocol protocol);
+
         friend class RcfServer;
-        friend class AmdImpl;
+        friend class RemoteCallContextImpl;
 
         I_Parameters *                          mpParameters;
         std::vector<char>                       mParametersVec;
@@ -331,10 +443,10 @@ namespace RCF {
         // UdpServerTransport needs to explicitly set mIoState to Reading,
         // since it doesn't use async I/O with callbacks to RcfServer.
         friend class UdpServerTransport;
-        friend class UdpSessionState;
+        friend class UdpNetworkSession;
         friend class FileStreamImpl;
 
-#ifdef RCF_USE_BOOST_FILESYSTEM
+#if RCF_FEATURE_FILETRANSFER==1
 
     private:
 
@@ -358,11 +470,58 @@ namespace RCF {
         StubEntryPtr                            mCachedStubEntryPtr;
 
     public:
-        I_SessionState & getSessionState() const;
-        void setSessionState(I_SessionState & sessionState);
+        NetworkSession & getNetworkSession() const;
+        void setNetworkSession(NetworkSession & networkSession);
 
     private:
-        I_SessionState * mpSessionState;
+        friend class HttpSessionFilter;
+        NetworkSession * mpNetworkSession;
+
+    public:
+        std::string mCurrentCallDesc;
+
+    public:
+
+        tstring getClientUsername();
+        TransportProtocol getTransportProtocol();
+        TransportType getTransportType();
+
+        bool getEnableCompression();
+
+        CertificatePtr getClientCertificatePtr();
+
+        bool getIsCallbackSession() const;
+        void setIsCallbackSession(bool isCallbackSession);
+
+        RemoteCallRequest getRemoteCallRequest() const;
+
+        time_t getConnectedAtTime() const;
+
+        std::size_t getConnectionDuration() const;
+
+        std::size_t getRemoteCallCount() const;
+        boost::uint64_t getTotalBytesReceived() const;
+        boost::uint64_t getTotalBytesSent() const;
+
+        bool isConnected() const;
+
+    private:
+
+        void setConnectedAtTime(time_t connectedAtTime);
+
+        friend class SspiServerFilter;
+        friend class Win32NamedPipeNetworkSession;
+
+        tstring mClientUsername;
+        TransportProtocol mTransportProtocol;
+        bool mEnableCompression;
+
+        bool mTransportProtocolVerified;
+        bool mIsCallbackSession;
+
+        time_t mConnectedAtTime;
+
+        std::size_t mRemoteCallCount;
     };       
 
 } // namespace RCF

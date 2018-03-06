@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -20,26 +23,8 @@
 #include <RCF/InitDeinit.hpp>
 #include <RCF/SerializationProtocol.hpp>
 
-#ifdef RCF_USE_BOOST_ASIO
-
-#include <RCF/TcpAsioServerTransport.hpp>
+#include <RCF/TcpServerTransport.hpp>
 #include <RCF/TcpClientTransport.hpp>
-
-#elif defined(BOOST_WINDOWS)
-
-#include <RCF/TcpIocpServerTransport.hpp>
-#include <RCF/TcpClientTransport.hpp>
-
-#else
-
-#include <RCF/TcpClientTransport.hpp>
-
-#endif
-
-#ifdef RCF_USE_SF_SERIALIZATION
-#include <SF/Registry.hpp>
-#include <SF/SerializeParent.hpp>
-#endif
 
 namespace RCF {
 
@@ -79,14 +64,14 @@ namespace RCF {
 
     std::string TcpEndpoint::asString() const
     {
-        std::ostringstream os;
+        MemOstream os;
         std::string ip = getIp();
         if (ip.empty())
         {
             ip = "127.0.0.1";
         }
-        os << "TCP endpoint " << ip << ":" << getPort();
-        return os.str();
+        os << "tcp://" << ip << ":" << getPort();
+        return os.string();
     }
 
     IpAddress TcpEndpoint::getIpAddress() const
@@ -94,74 +79,16 @@ namespace RCF {
         return mIpAddress;
     }
 
-#ifdef RCF_USE_SF_SERIALIZATION
-
-    void TcpEndpoint::serialize(SF::Archive &ar)
+    std::auto_ptr<ServerTransport> TcpEndpoint::createServerTransport() const
     {
-        // TODO: versioning.
-        // ...
-
-        serializeParent( (I_Endpoint*) 0, ar, *this);
-        ar & mIpAddress;
+        return std::auto_ptr<ServerTransport>(
+            new RCF::TcpServerTransport(mIpAddress));
     }
 
-#endif
-
-#ifdef RCF_USE_BOOST_ASIO
-
-    std::auto_ptr<I_ServerTransport> TcpEndpoint::createServerTransport() const
+    std::auto_ptr<ClientTransport> TcpEndpoint::createClientTransport() const
     {
-        return std::auto_ptr<I_ServerTransport>(
-            new RCF::TcpAsioServerTransport(mIpAddress));
-    }
-
-    std::auto_ptr<I_ClientTransport> TcpEndpoint::createClientTransport() const
-    {
-        return std::auto_ptr<I_ClientTransport>(
+        return std::auto_ptr<ClientTransport>(
             new RCF::TcpClientTransport(mIpAddress));
     }
-
-#elif defined(BOOST_WINDOWS)
-
-    std::auto_ptr<I_ServerTransport> TcpEndpoint::createServerTransport() const
-    {
-        return std::auto_ptr<I_ServerTransport>(
-            new RCF::TcpIocpServerTransport(mIpAddress));
-    }
-
-    std::auto_ptr<I_ClientTransport> TcpEndpoint::createClientTransport() const
-    {
-        return std::auto_ptr<I_ClientTransport>(
-            new RCF::TcpClientTransport(mIpAddress));
-    }
-
-#else
-
-    std::auto_ptr<I_ServerTransport> TcpEndpoint::createServerTransport() const
-    {
-        // On non Windows platforms, server side RCF code requires 
-        // RCF_USE_BOOST_ASIO to be defined, and the Boost.Asio library to 
-        // be available.
-        RCF_ASSERT(0);
-        return std::auto_ptr<I_ServerTransport>();
-    }
-
-    std::auto_ptr<I_ClientTransport> TcpEndpoint::createClientTransport() const
-    {
-        return std::auto_ptr<I_ClientTransport>(
-            new RCF::TcpClientTransport(mIpAddress));
-    }
-
-#endif
-
-    inline void initTcpEndpointSerialization()
-    {
-#ifdef RCF_USE_SF_SERIALIZATION
-        SF::registerType( (TcpEndpoint *) 0, "RCF::TcpEndpoint");
-        SF::registerBaseAndDerived( (I_Endpoint *) 0, (TcpEndpoint *) 0);
-#endif
-    }
-
-    RCF_ON_INIT_NAMED( initTcpEndpointSerialization(), InitTcpEndpointSerialization );
 
 } // namespace RCF

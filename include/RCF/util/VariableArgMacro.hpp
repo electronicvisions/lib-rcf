@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -16,26 +19,39 @@
 #ifndef INCLUDE_UTIL_VARIABLEARGMACRO_HPP
 #define INCLUDE_UTIL_VARIABLEARGMACRO_HPP
 
-#include <strstream>
 #include <typeinfo>
 
 #include <boost/cstdint.hpp>
 #include <boost/noncopyable.hpp>
 
-#include "Platform/OS/GetCurrentTime.hpp"
-#include "Platform/OS/ThreadId.hpp"
-
+#include <RCF/MemStream.hpp>
 #include <RCF/Export.hpp>
-#include <RCF/util/ThreadLibrary.hpp>
+#include <RCF/ThreadLibrary.hpp>
 
-namespace util {
+namespace RCF {
+
+    // These use sprintf to speed things up.
+    RCF_EXPORT void printToOstream(MemOstream & os, boost::uint16_t n);
+    RCF_EXPORT void printToOstream(MemOstream & os, boost::uint32_t n);
+    RCF_EXPORT void printToOstream(MemOstream & os, boost::uint64_t n);
+
+    // Operator<< , simple but slow. Sometimes causes memory allocations.
+    template<typename T>
+    void printToOstream(MemOstream & os, const T & t)
+    {
+        os << t;
+    }
+
+} // namespace RCF
+
+namespace RCF {
 
     class RCF_EXPORT VariableArgMacroFunctor : boost::noncopyable
     {
     public:
 
         VariableArgMacroFunctor();
-        virtual ~VariableArgMacroFunctor() noexcept(false);
+        virtual ~VariableArgMacroFunctor();
 
         VariableArgMacroFunctor &init(
             const std::string &label,
@@ -47,21 +63,17 @@ namespace util {
         template<typename T>
         void notify(const T &t, const char *name)
         {
-            *mArgs << name << "=" << t << ", ";
+            *mArgs << name << "=";
+            printToOstream(*mArgs, t);
+            *mArgs << ", ";
         }
 
-        void notify(size_t t, const char *name)
+        void notify(std::size_t t, const char *name)
         {
-            *mArgs << name << "=" << static_cast<unsigned int>(t) << ", ";
+            *mArgs << name << "=";
+            printToOstream(*mArgs, t);
+            *mArgs << ", ";
         }
-
-        // TODO: it seems this workaround is needed in stlport 5.1.3, but not in 4.6.2
-#if defined(__SGI_STL_PORT) || defined(_STLPORT_VERSION)
-        void notify(boost::int64_t t, const char *name)
-        {
-            *mArgs << name << "=" << t << ", ";
-        }
-#endif
 
         // TODO: fix this properly
 #ifdef _UNICODE
@@ -79,8 +91,8 @@ namespace util {
             return dynamic_cast<T &>(*this);
         }
 
-        std::ostrstream * mHeader;
-        std::ostrstream * mArgs;
+        MemOstream * mHeader;
+        MemOstream * mArgs;
 
         const char * mFile;
         int mLine;
@@ -98,9 +110,9 @@ namespace util {
     };
 
     #define DUMMY_VARIABLE_ARG_MACRO() \
-        if (false) ::util::DummyVariableArgMacroObject()
+        if (false) ::RCF::DummyVariableArgMacroObject()
 
-} // namespace util
+} // namespace RCF
 
 
 #define DECLARE_VARIABLE_ARG_MACRO(macro_name, functor)                                             \

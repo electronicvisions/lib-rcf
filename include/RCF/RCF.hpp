@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,7 +22,11 @@
 #include <RCF/Idl.hpp>
 #include <RCF/IpServerTransport.hpp>
 #include <RCF/RcfServer.hpp>
+#include <RCF/RemoteCallContext.hpp>
+#include <RCF/Future.hpp>
 #include <RCF/TcpEndpoint.hpp>
 #include <RCF/UdpEndpoint.hpp>
+#include <RCF/HttpEndpoint.hpp>
+#include <RCF/HttpsEndpoint.hpp>
 
 #endif // ! INCLUDE_RCF_RCF_HPP

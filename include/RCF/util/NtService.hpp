@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,7 +22,9 @@
 #include <Windows.h>
 #include <fstream>
 
-namespace util {
+#include <RCF/util/Tchar.hpp>
+
+namespace RCF {
 
     class NtService
     {
@@ -35,6 +40,7 @@ namespace util {
         int             RunAsServiceOrInteractive();        
         void            SetServiceStatus(DWORD dwState, DWORD waitHint = 0);
         bool            Install();
+        bool            Install(const tstring & commandLineArgs);
         bool            Uninstall();
         bool            IsInstalled() const;
 
@@ -62,7 +68,7 @@ namespace util {
         std::ofstream           mLog;
     };
 
-} // namespace util
+} // namespace RCF
 
 #endif // ! INCLUDE_UTIL_NTSERVICE_HPP
 
@@ -72,11 +78,11 @@ namespace util {
 
 #include <RCF/util/../../../src/RCF/util/NtService.cpp>
 
-class MyService : public util::NtService
+class MyService : public RCF::NtService
 {
 public:
 
-    MyService() : util::NtService("MyService", "My Really Useful Service")
+    MyService() : RCF::NtService("MyService", "My Really Useful Service")
     {
     }
 

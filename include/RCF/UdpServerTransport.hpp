@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -32,20 +35,20 @@
 namespace RCF {
    
     class UdpServerTransport;
-    class UdpSessionState;
+    class UdpNetworkSession;
 
     typedef boost::shared_ptr<UdpServerTransport>   UdpServerTransportPtr;
-    typedef boost::shared_ptr<UdpSessionState>      UdpSessionStatePtr;
+    typedef boost::shared_ptr<UdpNetworkSession>      UdpNetworkSessionPtr;
 
-    class UdpSessionState : public I_SessionState
+    class UdpNetworkSession : public NetworkSession
     {
     public:
 
-        UdpSessionState(UdpServerTransport & transport);
+        UdpNetworkSession(UdpServerTransport & transport);
 
         int                        getNativeHandle() const;
 
-        typedef UdpSessionStatePtr SessionStatePtr;
+        typedef UdpNetworkSessionPtr NetworkSessionPtr;
 
     private:
 
@@ -53,16 +56,16 @@ namespace RCF {
         ReallocBufferPtr                            mWriteVecPtr;
         IpAddress                                   mRemoteAddress;
         UdpServerTransport &                        mTransport;
-        SessionPtr                                  mSessionPtr;
+        SessionPtr                                  mRcfSessionPtr;
 
         friend class UdpServerTransport;
 
     private:
 
-        // I_SessionState
-        const I_RemoteAddress & getRemoteAddress() const;
-        I_ServerTransport &     getServerTransport();
-        const I_RemoteAddress & getRemoteAddress();
+        // I_NetworkSession
+        const RemoteAddress & getRemoteAddress() const;
+        ServerTransport &     getServerTransport();
+        const RemoteAddress & getRemoteAddress();
 
         void                    setTransportFilters(
                                     const std::vector<FilterPtr> &filters);
@@ -76,20 +79,29 @@ namespace RCF {
         void                    postWrite(
                                     std::vector<ByteBuffer> &byteBuffers);
 
-        void                    postClose();        
+        void                    postClose();      
+
+        bool                    isConnected();
     };
 
     class RCF_EXPORT UdpServerTransport :
-        public I_ServerTransport,
-        public I_IpServerTransport,
+        public ServerTransport,
+        public IpServerTransport,
         public I_Service,
         boost::noncopyable
     {
+    private:
+
+        typedef UdpNetworkSession NetworkSession;
+        typedef UdpNetworkSessionPtr NetworkSessionPtr;
+
     public:
 
         UdpServerTransport(
             const IpAddress &       ipAddress, 
             const IpAddress &       multicastIpAddress = IpAddress());
+
+        TransportType getTransportType();
 
         ServerTransportPtr 
                     clone();
@@ -101,12 +113,11 @@ namespace RCF {
         int         getPort() const;
         void        open();
         void        close();
-        void        cycle(int timeoutMs, const volatile bool &stopFlag);
+        void        cycle(int timeoutMs);
 
-        bool        cycleTransportAndServer(
-                        RcfServer &server,
-                        int timeoutMs,
-                        const volatile bool &stopFlag);
+        void        tryReadMessage(NetworkSessionPtr networkSessionPtr);
+
+        void        cycleTransportAndServer(int timeoutMs);
 
         UdpServerTransport & enableSharedAddressBinding();
 
@@ -117,20 +128,14 @@ namespace RCF {
         void        onServerStart(RcfServer &server);
         void        onServerStop(RcfServer &server);
 
-    private:
-
-        typedef UdpSessionState SessionState;
-        typedef UdpSessionStatePtr SessionStatePtr;
-
         RcfServer *         mpRcfServer;
         IpAddress           mIpAddress;
         IpAddress           mMulticastIpAddress;
         int                 mFd;
-        volatile bool       mStopFlag;
         unsigned int        mPollingDelayMs;
         bool                mEnableSharedAddressBinding;
 
-        friend class UdpSessionState;
+        friend class UdpNetworkSession;
 
     };
 

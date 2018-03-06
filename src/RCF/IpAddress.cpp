@@ -2,23 +2,25 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
 #include <RCF/IpAddress.hpp>
 
+#include <RCF/ByteOrdering.hpp>
 #include <RCF/Exception.hpp>
-
-#include <SF/Archive.hpp>
-#include <SF/string.hpp>
+#include <RCF/Tools.hpp>
 
 #include <sstream>
 
@@ -154,6 +156,18 @@ namespace RCF {
             mIp(),
             mPort()
     {
+        init(addr, addrLen, type);        
+    }
+
+    void IpAddress::init(const sockaddr &addr, std::size_t addrLen, Type type)
+    {
+        RCF_UNUSED_VARIABLE(addrLen);
+
+        mType = type;
+        mResolved = true;
+        mIp.clear();
+        mPort = 0;
+
         memset(&mAddrV4, 0, sizeof(mAddrV4));
         memset(&mAddrV6, 0, sizeof(mAddrV6));
 
@@ -225,7 +239,7 @@ namespace RCF {
         RCF_VERIFY(
             fd != -1,
             Exception(
-            _RcfError_Socket(), err, RcfSubsystem_Os, "socket() failed"));
+            _RcfError_Socket("socket()"), err, RcfSubsystem_Os));
 
         return fd;
     }
@@ -269,20 +283,25 @@ namespace RCF {
 
     IpAddress::Type gDefaultResolveTo = IpAddress::V4_or_V6;
 
-    void IpAddress::setDefaultResolveProtocol(Type type)
+    void IpAddress::setPreferredResolveProtocol(Type type)
     {
         gDefaultResolveTo = type;
     }
 
-    IpAddress::Type IpAddress::getDefaultResolveProtocol()
+    IpAddress::Type IpAddress::getPreferredResolveProtocol()
     {
         return gDefaultResolveTo;
     }
 
-#ifdef RCF_USE_IPV6
+#if RCF_FEATURE_IPV6==1
 
     void IpAddress::resolve(RCF::ExceptionPtr & e) const
     {
+        if ( mResolved )
+        {
+            return;
+        }
+
         addrinfo hints = {0};
 
         hints.ai_family = AF_UNSPEC;
@@ -295,22 +314,14 @@ namespace RCF {
         {
             hints.ai_family = AF_INET6;
         }
-        else if (gDefaultResolveTo == V4)
-        {
-            hints.ai_family = AF_INET;          
-        }
-        else if (gDefaultResolveTo == V6)
-        {
-            hints.ai_family = AF_INET6;
-        }
 
         // Don't do name resolution for numeric IP's.
-        if (resolveNumericIp(mIp.c_str(), AF_INET))
+        if (resolveNumericIp(mIp, AF_INET))
         {
             // Valid IPv4 numeric address.
             hints.ai_flags |= AI_NUMERICHOST;
         }
-        else if (resolveNumericIp(mIp.c_str(), AF_INET6))
+        else if (resolveNumericIp(mIp, AF_INET6))
         {
             // Valid IPv6 numeric address.
             hints.ai_flags |= AI_NUMERICHOST;
@@ -329,8 +340,8 @@ namespace RCF {
 #pragma warning(pop)
 #endif
 
-        addrinfo * pAddrInfo = NULL;
-        int ret = getaddrinfo(mIp.c_str(), szPort, &hints, &pAddrInfo);
+        addrinfo * pAddrInfoRet = NULL;
+        int ret = getaddrinfo(mIp.c_str(), szPort, &hints, &pAddrInfoRet);
         int dwErr = Platform::OS::BsdSockets::GetLastError();
 
         if (ret != 0)
@@ -339,30 +350,77 @@ namespace RCF {
             return;
         }
 
-        for(addrinfo * ptr=pAddrInfo; ptr != NULL ;ptr=ptr->ai_next) 
-        {
-            sockaddr_in * sockaddr_ipv4 = NULL;
-            SockAddrIn6 * sockaddr_ipv6 = NULL;
 
-            if ((mType == V4 || mType == V4_or_V6) && ptr->ai_family == AF_INET)
+        using namespace boost::multi_index::detail;
+        scope_guard freeAddrInfoGuard = make_guard(&freeaddrinfo, pAddrInfoRet);
+        RCF_UNUSED_VARIABLE(freeAddrInfoGuard);
+
+        // Find first V4 and first V6 address that getaddrinfo() returned. 
+        addrinfo * addrinfoVec[2] = {0};
+        std::size_t addrinfoVecPos = 0;
+
+        addrinfo * paddrinfoV4 = NULL;
+        addrinfo * paddrinfoV6 = NULL;
+        
+        for(addrinfo * ptr=pAddrInfoRet; ptr != NULL ;ptr=ptr->ai_next) 
+        {
+            if (ptr->ai_family == AF_INET && !paddrinfoV4)
             {
-                sockaddr_ipv4 = (sockaddr_in *) ptr->ai_addr;
-                mType = V4;
-                memcpy(&mAddrV4, sockaddr_ipv4, sizeof(mAddrV4));
-                mResolved = true;
-                break;
+                paddrinfoV4 = ptr;
+                addrinfoVec[addrinfoVecPos++] = paddrinfoV4;
             }
-            else if ((mType == V6 || mType == V4_or_V6) && ptr->ai_family == AF_INET6)
+            else if (ptr->ai_family == AF_INET6 && !paddrinfoV6)
             {
-                sockaddr_ipv6 = (SockAddrIn6 *) ptr->ai_addr;
-                mType = V6;
-                memcpy(&mAddrV6, sockaddr_ipv6, sizeof(mAddrV6));
-                mResolved = true;
-                break;
+                paddrinfoV6 = ptr;
+                addrinfoVec[addrinfoVecPos++] = paddrinfoV6;
             }
         }
 
-        freeaddrinfo(pAddrInfo);
+        // Determine whether to go with V4 or V6.
+        addrinfo * paddrinfo = NULL;
+
+        if (paddrinfoV4 && !paddrinfoV6 )
+        {
+            paddrinfo = paddrinfoV4;
+        }
+        else if (!paddrinfoV4 && paddrinfoV6)
+        {
+            paddrinfo = paddrinfoV6;
+        }
+        else if (paddrinfoV4 && paddrinfoV6)
+        {
+            IpAddress::Type type = getPreferredResolveProtocol();
+            if (type == V4)
+            {
+                paddrinfo = paddrinfoV4;
+            }
+            else if (type == V6)
+            {
+                paddrinfo = paddrinfoV6;
+            }
+            else
+            {
+                RCF_ASSERT(addrinfoVecPos > 0);
+                paddrinfo = addrinfoVec[0];
+            }
+        }
+
+        RCF_ASSERT(paddrinfo);
+
+        if (paddrinfo->ai_family == AF_INET)
+        {
+            sockaddr_in * sockaddr_ipv4 = (sockaddr_in *) paddrinfo->ai_addr;
+            mType = V4;
+            memcpy(&mAddrV4, sockaddr_ipv4, sizeof(mAddrV4));
+            mResolved = true;
+        }
+        else if (paddrinfo->ai_family == AF_INET6)
+        {
+            SockAddrIn6 * sockaddr_ipv6 = (SockAddrIn6 *) paddrinfo->ai_addr;
+            mType = V6;
+            memcpy(&mAddrV6, sockaddr_ipv6, sizeof(mAddrV6));
+            mResolved = true;
+        }
     }
 
     void IpAddress::extractIpAndPort()
@@ -405,6 +463,11 @@ namespace RCF {
 
     void IpAddress::resolve(ExceptionPtr & e) const
     {
+        if ( mResolved )
+        {
+            return;
+        }
+
         // Try resolution of numeric addresses first.
         unsigned long test = inet_addr(mIp.c_str());
         if (test != INADDR_NONE)
@@ -471,9 +534,9 @@ namespace RCF {
 
     std::string IpAddress::string() const
     {
-        std::ostringstream os;
+        MemOstream os;
         os << mIp << ":" << mPort;
-        return os.str();
+        return os.string();
     }
 
     bool IpAddress::empty() const
@@ -517,9 +580,40 @@ namespace RCF {
 
             return (ntohl(mAddrV4.sin_addr.s_addr) & 0xE0000000) == 0xE0000000;
 
-#ifdef RCF_USE_IPV6
+#if RCF_FEATURE_IPV6==1
         case V6:
             return mAddrV6.sin6_addr.s6_addr[15] == 0xFF;
+#endif
+
+
+        default:
+            RCF_ASSERT(0);
+            return false;
+        }
+    }
+
+    bool IpAddress::isLoopback() const
+    {
+        RCF_ASSERT(mResolved);
+
+        switch(mType)
+        {
+        case V4:
+
+            {
+                RCF::IpAddress loopBackV4("127.0.0.1");
+                loopBackV4.resolve();
+                return *this == loopBackV4;
+            }
+
+#if RCF_FEATURE_IPV6==1
+        case V6:
+
+            {
+                RCF::IpAddress loopBackV6("::1");
+                loopBackV6.resolve();
+                return *this == loopBackV6;
+            }
 #endif
 
 
@@ -579,7 +673,7 @@ namespace RCF {
             }
             else if (mType == V6)
             {
-#ifdef RCF_USE_IPV6
+#if RCF_FEATURE_IPV6==1
                 SockAddrIn6 * pAddrV6 = (SockAddrIn6 *) pSockAddr;
                 SockAddrIn6 * pAddrRhsV6 = (SockAddrIn6 *) pSockAddrRhs;
 
@@ -647,6 +741,11 @@ namespace RCF {
         return false;
     }
 
+    bool IpAddress::operator!=(const IpAddress & rhs) const
+    {
+        return !(*this == rhs);
+    }
+
     bool IpAddress::operator<(const IpAddress &rhs) const
     {
         if (    mIp < rhs.mIp
@@ -658,15 +757,6 @@ namespace RCF {
 
         return false;
     }
-
-#ifdef RCF_USE_SF_SERIALIZATION
-    
-    void IpAddress::serialize(SF::Archive &ar)
-    {
-        ar & mType & mIp & mPort;
-    }
-
-#endif // RCF_USE_SF_SERIALIZATION
 
 } // namespace RCF
 

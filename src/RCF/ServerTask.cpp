@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -20,15 +23,19 @@ namespace RCF {
     TaskEntry::TaskEntry(
         Task                    task,
         StopFunctor             stopFunctor,
-        const std::string &     threadName) :
+        const std::string &     threadName,
+        bool                    autoStart) :
             mMuxerType(Mt_None),
             mTask(task),
             mStopFunctor(stopFunctor),
-            mThreadName(threadName)
+            mThreadName(threadName),
+            mAutoStart(autoStart)
     {
     }
 
-    TaskEntry::TaskEntry(MuxerType muxerType) : mMuxerType(muxerType)
+    TaskEntry::TaskEntry(MuxerType muxerType) : 
+        mMuxerType(muxerType), 
+        mAutoStart(true)
     {
     }
 
@@ -49,16 +56,21 @@ namespace RCF {
         return mTask;
     }
 
-    void TaskEntry::start(const volatile bool &stopFlag)
+    bool TaskEntry::getAutoStart()
     {
-        mWhichThreadPoolPtr->start(stopFlag);
+        return mAutoStart;
     }
 
-    void TaskEntry::stop(bool wait)
+    void TaskEntry::start()
+    {
+        mWhichThreadPoolPtr->start();
+    }
+
+    void TaskEntry::stop()
     {
         if (mWhichThreadPoolPtr)
         {
-            mWhichThreadPoolPtr->stop(wait);
+            mWhichThreadPoolPtr->stop();
         }
     }
 

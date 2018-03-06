@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -21,9 +24,10 @@
 #include <boost/enable_shared_from_this.hpp>
 #include <boost/shared_ptr.hpp>
 
-#include <RCF/AsyncFilter.hpp>
+#include <RCF/Filter.hpp>
 #include <RCF/RecursionLimiter.hpp>
 #include <RCF/Export.hpp>
+#include <RCF/RcfSession.hpp>
 #include <RCF/RecursionLimiter.hpp>
 #include <RCF/Tools.hpp>
 
@@ -37,14 +41,6 @@
 #include <WinCrypt.h>
 #include <tchar.h>
 
-#if defined(_MSC_VER) && _MSC_VER == 1200
-
-#if !defined(_WIN32_WINNT) || _WIN32_WINNT < 0x0400
-#error Schannel support not available in Visual C++ 6 platform headers, when _WIN32_WINNT < 0x0400.
-#endif
-
-#endif
-
 namespace RCF {
 
     static const bool BoolClient = false;
@@ -52,11 +48,7 @@ namespace RCF {
 
     static const bool BoolSchannel = true;
 
-    typedef util::tstring tstring;
-
-    RCF_EXPORT tstring getMyUserName();
-    RCF_EXPORT tstring getMyDomain();
-    RCF_EXPORT tstring getMyMachineName();
+    typedef RCF::tstring tstring;
 
     class SspiFilter;
 
@@ -66,6 +58,7 @@ namespace RCF {
     {
     public:
         SspiImpersonator(SspiFilterPtr sspiFilterPtr);
+        SspiImpersonator(RcfSession & session);
         ~SspiImpersonator();
 
         bool impersonate();
@@ -85,44 +78,12 @@ namespace RCF {
     class SchannelClientFilter;
     typedef SchannelClientFilter SchannelFilter;
 
-    class CertContext
-    {
-    public:
-        CertContext() : mpCert(NULL), mHasBeenDeleted(false)
-        {
-        }
+    class SchannelFilterFactory;
 
-        CertContext(PCCERT_CONTEXT pCert) : mpCert(pCert), mHasBeenDeleted(false)
-        {
-        }
-
-        ~CertContext()
-        {
-            if (mpCert && !mHasBeenDeleted)
-            {
-                CertFreeCertificateContext(mpCert);
-                mpCert = NULL;
-            }
-        }
-
-        PCCERT_CONTEXT getContext() const
-        {
-            return mpCert;
-        }
-
-        void setHasBeenDeleted()
-        {
-            mHasBeenDeleted = true;
-        }
-
-    private:
-
-        PCCERT_CONTEXT mpCert;
-        bool mHasBeenDeleted;
-    };
-
-    typedef boost::shared_ptr<CertContext> CertContextPtr;
-
+    class Certificate;
+    class Win32Certificate;
+    typedef boost::shared_ptr<Win32Certificate> Win32CertificatePtr;
+    
     class RCF_EXPORT SspiFilter : public Filter
     {
     public:
@@ -140,20 +101,23 @@ namespace RCF {
 
         typedef SspiImpersonator Impersonator;
 
-        typedef boost::function1<void, SchannelFilter &> CertValidationCallback;
+        typedef boost::function<bool(Certificate *)> CertificateValidationCb;
+
+        Win32CertificatePtr getPeerCertificate();
 
     protected:
 
         friend class SspiImpersonator;
 
         SspiFilter(
+            ClientStub *            pClientStub,
             const tstring &         packageName,
             const tstring &         packageList,
             bool                    server,
             bool                    schannel);
 
         SspiFilter(
-            const tstring &         target,
+            ClientStub *            pClientStub,
             QualityOfProtection     qop,
             ULONG                   contextRequirements,
             const tstring &         packageName,
@@ -162,10 +126,7 @@ namespace RCF {
             bool                    schannel);
 
         SspiFilter(
-            const tstring &         userName,
-            const tstring &         password,
-            const tstring &         domain,
-            const tstring &         target,
+            ClientStub *            pClientStub,
             QualityOfProtection     qop,
             ULONG                   contextRequirements,
             const tstring &         packageName,
@@ -211,7 +172,7 @@ namespace RCF {
 
         void            init();
         void            deinit();
-        void            reset();
+        void            resetState();
 
         void            read(
                             const ByteBuffer &byteBuffer, 
@@ -246,9 +207,10 @@ namespace RCF {
 
     protected:
 
+        ClientStub *                            mpClientStub;
+
         const tstring                           mPackageName;
         const tstring                           mPackageList;
-        tstring                                 mTarget;
         QualityOfProtection                     mQop;
         ULONG                                   mContextRequirements;
 
@@ -289,15 +251,18 @@ namespace RCF {
         std::size_t                             mMaxMessageLength;
  
         // Schannel-specific members.
-        CertContextPtr                          mLocalCert;
-        CertContextPtr                          mRemoteCert;
-        CertValidationCallback                  mCertValidationCallback;
+        Win32CertificatePtr                     mLocalCertPtr;
+        Win32CertificatePtr                     mRemoteCertPtr;
+        CertificateValidationCb                 mCertValidationCallback;
         DWORD                                   mEnabledProtocols;
+        tstring                                 mAutoCertValidation;
         const std::size_t                       mReadAheadChunkSize;
         std::size_t                             mRemainingDataPos;
 
         std::vector<RCF::ByteBuffer>            mMergeBufferList;
         std::vector<char>                       mMergeBuffer;
+
+        bool                                    mProtocolChecked;
 
     private:
         bool                                    mLimitRecursion;
@@ -306,6 +271,8 @@ namespace RCF {
 
         void onReadCompleted_(const ByteBuffer &byteBuffer);
         void onWriteCompleted_(std::size_t bytesTransferred);
+
+        friend class SchannelFilterFactory;
     };
 
     // server filters
@@ -324,72 +291,66 @@ namespace RCF {
         void handleHandshakeEvent();
     };
 
-    class RCF_EXPORT NtlmServerFilter : public SspiServerFilter
+    class NtlmServerFilter : public SspiServerFilter
     {
     public:
         NtlmServerFilter();
-        const FilterDescription & getFilterDescription() const;
+        int getFilterId() const;
     };
 
-    class RCF_EXPORT KerberosServerFilter : public SspiServerFilter
+    class KerberosServerFilter : public SspiServerFilter
     {
     public:
         KerberosServerFilter();
-        const FilterDescription & getFilterDescription() const;
+        int getFilterId() const;
     };
 
-    class RCF_EXPORT NegotiateServerFilter : public SspiServerFilter
+    class NegotiateServerFilter : public SspiServerFilter
     {
     public:
         NegotiateServerFilter(const tstring &packageList);
-        const FilterDescription & getFilterDescription() const;
+        int getFilterId() const;
     };
 
     // filter factories
 
-    class RCF_EXPORT NtlmFilterFactory : public FilterFactory
+    class NtlmFilterFactory : public FilterFactory
     {
     public:
-        FilterPtr createFilter();
-        const FilterDescription & getFilterDescription();
+        FilterPtr createFilter(RcfServer & server);
+        int getFilterId();
     };
 
-    class RCF_EXPORT KerberosFilterFactory : public FilterFactory
+    class KerberosFilterFactory : public FilterFactory
     {
     public:
-        FilterPtr createFilter();
-        const FilterDescription & getFilterDescription();
+        FilterPtr createFilter(RcfServer & server);
+        int getFilterId();
     };
 
-    class RCF_EXPORT NegotiateFilterFactory : public FilterFactory
+    class NegotiateFilterFactory : public FilterFactory
     {
     public:
         NegotiateFilterFactory(const tstring &packageList = RCF_T("Kerberos, NTLM"));
-        FilterPtr createFilter();
-        const FilterDescription & getFilterDescription();
+        FilterPtr createFilter(RcfServer & server);
+        int getFilterId();
     private:
         tstring mPackageList;
     };
 
     // client filters
 
-    class RCF_EXPORT SspiClientFilter : public SspiFilter
+    class SspiClientFilter : public SspiFilter
     {
     public:
         SspiClientFilter(
-            const tstring &         userName,
-            const tstring &         password,
-            const tstring &         domain,
-            const tstring &         targetName,
+            ClientStub *            pClientStub,
             QualityOfProtection     qop,
             ULONG                   contextRequirements,
             const tstring &         packageName,
             const tstring &         packageList) :
                 SspiFilter(
-                    userName, 
-                    password, 
-                    domain,
-                    targetName, 
+                    pClientStub,
                     qop, 
                     contextRequirements, 
                     packageName, 
@@ -398,14 +359,14 @@ namespace RCF {
         {}
 
         SspiClientFilter(
-            const tstring &         targetName,
+            ClientStub *            pClientStub,
             QualityOfProtection     qop,
             ULONG                   contextRequirements,
             const tstring &         packageName,
             const tstring &         packageList,
             bool                    schannel) :
                 SspiFilter(
-                    targetName, 
+                    pClientStub,
                     qop, 
                     contextRequirements, 
                     packageName, 
@@ -420,65 +381,41 @@ namespace RCF {
         void handleHandshakeEvent();
     };
 
-    class RCF_EXPORT NtlmClientFilter : public SspiClientFilter
+    class NtlmClientFilter : public SspiClientFilter
     {
     public:
         NtlmClientFilter(
-            const tstring &         userName,
-            const tstring &         password,
-            const tstring &         domain,
+            ClientStub *            pClientStub,
             QualityOfProtection     qop = SspiFilter::Encryption,
             ULONG                   contextRequirements 
                                         = DefaultSspiContextRequirements);
 
-        NtlmClientFilter(
-            QualityOfProtection     qop = SspiFilter::Encryption,
-            ULONG                   contextRequirements 
-                                        = DefaultSspiContextRequirements);
-
-        const FilterDescription &           getFilterDescription() const;
+        int getFilterId() const;
     };
 
-    class RCF_EXPORT KerberosClientFilter : public SspiClientFilter
+    class KerberosClientFilter : public SspiClientFilter
     {
     public:
         KerberosClientFilter(
-            const tstring &         userName,
-            const tstring &         password,
-            const tstring &         domain,
-            const tstring &         targetName,
+            ClientStub *            pClientStub,
             QualityOfProtection     qop = SspiFilter::Encryption,
             ULONG                   contextRequirements 
                                         = DefaultSspiContextRequirements);
 
-        KerberosClientFilter(
-            const tstring &         targetName,
-            QualityOfProtection     qop = SspiFilter::Encryption,
-            ULONG                   contextRequirements 
-                                        = DefaultSspiContextRequirements);
-
-        const FilterDescription &           getFilterDescription() const;
+        int getFilterId() const;
     };
 
-    class RCF_EXPORT NegotiateClientFilter : public SspiClientFilter
+    class NegotiateClientFilter : public SspiClientFilter
     {
     public:
         NegotiateClientFilter(
-            const tstring &         userName,
-            const tstring &         password,
-            const tstring &         domain,
-            const tstring &         targetName,
+            ClientStub *            pClientStub,
             QualityOfProtection     qop = SspiFilter::None,
             ULONG                   contextRequirements 
                                         = DefaultSspiContextRequirements);
 
-        NegotiateClientFilter(
-            const tstring &         targetName,
-            QualityOfProtection     qop = SspiFilter::Encryption,
-            ULONG                   contextRequirements 
-                                        = DefaultSspiContextRequirements);
 
-        const FilterDescription &           getFilterDescription() const;
+        int getFilterId() const;
     };
 
     typedef NtlmClientFilter            NtlmFilter;

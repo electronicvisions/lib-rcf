@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -21,90 +24,97 @@
 
 namespace SF {
 
-    // These macros could be written as templates, but borland's compiler won't handle it.
-
     // 1. Non-ref counted smart pointer. SmartPtr<T> must support reset() and operator->().
+
+    template<typename T, typename SmartPtrT>
+    inline void serializeSimpleSmartPtr(SmartPtrT **ppt, SF::Archive &ar)
+    {
+        if (ar.isRead())
+        {
+            if (ar.isFlagSet(Archive::POINTER))
+            {
+                *ppt = new SmartPtrT();
+            }
+            T *pt = NULL;
+            ar & pt;
+            (**ppt).reset(pt);
+        }
+        else if (ar.isWrite())
+        {
+            T *pt = NULL;
+            if (*ppt && (**ppt).get())
+            {
+                pt = (**ppt).operator->();
+            }
+            ar & pt;
+        }
+    }
+
 
 #define SF_SERIALIZE_SIMPLE_SMARTPTR( SmartPtr )                                        \
     template<typename T>                                                                \
-    inline bool serializeSimpleSmartPtr(SmartPtr<T> **pps, SF::Archive &ar)             \
-    {                                                                                   \
-        if (ar.isRead())                                                                \
-        {                                                                               \
-            if (ar.isFlagSet(Archive::POINTER))                                         \
-            {                                                                           \
-                *pps = new SmartPtr<T>();                                               \
-            }                                                                           \
-            T *pt = NULL;                                                               \
-            ar & pt;                                                                    \
-            (**pps).reset(pt);                                                          \
-        }                                                                               \
-        else if (ar.isWrite())                                                          \
-        {                                                                               \
-            T *pt = NULL;                                                               \
-            if (*pps && (**pps).get())                                                  \
-            {                                                                           \
-                pt = (**pps).operator->();                                              \
-            }                                                                           \
-            ar & pt;                                                                    \
-        }                                                                               \
-        return true;                                                                    \
-    }                                                                                   \
-                                                                                        \
-    template<typename T>                                                                \
     inline bool invokeCustomSerializer(SmartPtr<T> **ppt, Archive &ar, int)             \
     {                                                                                   \
-        return serializeSimpleSmartPtr(ppt, ar);                                        \
+        serializeSimpleSmartPtr<T>(ppt, ar);                                            \
+        return true;                                                                    \
     }
 
     // 2. Ref counted smart pointer. Must support operator=(), operator->(), and get().
 
+    template<typename T, typename SmartPtrT>
+    inline void serializeRefCountedSmartPtr(SmartPtrT **ppt, SF::Archive &ar)
+    {
+        if (ar.isRead())
+        {
+            if (ar.isFlagSet(Archive::POINTER))
+            {
+                *ppt = new SmartPtrT;
+            }
+            T *pt = NULL;
+            ar & pt;
+
+            ContextRead &ctx = ar.getIstream()->getTrackingContext();
+            if (!ctx.getEnabled())
+            {
+                // No pointer tracking.
+                **ppt = SmartPtrT(pt);
+            }
+            else
+            {
+                // Pointer tracking enabled, so some extra gymnastics involved.
+                void *pv = NULL;
+                if (pt && ctx.getEnabled() && ctx.query((void *)pt, typeid(SmartPtrT), pv))
+                {
+                    SmartPtrT *ps_prev = reinterpret_cast<SmartPtrT *>(pv);
+                    **ppt = *ps_prev;
+                }
+                else if (pt)
+                {
+                    if (ctx.getEnabled())
+                    {
+                        ctx.add((void *)pt, typeid(SmartPtrT), *ppt);
+                    }
+                    **ppt = SmartPtrT(pt);
+                }
+            }
+        }
+        else /*if (ar.isWrite())*/
+        {
+            T *pt = NULL;
+            if (*ppt)
+            {
+                pt = (**ppt).get();
+            }
+            ar & pt;
+        }
+    }
+
 #define SF_SERIALIZE_REFCOUNTED_SMARTPTR( SmartPtr )                                    \
-    template<typename T >                                                               \
-    inline bool serializeRefCountedSmartPtr(SmartPtr<T> **pps, SF::Archive &ar)         \
-    {                                                                                   \
-        if (ar.isRead())                                                                \
-        {                                                                               \
-            if (ar.isFlagSet(Archive::POINTER)) *pps = new SmartPtr<T>;                 \
-            T *pt = NULL;                                                               \
-            ar & pt;                                                                    \
-            typedef ObjectId IdT;                                                       \
-                                                                                        \
-            ContextRead &ctx = ar.getIstream()->getContext();                           \
-                                                                                        \
-            void *pv = NULL;                                                            \
-            if (pt && ctx.query( pt, typeid(SmartPtr<T>), pv ))                         \
-            {                                                                           \
-                SmartPtr<T> *ps_prev = reinterpret_cast< SmartPtr<T> * >(pv);           \
-                **pps = *ps_prev;                                                       \
-            }                                                                           \
-            else if (pt)                                                                \
-            {                                                                           \
-                ctx.add( pt, typeid(SmartPtr<T>), *pps );                               \
-                **pps = SmartPtr<T>(pt);                                                \
-            }                                                                           \
-            else                                                                        \
-            {                                                                           \
-                **pps = SmartPtr<T>(pt);                                                \
-            }                                                                           \
-            return true;                                                                \
-        }                                                                               \
-        else /*if (ar.isWrite())*/                                                      \
-        {                                                                               \
-            T *pt = NULL;                                                               \
-            if (*pps)                                                                   \
-            {                                                                           \
-                pt = (**pps).get();                                                     \
-            }                                                                           \
-            ar & pt;                                                                    \
-            return true;                                                                \
-        }                                                                               \
-    }                                                                                   \
-                                                                                        \
     template<typename T>                                                                \
     inline bool invokeCustomSerializer(SmartPtr<T> **ppt, Archive &ar, int)             \
     {                                                                                   \
-        return serializeRefCountedSmartPtr(ppt, ar);                                    \
+        serializeRefCountedSmartPtr<T>(ppt, ar);                                        \
+        return true;                                                                    \
     }
 
 } // namespace SF

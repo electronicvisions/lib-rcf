@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -23,7 +26,7 @@
 #include <RCF/Exception.hpp>
 #include <RCF/util/Platform/OS/BsdSockets.hpp>
 
-namespace util {
+namespace RCF {
 
     std::pair<std::string, std::vector<std::string> > getLocalIps()
     {
@@ -31,7 +34,7 @@ namespace util {
         int ret = gethostname(&hostname[0], hostname.size());
         int err = Platform::OS::BsdSockets::GetLastError();
         RCF_VERIFY(
-            ret != RCF_SOCKET_ERROR, 
+            ret != SOCKET_ERROR, 
             RCF::Exception(0, err, RCF::RcfSubsystem_Os))(ret)(err);
         hostent *phe = gethostbyname(&hostname[0]);
         err = Platform::OS::BsdSockets::GetLastError();
@@ -47,6 +50,6 @@ namespace util {
         return std::make_pair( std::string(&hostname[0]), ips);
     }
 
-}
+} // namespace RCF
 
 #endif

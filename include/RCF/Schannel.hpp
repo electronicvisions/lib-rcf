@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -16,6 +19,7 @@
 #ifndef INCLUDE_RCF_SCHANNEL_HPP
 #define INCLUDE_RCF_SCHANNEL_HPP
 
+#include <RCF/Filter.hpp>
 #include <RCF/SspiFilter.hpp>
 #include <RCF/util/Tchar.hpp>
 
@@ -38,105 +42,46 @@ namespace RCF {
         ASC_REQ_ALLOCATE_MEMORY |
         ASC_REQ_STREAM;
 
-    class RCF_EXPORT SchannelServerFilter : public SspiServerFilter
+    class SchannelServerFilter : public SspiServerFilter
     {
     public:
         SchannelServerFilter(
-            CertContextPtr localCert, 
+            RcfServer & server,
             DWORD enabledProtocols,
             ULONG contextRequirements);
 
-        const FilterDescription &           getFilterDescription() const;
+        int getFilterId() const;
     };
 
-    class RCF_EXPORT SchannelFilterFactory : public FilterFactory
+    class SchannelFilterFactory : public FilterFactory
     {
     public:
 
         SchannelFilterFactory(
-            CertContextPtr cert, 
             DWORD enabledProtocols = SP_PROT_TLS1_SERVER,
             ULONG contextRequirements = DefaultSchannelContextRequirements);
 
-        FilterPtr                           createFilter();
-        const FilterDescription &           getFilterDescription();
+        FilterPtr                           createFilter(RcfServer & server);
+        int                                 getFilterId();
 
     private:
-        CertContextPtr mLocalCert;
+        
         ULONG mContextRequirements;
         DWORD mEnabledProtocols;
     };
 
-    class RCF_EXPORT SchannelClientFilter : public SspiClientFilter
+    class SchannelClientFilter : public SspiClientFilter
     {
     public:
         SchannelClientFilter(
-            DWORD enabledProtocols = SP_PROT_NONE,
+            ClientStub * pClientStub,
+            DWORD enabledProtocols = SP_PROT_TLS1_CLIENT,
             ULONG contextRequirements = DefaultSchannelContextRequirements);
 
-        void                setManualCertValidation(
-                                CertValidationCallback certValidationCallback);
-
-        void                setAutoCertValidation(
-                                const tstring & serverName);
-
-        void                setClientCertificate(
-                                CertContextPtr certContext);
-
-        PCCERT_CONTEXT      getServerCertificate();
-
-        const FilterDescription &           getFilterDescription() const;
+        int getFilterId() const;
     };
 
-    typedef SchannelClientFilter        SchannelFilter;
-
-    // Certificate utility classes.
-
-    class RCF_EXPORT PfxCertificate
-    {
-    public:
-
-        PfxCertificate(
-            const std::string & pathToCert, 
-            const tstring & password,
-            const tstring & certName,
-            DWORD dwFindType);
-
-        ~PfxCertificate();
-
-        void addToStore(
-            DWORD dwFlags, 
-            const std::string & storeName);
-
-        CertContextPtr getCertContext();
-
-    private:
-
-        HCERTSTORE mPfxStore;
-        CertContextPtr mCertContextPtr;
-    };
-
-    class RCF_EXPORT StoreCertificate
-    {
-    public:
-
-        StoreCertificate(
-            DWORD dwStoreFlags,
-            const std::string & storeName,
-            const tstring & certName,
-            DWORD dwFindType);
-
-        ~StoreCertificate();
-
-        void removeFromStore();
-
-        CertContextPtr getCertContext();
-
-    private:
-
-        HCERTSTORE mStore;
-        CertContextPtr mCertContextPtr;
-    };
+    typedef SchannelClientFilter        SchannelFilter;  
 
 } // namespace RCF
 

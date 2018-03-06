@@ -12,30 +12,34 @@ def configure(cfg):
     cfg.load('compiler_cxx')
     cfg.load('boost')
 
+    cfg.check_cxx(lib="pthread", uselib_store="PTHREAD")
     cfg.check_cfg(package='zlib', args='--libs --cflags')
-    cfg.check_cxx(lib='pthread')
-    cfg.check_boost(lib='system thread', uselib_store='BOOST4RCF')
-    cfg.check_boost(lib='serialization system thread', uselib_store='BOOST4RCF_WSERIALIZATION')
-    cfg.check_boost(lib='filesystem serialization system thread', uselib_store='BOOST4RCF_WSERIALIZATION_WFS')
+    cfg.check_boost(lib='system', uselib_store='BOOST4RCF')
+    cfg.check_boost(lib='serialization system', uselib_store='BOOST4RCF_WSERIALIZATION')
+    cfg.check_boost(lib='filesystem serialization system', uselib_store='BOOST4RCF_WSERIALIZATION_WFS')
 
-    DEFINES_common = [
-        'RCF_USE_BOOST_ASIO',
-        'RCF_USE_BOOST_THREADS',
-        'RCF_USE_ZLIB',
-        'RCF_NO_AUTO_INIT_DEINIT',
-    ]
-    cfg.env.DEFINES_RCFSF      = DEFINES_common + [ 'RCF_USE_SF_SERIALIZATION' ]
-    cfg.env.DEFINES_RCFBOOST   = DEFINES_common + [ 'RCF_USE_BOOST_SERIALIZATION' ]
-    cfg.env.DEFINES_RCFBOOSTSF = DEFINES_common + [ 'RCF_USE_BOOST_SERIALIZATION', 'RCF_USE_SF_SERIALIZATION' ]
+
+    cfg.env.DEFINES_RCF_COMMON     = ['RCF_USE_ZLIB']
+    cfg.env.DEFINES_RCF_SF_ONLY    = ['RCF_USE_SF_SERIALIZATION'] # automatically defined
+    cfg.env.DEFINES_RCF_BOOST_ONLY = ['RCF_USE_BOOST_SERIALIZATION']
+    cfg.env.DEFINES_RCF_SF_BOOST   = ['RCF_USE_BOOST_SERIALIZATION',
+                                      'RCF_USE_SF_SERIALIZATION']
+    cfg.env.DEFINES_RCF_BOOST_FS   = ['RCF_USE_BOOST_FILESYSTEM',
+                                      'BOOST_FILESYSTEM_DEPRECATED']
 
 
 def build(bld):
     inc = bld.path.find_dir('include').abspath()
-    common_flags = { "cxxflags"  : [],
+    common_flags = {
               'linkflags' : [],
               'includes'  : [inc],
+              'cxxflags'  : [],
               'defines'   : [],
-              'use'       : [ 'ZLIB', 'PTHREAD' ],
+              'use'       : [
+                  'RCF_COMMON',
+                  'PTHREAD',
+                  'ZLIB',
+                  ],
     }
 
     bld(
@@ -47,18 +51,26 @@ def build(bld):
     for i,s in enumerate(['rcf', 'sf', 'rcfsf', 'rcf_fs']):
         flags = copy.deepcopy(common_flags)
         if s == 'sf': # pure sf
-            flags['use'].append('BOOST4RCF')
-            flags['use'].append('RCFSF')
+            flags['use'].extend([
+                'BOOST4RCF',
+                'RCF_SF_ONLY'
+                ])
         if s == 'rcf': # pure boost
-            flags['use'].append('BOOST4RCF_WSERIALIZATION')
-            flags['use'].append('RCFBOOST')
+            flags['use'].extend([
+                'BOOST4RCF_WSERIALIZATION',
+                'RCF_BOOST_ONLY'
+                ])
         if s == 'rcf_fs': # pure boost with filesystem support
+            flags['use'].extend([
+                'BOOST4RCF_WSERIALIZATION_WFS',
+                'RCF_BOOST_ONLY'
+                ])
             flags['use'].append('BOOST4RCF_WSERIALIZATION_WFS')
-            flags['use'].append('RCFBOOST')
-            flags['defines'] += ['RCF_USE_BOOST_FILESYSTEM', 'BOOST_FILESYSTEM_DEPRECATED']
         if s == 'rcfsf': # both
-            flags['use'].append('BOOST4RCF_WSERIALIZATION')
-            flags['use'].append('RCFBOOSTSF')
+            flags['use'].extend([
+                'BOOST4RCF_WSERIALIZATION',
+                'RCF_SF_BOOST'
+                ])
 
         bld(
                 features        = 'cxx cxxshlib',

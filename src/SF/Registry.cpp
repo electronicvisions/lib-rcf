@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -66,7 +69,7 @@ namespace SF {
     static Registry *pRegistry;
 
     Registry::Registry() :
-        mReadWriteMutex(Platform::Threads::writer_priority)
+        mReadWriteMutex(RCF::WriterPriority)
     {}
 
     Registry &Registry::getSingleton()
@@ -115,6 +118,7 @@ namespace SF {
         
         RCF::Exception e(RCF::_RcfError_AnySerializerNotFound(which));
         RCF_THROW(e);
+        return * (I_SerializerAny *) NULL;
     }
 
     std::string Registry::getTypeName(const std::type_info &ti)
@@ -154,8 +158,18 @@ namespace SF {
         pRegistry = NULL;
     }
 
-    RCF_ON_INIT_DEINIT(
-        initRegistrySingleton(),
-        deinitRegistrySingleton())
+} // namespace SF
+
+namespace RCF {
+
+    void initRegistrySingleton()
+    {
+        SF::initRegistrySingleton();
+    }
+
+    void deinitRegistrySingleton()
+    {
+        SF::deinitRegistrySingleton();
+    }
 
 }

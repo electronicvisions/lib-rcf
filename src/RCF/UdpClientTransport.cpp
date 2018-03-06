@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -34,15 +37,15 @@ namespace RCF {
 
     UdpClientTransport::UdpClientTransport(const IpAddress & ipAddress) :
         mDestIp(ipAddress),
-        mAsync(RCF_DEFAULT_INIT),
+        mAsync(),
         mSock(-1)
     {
     }
 
     UdpClientTransport::UdpClientTransport(const UdpClientTransport &rhs) :
-        I_ClientTransport(rhs),
+        ClientTransport(rhs),
         mDestIp(rhs.mDestIp),
-        mAsync(RCF_DEFAULT_INIT),
+        mAsync(),
         mSock(-1)
     {
     }
@@ -52,6 +55,11 @@ namespace RCF {
         RCF_DTOR_BEGIN
             close();
         RCF_DTOR_END
+    }
+
+    TransportType UdpClientTransport::getTransportType()
+    {
+        return Tt_Udp;
     }
 
     ClientTransportAutoPtr UdpClientTransport::clone() const
@@ -64,28 +72,16 @@ namespace RCF {
         return EndpointPtr( new UdpEndpoint(mDestIp) );
     }
 
-    void UdpClientTransport::setAsync(bool async)
-    {
-        mAsync = async;
-    }
-
-    UdpClientTransport::TimerEntry UdpClientTransport::setTimer(
+    void UdpClientTransport::setTimer(
         boost::uint32_t timeoutMs,
-        I_ClientTransportCallback *pClientStub)
+        ClientTransportCallback *pClientStub)
     {
         RCF_UNUSED_VARIABLE(timeoutMs);
         RCF_UNUSED_VARIABLE(pClientStub);
-        return TimerEntry();
-    }
-
-    void UdpClientTransport::killTimer(
-        const TimerEntry & timerEntry)
-    {
-        RCF_UNUSED_VARIABLE(timerEntry);
     }
 
     void UdpClientTransport::connect(
-        I_ClientTransportCallback &clientStub, 
+        ClientTransportCallback &clientStub, 
         unsigned int timeoutMs)
     {
         RCF_LOG_4()(mSock)(mDestIp.string()) << "UdpClientTransport - creating socket.";
@@ -127,11 +123,11 @@ namespace RCF {
 
             ret = ::bind(mSock, pSrcAddr, srcAddrSize);
             err = Platform::OS::BsdSockets::GetLastError();
+
             RCF_VERIFY(
                 ret == 0,
                 Exception(
-                    _RcfError_Socket(), err, RcfSubsystem_Os,
-                    "bind() failed"));
+                    _RcfError_Socket("bind()"), err, RcfSubsystem_Os));
 
             mAssignedLocalIp = IpAddress(mSock, mSrcIp.getType());
 
@@ -142,30 +138,29 @@ namespace RCF {
             DWORD dwBytesRet = 0;
             DWORD dwStatus = WSAIoctl(mSock, SIO_UDP_CONNRESET, &enable, sizeof(enable), NULL, 0, &dwBytesRet, NULL, NULL);
             err = Platform::OS::BsdSockets::GetLastError();
+
             RCF_VERIFY(
                 dwStatus == 0,
                 Exception(
-                    _RcfError_Socket(),
+                    _RcfError_Socket("WSAIoctl() with SIO_UDP_CONNRESET"),
                     err,
-                    RcfSubsystem_Os,
-                    "setsockopt() with SIO_UDP_CONNRESET failed"));
+                    RcfSubsystem_Os));
 
 #endif // BOOST_WINDOWS
 
             if (mDestIp.isBroadcast())
             {
                 // set socket option to allow transmission of broadcast messages
-                int enable = 1;
-                int ret = setsockopt(mSock, SOL_SOCKET, SO_BROADCAST, (char *) &enable, sizeof(enable));
-                int err = Platform::OS::BsdSockets::GetLastError();
+                int nEnable = 1;
+                ret = setsockopt(mSock, SOL_SOCKET, SO_BROADCAST, (char *)&nEnable, sizeof(nEnable));
+                err = Platform::OS::BsdSockets::GetLastError();
 
                 RCF_VERIFY(
                     ret ==  0,
                     Exception(
-                        _RcfError_Socket(),
+                        _RcfError_Socket("setsockopt() with SO_BROADCAST"),
                         err,
-                        RcfSubsystem_Os,
-                        "setsockopt() with SO_BROADCAST failed"));
+                        RcfSubsystem_Os));
             }
 
             if (mDestIp.isMulticast())
@@ -176,16 +171,15 @@ namespace RCF {
 #else
                 int hops = 16;
 #endif
-                int ret = setsockopt(mSock, IPPROTO_IP, IP_MULTICAST_TTL, (char *) &hops, sizeof (hops));
-                int err = Platform::OS::BsdSockets::GetLastError();
+                ret = setsockopt(mSock, IPPROTO_IP, IP_MULTICAST_TTL, (char *) &hops, sizeof (hops));
+                err = Platform::OS::BsdSockets::GetLastError();
 
                 RCF_VERIFY(
                     ret ==  0,
                     Exception(
-                        _RcfError_Socket(),
+                        _RcfError_Socket("setsockopt() with IPPROTO_IP/IP_MULTICAST_TTL"),
                         err,
-                        RcfSubsystem_Os,
-                        "setsockopt() with IPPROTO_IP/IP_MULTICAST_TTL failed"))(hops);
+                        RcfSubsystem_Os))(hops);
             }
         }
 
@@ -193,7 +187,7 @@ namespace RCF {
     }
 
     int UdpClientTransport::send(
-        I_ClientTransportCallback &clientStub, 
+        ClientTransportCallback &clientStub, 
         const std::vector<ByteBuffer> &data,
         unsigned int timeoutMs)
     {
@@ -211,6 +205,7 @@ namespace RCF {
         }
 
         mLastRequestSize = lengthByteBuffers(data);
+        mRunningTotalBytesSent += lengthByteBuffers(data);
 
         ReallocBuffer &buffer = *mWriteVecPtr;
         buffer.resize(lengthByteBuffers(data));
@@ -233,10 +228,9 @@ namespace RCF {
         RCF_VERIFY(
             len > 0,
             Exception(
-                _RcfError_Socket(),
+                _RcfError_Socket("sendto()"),
                 err,
-                RcfSubsystem_Os,
-                "sendto() failed"));
+                RcfSubsystem_Os));
 
         clientStub.onSendCompleted();
 
@@ -244,24 +238,24 @@ namespace RCF {
     }
 
     int UdpClientTransport::receive(
-        I_ClientTransportCallback &clientStub, 
+        ClientTransportCallback &clientStub, 
         ByteBuffer &byteBuffer,
-        unsigned int timeoutMs)
+        unsigned int totalTimeoutMs)
     {
         // try to receive a UDP message from server, within the current timeout
-        RCF_LOG_4()(mSock)(mDestIp.string())(timeoutMs) << "UdpClientTransport - receiving data from socket.";
+        RCF_LOG_4()(mSock)(mDestIp.string())(totalTimeoutMs) << "UdpClientTransport - receiving data from socket.";
 
         RCF_ASSERT(!mAsync);
 
         unsigned int startTimeMs = getCurrentTimeMs();
-        unsigned int endTimeMs = startTimeMs + timeoutMs;
+        unsigned int endTimeMs = startTimeMs + totalTimeoutMs;
 
         while (true)
         {
             unsigned int timeoutMs = generateTimeoutMs(endTimeMs);
             fd_set fdSet;
             FD_ZERO(&fdSet);
-            FD_SET( static_cast<RCF_SOCKET>(mSock), &fdSet);
+            FD_SET( static_cast<SOCKET>(mSock), &fdSet);
             timeval timeout;
             timeout.tv_sec = timeoutMs/1000;
             timeout.tv_usec = 1000*(timeoutMs%1000);
@@ -279,10 +273,9 @@ namespace RCF {
             if (ret == -1)
             {
                 Exception e(
-                    _RcfError_Socket(),
+                    _RcfError_Socket("select()"),
                     err,
-                    RcfSubsystem_Os,
-                    "udp client select() failed");
+                    RcfSubsystem_Os);
 
                 RCF_THROW(e);
             }   
@@ -323,16 +316,19 @@ namespace RCF {
             if (    len == 4 
                 ||  (len == -1 && err == Platform::OS::BsdSockets::ERR_EMSGSIZE))
             {
-                IpAddress fromIp( (sockaddr&) fromAddr, fromAddrLen, mDestIp.getType());
-                if (mDestIp.matches(fromIp))
+                mFromIp.init( (sockaddr&) fromAddr, fromAddrLen, mDestIp.getType());
+                if (mDestIp.matches(mFromIp))
                 {
                     boost::uint32_t dataLength = 0;
                     memcpy( &dataLength, &buffer[0], 4);
                     RCF::networkToMachineOrder(&dataLength, 4, 1);
 
-                    RCF_VERIFY(
-                        0 < dataLength && dataLength <= getMaxMessageLength(),
-                        Exception(_RcfError_ClientMessageLength(dataLength, getMaxMessageLength())));
+                    if (getMaxMessageLength())
+                    {
+                        RCF_VERIFY(
+                            0 < dataLength && dataLength <= getMaxMessageLength(),
+                            Exception(_RcfError_ClientMessageLength()));
+                    }
 
                     buffer.resize(4+dataLength);
                     memset(&fromAddr, 0, sizeof(fromAddr));
@@ -349,6 +345,7 @@ namespace RCF {
                     if (len == static_cast<int>(dataLength+4))
                     {
                         mLastResponseSize = dataLength+4;
+                        mRunningTotalBytesReceived += dataLength+4;
 
                         byteBuffer = ByteBuffer(
                             &buffer[4],
@@ -406,6 +403,7 @@ namespace RCF {
     void UdpClientTransport::disconnect(unsigned int timeoutMs)
     {
         RCF_UNUSED_VARIABLE(timeoutMs);
+        close();
     }
 
     void UdpClientTransport::setTransportFilters(

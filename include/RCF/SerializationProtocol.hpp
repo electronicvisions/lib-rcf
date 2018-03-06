@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -18,7 +21,6 @@
 
 #include <map>
 #include <string>
-#include <strstream>
 
 #include <boost/mpl/bool_fwd.hpp>
 
@@ -26,22 +28,22 @@
 #include <RCF/ByteOrdering.hpp>
 #include <RCF/MemStream.hpp>
 
-#ifdef RCF_USE_PROTOBUF
+#if RCF_FEATURE_PROTOBUF==1
 #include <boost/type_traits/is_base_and_derived.hpp>
-#include <google/protobuf/message.h>
+#include <RCF/GoogleProtobufs.hpp>
 #endif
 
 // Serialization protocols
 
 #include <RCF/Config.hpp>
-#include <RCF/Protocol/Protocol.hpp>
+#include <RCF/SerializationProtocol_Base.hpp>
 
-#if defined(RCF_USE_SF_SERIALIZATION)
-#include <RCF/Protocol/SF.hpp>
+#if RCF_FEATURE_SF==1
+#include <RCF/SerializationProtocol_SF.hpp>
 #endif
 
-#if defined(RCF_USE_BOOST_SERIALIZATION) || defined(RCF_USE_BOOST_XML_SERIALIZATION)
-#include <RCF/Protocol/BoostSerialization.hpp>
+#if RCF_FEATURE_BOOST_SERIALIZATION==1
+#include <RCF/SerializationProtocol_BS.hpp>
 #endif
 
 namespace RCF {
@@ -60,7 +62,7 @@ namespace RCF {
         SerializationProtocolIn();
         ~SerializationProtocolIn();
 
-        std::istream& getIstream() { return mIs; }
+        MemIstream&     getIstream() { return mIs; }
 
         void            setSerializationProtocol(int protocol);
         int             getSerializationProtocol() const;
@@ -69,7 +71,8 @@ namespace RCF {
                             const ByteBuffer &data, 
                             int protocol, 
                             int runtimeVersion, 
-                            int archiveVersion);
+                            int archiveVersion,
+                            bool enableSfPointerTracking);
 
         void            clearByteBuffer();
         void            clear();
@@ -94,12 +97,7 @@ namespace RCF {
                 case 2: mInProtocol2 >> t; break;
                 case 3: mInProtocol3 >> t; break;
                 case 4: mInProtocol4 >> t; break;
-
-#ifdef RCF_USE_BOOST_XML_SERIALIZATION
-                case 5: mInProtocol5 >> boost::serialization::make_nvp("Dummy", t); break;
-#else
                 case 5: mInProtocol5 >> t; break;
-#endif
 
                 default: RCF_ASSERT(0)(mProtocol);
                 }
@@ -132,7 +130,7 @@ namespace RCF {
 
         int                                     mProtocol;
         ByteBuffer                              mByteBuffer;
-        mem_istream                             mIs;
+        MemIstream                              mIs;
 
         Protocol< boost::mpl::int_<1> >::In     mInProtocol1;
         Protocol< boost::mpl::int_<2> >::In     mInProtocol2;
@@ -149,7 +147,7 @@ namespace RCF {
     public:
         SerializationProtocolOut();
 
-        std::ostrstream& getOstrstream() { return *mOsPtr; }
+        MemOstream& getMemOstream() { return *mOsPtr; }
 
         void    setSerializationProtocol(int protocol);
         int     getSerializationProtocol() const;
@@ -159,7 +157,8 @@ namespace RCF {
                     std::size_t margin,
                     ByteBuffer byteBuffer,
                     int runtimeVersion,
-                    int archiveVersion);
+                    int archiveVersion,
+                    bool enableSfPointerTracking);
 
         template<typename T>
         void    write(const T &t)
@@ -172,12 +171,7 @@ namespace RCF {
                 case 2: mOutProtocol2 << t; break;
                 case 3: mOutProtocol3 << t; break;
                 case 4: mOutProtocol4 << t; break;
-
-#ifdef RCF_USE_BOOST_XML_SERIALIZATION
-                case 5: mOutProtocol5 << boost::serialization::make_nvp("Dummy", t); break;
-#else
                 case 5: mOutProtocol5 << t; break;
-#endif
 
                 default: RCF_ASSERT(0)(mProtocol);
                 }
@@ -210,7 +204,7 @@ namespace RCF {
         
         int                                                 mProtocol;
         std::size_t                                         mMargin;
-        boost::shared_ptr<std::ostrstream>                  mOsPtr;
+        boost::shared_ptr<MemOstream>                       mOsPtr;
         std::vector<std::pair<std::size_t, ByteBuffer> >    mByteBuffers;
 
         // these need to be below mOsPtr, for good order of destruction
@@ -266,7 +260,7 @@ namespace RCF {
         in.read(t);
     }
 
-#ifdef RCF_USE_PROTOBUF
+#if RCF_FEATURE_PROTOBUF==1
 
     // Some compile-time gymnastics to detect Protobuf classes, so we don't 
     // pass them off to SF or Boost.Serialization.
@@ -275,7 +269,7 @@ namespace RCF {
     void serializeProtobufOrNot(
         SerializationProtocolOut &out,
         const T &t,
-        boost::mpl::false_ *)
+        RCF::FalseType *)
     {
         serializeImpl(out, t, 0);
     }
@@ -284,7 +278,7 @@ namespace RCF {
     void deserializeProtobufOrNot(
         SerializationProtocolIn &in,
         T &t,
-        boost::mpl::false_ *)
+        RCF::FalseType *)
     {
         deserializeImpl(in, t, 0);
     }
@@ -293,11 +287,11 @@ namespace RCF {
     void serializeProtobufOrNot(
         SerializationProtocolOut &out,
         const T & t,
-        boost::mpl::true_ *)
+        RCF::TrueType *)
     {
-        std::ostrstream & os = out.getOstrstream();
-        os.write("%%%%", 4);
-        std::size_t beginPos = os.tellp();
+        MemOstream & os = out.getMemOstream();
+        os.write("XXXX", 4);
+        std::streamoff beginPos = os.tellp();
 
         if (!t.IsInitialized())
         {
@@ -312,49 +306,49 @@ namespace RCF {
         {
             os.write("%", 1);
         }
-        std::size_t endPos = os.tellp();
+        std::streamoff endPos = os.tellp();
 
         // Write the protobuf object straight into the underlying buffer.
         char * pch = os.str();
-        os.freeze(false);
-        bool ok = t.SerializeToArray(pch + beginPos, endPos - beginPos);
+        bool ok = t.SerializeToArray(pch + beginPos, static_cast<int>(endPos - beginPos));
         RCF_VERIFY(ok, Exception(_RcfError_ProtobufWrite(typeid(t).name())))(typeid(t));
 
         // Write the prepended length field.
-        boost::uint32_t len = endPos - beginPos;
+        boost::uint32_t len = static_cast<boost::uint32_t>(endPos - beginPos);
         char buffer[4] = {0};
         memcpy(buffer, &len, 4);
         RCF::machineToNetworkOrder(buffer, 4, 1);
-        os.seekp(beginPos-4);
+        
+        os.rdbuf()->pubseekoff(beginPos-4, std::ios::beg, std::ios::out);
         os.write(buffer, 4);
-        os.seekp(endPos);
+        os.rdbuf()->pubseekoff(endPos, std::ios::beg, std::ios::out);
     }
 
     template<typename T>
     void serializeProtobufOrNot(
         SerializationProtocolOut &out,
         const T * pt,
-        boost::mpl::true_ *)
+        RCF::TrueType *)
     {
-        serializeProtobufOrNot(out, *pt, (boost::mpl::true_ *) NULL);
+        serializeProtobufOrNot(out, *pt, (RCF::TrueType *) NULL);
     }
 
     template<typename T>
     void serializeProtobufOrNot(
         SerializationProtocolOut &out,
         T * pt,
-        boost::mpl::true_ *)
+        RCF::TrueType *)
     {
-        serializeProtobufOrNot(out, *pt, (boost::mpl::true_ *) NULL);
+        serializeProtobufOrNot(out, *pt, (RCF::TrueType *) NULL);
     }
 
     template<typename T>
     void deserializeProtobufOrNot(
         SerializationProtocolIn &in,
         T &t,
-        boost::mpl::true_ *)
+        RCF::TrueType *)
     {
-        std::istream & is = in.getIstream();
+        MemIstream & is = in.getIstream();
 
         char buffer[4];
         is.read(buffer, 4);
@@ -364,7 +358,7 @@ namespace RCF {
 
         ByteBuffer byteBuffer;
         in.extractSlice(byteBuffer, len);
-        bool ok = t.ParseFromArray(byteBuffer.getPtr(), byteBuffer.getLength());
+        bool ok = t.ParseFromArray(byteBuffer.getPtr(), static_cast<int>(byteBuffer.getLength()));
         RCF_VERIFY(ok, Exception(_RcfError_ProtobufRead(typeid(t).name())))(typeid(t));
     }
 
@@ -372,14 +366,14 @@ namespace RCF {
     void deserializeProtobufOrNot(
         SerializationProtocolIn &in,
         T * & pt,
-        boost::mpl::true_ *)
+        RCF::TrueType *)
     {
         if (pt == NULL)
         {
             pt = new T();
         }
 
-        deserializeProtobufOrNot(in, *pt, (boost::mpl::true_ *) NULL);
+        deserializeProtobufOrNot(in, *pt, (RCF::TrueType *) NULL);
     }
 
     template<typename T>

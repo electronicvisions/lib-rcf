@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -21,7 +24,7 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <RCF/AsyncFilter.hpp>
+#include <RCF/Filter.hpp>
 #include <RCF/Export.hpp>
 
 namespace RCF {
@@ -30,6 +33,7 @@ namespace RCF {
 
     class ZlibCompressionReadFilter;
     class ZlibCompressionWriteFilter;
+    class ZlibDll;
 
     class RCF_EXPORT ZlibCompressionFilterBase : 
         public Filter, 
@@ -39,7 +43,10 @@ namespace RCF {
         ZlibCompressionFilterBase(bool stateful, bool serverSide);
        
     private:
-        void reset();
+
+        ZlibDll & mZlibDll;
+
+        void resetState();
 
         void read(const ByteBuffer &byteBuffer, std::size_t bytesRequested);
         void write(const std::vector<ByteBuffer> &byteBuffers);
@@ -65,7 +72,6 @@ namespace RCF {
 
     class ServerSide {};
 
-    /// Filter implementing a stateless compression protocol, through the Zlib library.
     class RCF_EXPORT ZlibStatelessCompressionFilter : 
         public ZlibCompressionFilterBase
     {
@@ -78,20 +84,13 @@ namespace RCF {
         {}
 
     public:
-        /// Constructor.
-        /// \param bufferSize Internal buffer size, limiting how much data can be compressed/decompressed in a single operation.
         ZlibStatelessCompressionFilter() :
                 ZlibCompressionFilterBase(false, false)
         {}        
 
-        static const FilterDescription & sGetFilterDescription();
-        const FilterDescription & getFilterDescription() const;
-
-        // TODO: should be private
-        static const FilterDescription *spFilterDescription;
+        int getFilterId() const;
     };
 
-    /// Filter implementing a stateful compression protocol, through the Zlib library.
     class RCF_EXPORT ZlibStatefulCompressionFilter : 
         public ZlibCompressionFilterBase
     {
@@ -104,39 +103,31 @@ namespace RCF {
         {}
 
     public:
-        /// Constructor.
-        /// \param bufferSize Internal buffer size, limiting how much data can be compressed/decompressed in a single operation.
         ZlibStatefulCompressionFilter() :
                 ZlibCompressionFilterBase(true, false)
         {}
 
-        static const FilterDescription & sGetFilterDescription();
-        const FilterDescription & getFilterDescription() const;
-
-        // TODO: should be private
-        static const FilterDescription *spFilterDescription;
+        int getFilterId() const;
     };
    
-    /// Filter factory for ZlibStatelessCompressionFilter.
-    class RCF_EXPORT ZlibStatelessCompressionFilterFactory : 
+    class ZlibStatelessCompressionFilterFactory : 
         public FilterFactory
     {
     public:
         ZlibStatelessCompressionFilterFactory();
 
-        FilterPtr createFilter();
-        const FilterDescription & getFilterDescription();
+        FilterPtr createFilter(RcfServer & server);
+        int getFilterId();
     };
 
-    /// Filter factory for ZlibStatefulCompressionFilter.
-    class RCF_EXPORT ZlibStatefulCompressionFilterFactory : 
+    class ZlibStatefulCompressionFilterFactory : 
         public FilterFactory
     {
     public:
         ZlibStatefulCompressionFilterFactory();
 
-        FilterPtr createFilter();
-        const FilterDescription & getFilterDescription();
+        FilterPtr createFilter(RcfServer & server);
+        int getFilterId();
     };
 
     typedef ZlibStatefulCompressionFilter               ZlibCompressionFilter;

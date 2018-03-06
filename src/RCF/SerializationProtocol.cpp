@@ -2,23 +2,35 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
 #include <RCF/SerializationProtocol.hpp>
 
+#include <RCF/Config.hpp>
 #include <RCF/ObjectPool.hpp>
 #include <RCF/Version.hpp>
 
 namespace RCF {
+
+#if RCF_FEATURE_SF==1
+    const SerializationProtocol DefaultSerializationProtocol = Sp_SfBinary;
+#else
+    const SerializationProtocol DefaultSerializationProtocol = Sp_BsBinary;
+#endif
+
+    const MarshalingProtocol DefaultMarshalingProtocol = Mp_Rcf;
 
     bool isSerializationProtocolSupported(int protocol)
     {
@@ -85,7 +97,7 @@ namespace RCF {
 
     static const char chZero = 0;
 
-    void SerializationProtocolIn::reset(const ByteBuffer &data, int protocol, int runtimeVersion, int archiveVersion)
+    void SerializationProtocolIn::reset(const ByteBuffer &data, int protocol, int runtimeVersion, int archiveVersion, bool enableSfPointerTracking)
     {
         mRuntimeVersion = runtimeVersion;
         mArchiveVersion = archiveVersion;
@@ -107,6 +119,14 @@ namespace RCF {
 
         setSerializationProtocol(protocol);
         bindProtocol();
+
+#if RCF_FEATURE_SF==1
+        if (protocol == Sp_SfBinary)
+        {
+            mInProtocol1.getIStream().setEnablePointerTracking(enableSfPointerTracking);
+        }
+#endif
+
     }
 
     void SerializationProtocolIn::bindProtocol()
@@ -114,11 +134,11 @@ namespace RCF {
         std::size_t archiveLength = mByteBuffer.getLength();
         switch (mProtocol)
         {
-        case 1: mInProtocol1.bind(mIs, archiveLength, mRuntimeVersion, mArchiveVersion); break;
-        case 2: mInProtocol2.bind(mIs, archiveLength, mRuntimeVersion, mArchiveVersion); break;
-        case 3: mInProtocol3.bind(mIs, archiveLength, mRuntimeVersion, mArchiveVersion); break;
-        case 4: mInProtocol4.bind(mIs, archiveLength, mRuntimeVersion, mArchiveVersion); break;
-        case 5: mInProtocol5.bind(mIs, archiveLength, mRuntimeVersion, mArchiveVersion); break;
+        case 1: mInProtocol1.bind(mIs, archiveLength, mRuntimeVersion, mArchiveVersion, *this); break;
+        case 2: mInProtocol2.bind(mIs, archiveLength, mRuntimeVersion, mArchiveVersion, *this); break;
+        case 3: mInProtocol3.bind(mIs, archiveLength, mRuntimeVersion, mArchiveVersion, *this); break;
+        case 4: mInProtocol4.bind(mIs, archiveLength, mRuntimeVersion, mArchiveVersion, *this); break;
+        case 5: mInProtocol5.bind(mIs, archiveLength, mRuntimeVersion, mArchiveVersion, *this); break;
         default: RCF_ASSERT(0)(mProtocol);
         }
     }
@@ -146,31 +166,8 @@ namespace RCF {
         }
         else
         {
-            std::size_t pos = static_cast<std::size_t>(mIs.tellg());
-
-#ifdef _MSC_VER
-
-            std::size_t newPos = static_cast<std::size_t>(mIs.rdbuf()->pubseekoff(
-                static_cast<std::basic_streambuf<char>::off_type>(len),
-                std::ios::cur,
-                std::ios::in));
-
-#else
-
-            std::size_t newPos = mIs.rdbuf()->pubseekoff(
-                len,
-                std::ios::cur,
-                std::ios::in);
-
-#endif
-
-            RCF_VERIFY(
-                newPos != std::size_t(-1),
-                RCF::SerializationException(
-                _RcfError_ExtractSlice(pos, len, mByteBuffer.getLength()),
-                "extractSlice()"))
-                (pos)(len)(mByteBuffer.getLength() );
-
+            std::size_t pos = static_cast<std::size_t>(mIs.getReadPos());
+            mIs.moveReadPos(pos+len);
             byteBuffer = ByteBuffer(mByteBuffer, pos, len);
         }
     }
@@ -187,7 +184,7 @@ namespace RCF {
 
     std::size_t SerializationProtocolIn::getRemainingArchiveLength()
     {
-        std::size_t pos = static_cast<std::size_t>(mIs.tellg());
+        std::size_t pos = static_cast<std::size_t>(mIs.getReadPos());
         std::size_t len = mByteBuffer.getLength();
         RCF_ASSERT_LTEQ(pos , len);
         return len - pos;
@@ -205,7 +202,7 @@ namespace RCF {
 
     SerializationProtocolOut::SerializationProtocolOut() :
         mProtocol(DefaultSerializationProtocol),
-        mMargin(RCF_DEFAULT_INIT),
+        mMargin(),
         mRuntimeVersion( RCF::getDefaultRuntimeVersion() ),
         mArchiveVersion( RCF::getDefaultArchiveVersion() )
     {}
@@ -220,16 +217,13 @@ namespace RCF {
         return mProtocol;
     }
 
-#if defined(_MSC_VER) && _MSC_VER <= 1200
-#define for if (0) {} else for
-#endif
-
     void SerializationProtocolOut::reset(
         int protocol,
         std::size_t margin,
         ByteBuffer byteBuffer,
         int runtimeVersion,
-        int archiveVersion)
+        int archiveVersion,
+        bool enableSfPointerTracking)
     {
 
         mRuntimeVersion = runtimeVersion;
@@ -238,13 +232,12 @@ namespace RCF {
         unbindProtocol();
         if (!mOsPtr)
         {
-            getObjectPool().get(mOsPtr);
+            mOsPtr = getObjectPool().getMemOstreamPtr();
         }
         else
         {
             mOsPtr->clear(); // freezing may have set error state
-            mOsPtr->rdbuf()->freeze(false);
-            mOsPtr->rdbuf()->pubseekoff(0, std::ios::beg, std::ios::out);
+            mOsPtr->rewind();
         }
 
         // set up margin
@@ -267,21 +260,25 @@ namespace RCF {
             setSerializationProtocol(protocol);
         }
         bindProtocol();
-    }
 
-#if defined(_MSC_VER) && _MSC_VER <= 1200
-#undef for
+#if RCF_FEATURE_SF==1
+        if (protocol == Sp_SfBinary)
+        {
+            mOutProtocol1.getOStream().setEnablePointerTracking(enableSfPointerTracking);
+        }
 #endif
+
+    }
 
     void SerializationProtocolOut::bindProtocol()
     {
         switch (mProtocol)
         {
-        case 1: mOutProtocol1.bind(*mOsPtr, mRuntimeVersion, mArchiveVersion); break;
-        case 2: mOutProtocol2.bind(*mOsPtr, mRuntimeVersion, mArchiveVersion); break;
-        case 3: mOutProtocol3.bind(*mOsPtr, mRuntimeVersion, mArchiveVersion); break;
-        case 4: mOutProtocol4.bind(*mOsPtr, mRuntimeVersion, mArchiveVersion); break;
-        case 5: mOutProtocol5.bind(*mOsPtr, mRuntimeVersion, mArchiveVersion); break;
+        case 1: mOutProtocol1.bind(*mOsPtr, mRuntimeVersion, mArchiveVersion, *this); break;
+        case 2: mOutProtocol2.bind(*mOsPtr, mRuntimeVersion, mArchiveVersion, *this); break;
+        case 3: mOutProtocol3.bind(*mOsPtr, mRuntimeVersion, mArchiveVersion, *this); break;
+        case 4: mOutProtocol4.bind(*mOsPtr, mRuntimeVersion, mArchiveVersion, *this); break;
+        case 5: mOutProtocol5.bind(*mOsPtr, mRuntimeVersion, mArchiveVersion, *this); break;
         default: RCF_ASSERT(0)(mProtocol);
         }
     }
@@ -301,7 +298,7 @@ namespace RCF {
 
     void SerializationProtocolOut::insert(const ByteBuffer &byteBuffer)
     {
-        std::size_t streamPos = static_cast<std::size_t>(mOsPtr->pcount());
+        std::size_t streamPos = static_cast<std::size_t>(mOsPtr->tellp());
         mByteBuffers.push_back( std::make_pair(streamPos, byteBuffer));
     }
 
@@ -314,11 +311,10 @@ namespace RCF {
         std::vector<ByteBuffer> &byteBuffers)
     {
         byteBuffers.resize(0);
-        mOsPtr->freeze();
         char *pch = mOsPtr->str();
         std::size_t offset = 0;
         std::size_t offsetPrev = 0;
-        std::size_t len = static_cast<std::size_t>(mOsPtr->pcount());
+        std::size_t len = static_cast<std::size_t>(mOsPtr->tellp());
         for (std::size_t i=0; i<mByteBuffers.size(); ++i)
         {
             offset = mByteBuffers[i].first;
@@ -376,7 +372,6 @@ namespace RCF {
             }
 
         }
-        mOsPtr->freeze(false);
         mByteBuffers.resize(0);
     }
 

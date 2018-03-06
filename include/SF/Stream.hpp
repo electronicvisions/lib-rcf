@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -16,10 +19,8 @@
 #ifndef INCLUDE_SF_STREAM_HPP
 #define INCLUDE_SF_STREAM_HPP
 
-#include <iosfwd>
 #include <map>
 #include <string>
-#include <strstream>
 
 #include <boost/noncopyable.hpp>
 
@@ -29,6 +30,17 @@
 #include <SF/Encoding.hpp>
 #include <SF/I_Stream.hpp>
 
+#include <iosfwd>
+
+namespace RCF {
+
+    class SerializationProtocolIn;
+    class SerializationProtocolOut;
+
+    class MemIstream;
+    class MemOstream;
+
+}
 namespace SF {
 
     //**************************************************
@@ -71,53 +83,36 @@ namespace SF {
     {
     public:
         ContextRead();
-        virtual ~ContextRead();
-        virtual void add(SF::UInt32 nid, const ObjectId &id);
-        virtual void add(void *ptr, const std::type_info &objType, void *pObj);
-        virtual bool query(SF::UInt32 nid, ObjectId &id);
-        virtual bool query(void *ptr, const std::type_info &objType, void *&pObj);
-        virtual void clear();
+        ~ContextRead();
+        void add(SF::UInt32 nid, const ObjectId &id);
+        void add(void *ptr, const std::type_info &objType, void *pObj);
+        bool query(SF::UInt32 nid, ObjectId &id);
+        bool query(void *ptr, const std::type_info &objType, void *&pObj);
+        void clear();
+
+        void setEnabled(bool enabled);
+        bool getEnabled() const;
+
     private:
-        bool bEnabled_;
-        std::auto_ptr<std::map<UInt32, ObjectId> > nid_id_ptr_;
-        std::auto_ptr<std::map<std::string, std::map< void *, void * > > > type_ptr_obj_ptr_;
+        bool mEnabled;
+        std::auto_ptr<std::map<UInt32, ObjectId> >                          mNidToIdMap;
+        std::auto_ptr<std::map<std::string, std::map< void *, void * > > >  mTypeToObjMap;
     };
 
     class RCF_EXPORT ContextWrite
     {
     public:
         ContextWrite();
-        virtual ~ContextWrite();
-        virtual void setEnabled(bool enabled);
-        virtual bool getEnabled();
-        virtual void add(const ObjectId &id, UInt32 &nid);
-        virtual bool query(const ObjectId &id, UInt32 &nid);
-        virtual void clear();
+        ~ContextWrite();
+        void setEnabled(bool enabled);
+        bool getEnabled() const;
+        void add(const ObjectId &id, UInt32 &nid);
+        bool query(const ObjectId &id, UInt32 &nid);
+        void clear();
     private:
-        bool bEnabled_;
-        UInt32 currentId_;
-        std::auto_ptr<std::map<ObjectId, UInt32> > id_nid_ptr_;
-    };
-
-    class RCF_EXPORT WithContextRead
-    {
-    public:
-        virtual ~WithContextRead();
-        virtual ContextRead &getContext();
-    private:
-        ContextRead context;
-    };
-
-    class RCF_EXPORT WithContextWrite
-    {
-    public:
-        virtual ~WithContextWrite();
-        virtual ContextWrite &getContext();
-        void enableContext() { getContext().setEnabled(true); }
-        void disableContext() { getContext().setEnabled(false); }
-        void clearContext() { getContext().clear(); }
-    private:
-        ContextWrite context;
+        bool                                            mEnabled;
+        UInt32                                          mCurrentId;
+        std::auto_ptr<std::map<ObjectId, UInt32> >      mIdToNidMap;
     };
 
     //**************************************************
@@ -127,91 +122,13 @@ namespace SF {
     {
     public:
         LocalStorage();
-        virtual ~LocalStorage();
+        ~LocalStorage();
         void setNode(Node *);
         Node *getNode();
 
     private:
-        Node *pNode_;
+        Node * mpNode;
     };
-
-    class RCF_EXPORT WithLocalStorage
-    {
-    public:
-        virtual ~WithLocalStorage();
-        virtual LocalStorage &getLocalStorage();
-    private:
-        LocalStorage localStorage_;
-    };
-
-    //****************************************************
-
-    // For dependency reasons these functions should be defined separately, but
-    // vc6 can't deal with that, hence the ifdef hack.
-
-#if defined(_MSC_VER) && _MSC_VER == 1200
-
-    class WithSemanticsRead
-    {
-    public:
-        virtual ~WithSemanticsRead() {}
-
-        template<typename T>
-        WithSemanticsRead &operator>>(T &t)
-        {
-            Archive ar(Archive::READ, static_cast<IStream *>(this) );
-            ar & t;
-            return *this;
-        }
-
-        template<typename T>
-        WithSemanticsRead &operator>>(const T &t)
-        {
-            Archive ar(Archive::READ, static_cast<IStream *>(this) );
-            ar & t;
-            return *this;
-        }
-
-    };
-
-    class WithSemanticsWrite
-    {
-    public:
-        virtual ~WithSemanticsWrite() {}
-
-        template<typename T>
-        WithSemanticsWrite &operator<<(const T &t)
-        {
-            Archive ar(Archive::WRITE, static_cast<OStream *>(this) );
-            ar & t;
-            return *this;
-        }
-    };
-
-#else
-
-    class WithSemanticsRead
-    {
-    public:
-        virtual ~WithSemanticsRead() {}
-
-        template<typename T>
-        WithSemanticsRead &operator>>(T &t);
-
-        template<typename T>
-        WithSemanticsRead &operator>>(const T &t);
-    };
-
-    class WithSemanticsWrite
-    {
-    public:
-        virtual ~WithSemanticsWrite() {}
-
-        template<typename T>
-        WithSemanticsWrite &operator<<(const T &t);
-    };
-
-#endif
 
     //****************************************************
     // Base stream classes
@@ -219,20 +136,25 @@ namespace SF {
     class Node;
     class SerializerBase;
 
-    class RCF_EXPORT IStream :
-        public WithSemanticsRead,
-        public WithContextRead,
-        public WithLocalStorage,
-        boost::noncopyable
+    class RCF_EXPORT IStream : boost::noncopyable
     {
     public:
+
         IStream();
 
         IStream(
-            std::istream &  is, 
+            RCF::MemIstream & is,
             std::size_t     archiveSize = 0, 
             int             runtimeVersion = 0, 
             int             archiveVersion = 0);
+
+        IStream(
+            std::istream &  is,
+            std::size_t     archiveSize = 0, 
+            int             runtimeVersion = 0, 
+            int             archiveVersion = 0);
+
+        virtual ~IStream();
 
         void        setIs(
                         std::istream &  is, 
@@ -264,31 +186,60 @@ namespace SF {
 
         void        ignoreVersionStamp(bool ignore = true);
 
+        void        setRemoteCallContext(
+                        RCF::SerializationProtocolIn * pSerializationProtocolIn);
+
+        RCF::SerializationProtocolIn *
+                    getRemoteCallContext();
+
+        ContextRead &           getTrackingContext();
+        const ContextRead &     getTrackingContext() const;
+        LocalStorage &          getLocalStorage();
+
+        void            setEnablePointerTracking(bool enable);
+        bool            getEnablePointerTracking() const;
+
+        // Streaming operators.
+
+        template<typename T>
+        IStream & operator>>(T &t);
+
+        template<typename T>
+        IStream & operator>>(const T &t);
+
     private:
+
+        ContextRead         mContextRead;
+        LocalStorage        mLocalStorage;
 
         std::istream *      mpIs;
         std::size_t         mArchiveSize;
         int                 mRuntimeVersion;
         int                 mArchiveVersion;
         bool                mIgnoreVersionStamp;
+
+        RCF::SerializationProtocolIn * mpSerializationProtocolIn;
     };
 
-    class RCF_EXPORT OStream :
-        public WithSemanticsWrite,
-        public WithContextWrite,
-        public WithLocalStorage,
-        boost::noncopyable
+    class RCF_EXPORT OStream : boost::noncopyable
     {
     public:
         OStream();
 
         OStream(
-            std::ostream &  os, 
-            int             runtimeVersion = 0, 
-            int             archiveVersion = 0);
+            RCF::MemOstream &   os,
+            int                 runtimeVersion = 0, 
+            int                 archiveVersion = 0);
+
+        OStream(
+            std::ostream &      os,
+            int                 runtimeVersion = 0, 
+            int                 archiveVersion = 0);
+
+        virtual ~OStream();
 
         void        setOs(
-                        std::ostream &  os, 
+                        std::ostream &  os,
                         int             runtimeVersion = 0, 
                         int             archiveVersion = 0);
 
@@ -312,17 +263,41 @@ namespace SF {
         void        setArchiveVersion(int archiveVersion);
         void        setRuntimeVersion(int runtimeVersion);
 
-        void        suppressVersionStamp(bool suppress = true);
+        void        suppressArchiveMetadata(bool suppress = true);
+
+        void        setRemoteCallContext(
+                        RCF::SerializationProtocolOut * pSerializationProtocolOut);
+
+        RCF::SerializationProtocolOut *
+                    getRemoteCallContext();
+
+        ContextWrite &          getTrackingContext();
+        const ContextWrite &    getTrackingContext() const;
+
+        LocalStorage &  getLocalStorage();
+
+        void            setEnablePointerTracking(bool enable);
+        bool            getEnablePointerTracking() const;
+
+        // Streaming operator.
+
+        template<typename T>
+        OStream & operator<<(const T &t);
 
     private:
 
-        void        writeVersionStamp();
+        void            writeArchiveMetadata();
+
+        ContextWrite    mContextWrite;
+        LocalStorage    mLocalStorage;
 
         std::ostream *  mpOs;
         int             mRuntimeVersion;
         int             mArchiveVersion;
-        bool            mSuppressVersionStamp;
-        bool            mVersionStampWritten;
+        bool            mSuppressArchiveMetadata;
+        bool            mArchiveMetadataWritten;
+
+        RCF::SerializationProtocolOut * mpSerializationProtocolOut;
     };
 
 } // namespace SF
@@ -330,36 +305,32 @@ namespace SF {
 #include <SF/Archive.hpp>
 #include <SF/Serializer.hpp>
 
-#if !defined(_MSC_VER) || _MSC_VER > 1200
-
 namespace SF {
 
     template<typename T>
-    WithSemanticsRead &WithSemanticsRead::operator>>(T &t)
+    IStream & IStream::operator>>(T &t)
     {
-        Archive ar(Archive::READ, static_cast<IStream *>(this) );
+        Archive ar(Archive::READ, this);
         ar & t;
         return *this;
     }
 
     template<typename T>
-    WithSemanticsRead &WithSemanticsRead::operator>>(const T &t)
+    IStream & IStream::operator>>(const T &t)
     {
-        Archive ar(Archive::READ, static_cast<IStream *>(this) );
+        Archive ar(Archive::READ, this);
         ar & t;
         return *this;
     }
 
     template<typename T>
-    WithSemanticsWrite &WithSemanticsWrite::operator<<(const T &t)
+    OStream & OStream::operator<<(const T &t)
     {
-        Archive ar(Archive::WRITE, static_cast<OStream *>(this) );
+        Archive ar(Archive::WRITE, this);
         ar & t;
         return *this;
     }
 
 } // namespace SF
-
-#endif
 
 #endif // !INCLUDE_SF_STREAM_HPP

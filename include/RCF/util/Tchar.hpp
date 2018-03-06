@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,7 +22,11 @@
 #include <string>
 #include <vector>
 
-namespace util {
+#if (defined(UNICODE) || defined(_UNICODE)) && !defined(BOOST_WINDOWS)
+#error UNICODE and _UNICODE should only be defined for Windows builds.
+#endif
+
+namespace RCF {
 
 #ifndef BOOST_NO_STD_WSTRING
 
@@ -66,25 +73,14 @@ namespace util {
 
 #endif
 
-#if defined(BOOST_NO_STD_WSTRING)
 
-    #ifdef UNICODE
-    #error RCF does not currently support Unicode builds without wstring support
-    #endif
-
-    #define RCF_T(x)                            x
-    typedef std::string                         tstring;
-    inline tstring toTstring(std::string s)     { return s; }
-    inline std::string toString(tstring s)      { return s; }
-
-
-#elif defined(UNICODE)
+#if !defined(BOOST_WINDOWS) || defined(UNICODE)
 
     #define RCF_T(x)                            L ## x                        
     typedef std::wstring                        tstring;
     inline tstring toTstring(std::string s)     { return stringToWstring(s); }
     inline tstring toTstring(std::wstring s)    { return s; }
-    inline std::string toString(tstring s)      { return wstringToString(s); }
+    inline std::string toAstring(tstring s)     { return wstringToString(s); }
     inline std::wstring toWstring(tstring s)    { return s; }
 
 #else
@@ -93,11 +89,11 @@ namespace util {
     typedef std::string                         tstring;
     inline tstring toTstring(std::string s)     { return s; }
     inline tstring toTstring(std::wstring ws)   { return wstringToString(ws); }
-    inline std::string toString(tstring s)      { return s; }
+    inline std::string toAstring(tstring s)      { return s; }
     inline std::wstring toWstring(tstring s)    { return stringToWstring(s); }
 
 #endif
 
-} // namespace util
+} // namespace RCF
 
 #endif // ! INCLUDE_UTIL_TCHAR_HPP

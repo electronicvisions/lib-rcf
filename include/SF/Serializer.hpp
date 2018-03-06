@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -36,17 +39,6 @@ namespace boost {
         const Base & base_object(const Derived & d);
     }
 }
-
-#if defined(_MSC_VER) && _MSC_VER < 1310
-
-#include <boost/type_traits.hpp>
-RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION(long double)
-RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION(__int64)
-RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION(unsigned __int64)
-RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION(std::string)
-RCF_BROKEN_COMPILER_TYPE_TRAITS_SPECIALIZATION(std::wstring)
-
-#endif
 
 namespace SF {
 
@@ -234,9 +226,26 @@ namespace SF {
         typedef typename GetIndirection<U>::Level Level;
         const int levelOfIndirection = Level::value;
         RCF_ASSERT( levelOfIndirection == 1 || levelOfIndirection == 2);
+
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 6326) // warning C6326: Potential comparison of a constant with another constant.
+#endif
+
         ar.setFlag( SF::Archive::POINTER, levelOfIndirection == 2 );
-        invokeSerializer(u,ar);
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+
+        invokeSerializer(u, ar);
     }
+
+    // Forward declaration.
+    template<typename T> 
+    Archive & operator&(
+        Archive &                           archive, 
+        const T &                           t);
 
     template<typename T>
     inline void serializeEnum(SF::Archive &ar, T &t)
@@ -250,13 +259,13 @@ namespace SF {
         if (ar.isRead())
         {
             boost::int32_t n = 0;
-            ar & static_cast<SF::Archive::Flag>(n);
+            ar & n;
             t = T(n);
         }
         else /* if (ar.isWrite())) */
         {
             boost::int32_t n = t;
-            ar & static_cast<SF::Archive::Flag>(n);
+            ar & n;
         }
     }
 
@@ -289,7 +298,7 @@ namespace SF {
     inline void serializeFundamentalOrNot(
         Archive &                           archive, 
         T &                                 t, 
-        boost::mpl::true_ *)
+        RCF::TrueType *)
     {
         serializeFundamental(archive, t);
     }
@@ -298,7 +307,7 @@ namespace SF {
     inline void serializeFundamentalOrNot(
         Archive &                           archive, 
         T &                                 t, 
-        boost::mpl::false_ *)
+        RCF::FalseType *)
     {
         serializeInternal(archive, t);
     }
@@ -307,7 +316,7 @@ namespace SF {
     inline void serializeEnumOrNot(
         Archive &                           archive, 
         T &                                 t, 
-        boost::mpl::true_ *)
+        RCF::TrueType *)
     {
         serializeEnum(archive, t);
     }
@@ -316,7 +325,7 @@ namespace SF {
     inline void serializeEnumOrNot(
         Archive &                           archive, 
         T &                                 t, 
-        boost::mpl::false_ *)
+        RCF::FalseType *)
     {
         typedef typename RCF::IsFundamental<T>::type type;
         serializeFundamentalOrNot(archive, t, (type *) NULL);
@@ -360,6 +369,28 @@ namespace SF {
         return archive;
     }
 
+    template<typename T, typename U>
+    inline void serializeAs(Archive & ar, T &t)
+    {
+        if (ar.isWrite())
+        {
+            U u = static_cast<U>(t);
+            ar & u;
+        }
+        else
+        {
+            U u;
+            ar & u;
+            t = static_cast<T>(u);
+        }
+    }
+
+#define SF_SERIALIZE_ENUM_CLASS(EnumType, BaseType)             \
+    void serialize(SF::Archive & ar, EnumType & e)              \
+    {                                                           \
+        SF::serializeAs<EnumType, BaseType>(ar, e);             \
+    }
+
 }
 
 #include <SF/Registry.hpp>
@@ -371,7 +402,7 @@ namespace SF {
     template<typename T>
     Serializer<T>::Serializer(T **ppt) :
         ppt(ppt),
-        pf(RCF_DEFAULT_INIT),
+        pf(),
         id()
     {}
 
@@ -381,11 +412,20 @@ namespace SF {
         return SF::Registry::getSingleton().getTypeName( (T *) 0);
     }
 
+#ifdef _MSC_VER
+#pragma warning( push )
+#pragma warning( disable: 4702 )
+#endif
+
     template<typename T>
     void Serializer<T>::newObject(Archive &ar)
     {
         *ppt = sfNew((T *) NULL, (T **) NULL, ar);
     }
+
+#ifdef _MSC_VER
+#pragma warning( pop )
+#endif
 
     template<typename T>
     bool Serializer<T>::isDerived()
@@ -435,28 +475,28 @@ namespace SF {
     template<typename T>
     void Serializer<T>::addToInputContext(SF::IStream *stream, const UInt32 &nid)
     {
-        ContextRead &ctx = stream->getContext();
+        ContextRead &ctx = stream->getTrackingContext();
         ctx.add(nid, IdT( (void *) (*ppt), &typeid(T)));
     }
 
     template<typename T>
     bool Serializer<T>::queryInputContext(SF::IStream *stream, const UInt32 &nid)
     {
-        ContextRead &ctx = stream->getContext();
+        ContextRead &ctx = stream->getTrackingContext();
         return ctx.query(nid, id);
     }
 
     template<typename T>
     void Serializer<T>::addToOutputContext(SF::OStream *stream, UInt32 &nid)
     {
-        ContextWrite &ctx = stream->getContext();
+        ContextWrite &ctx = stream->getTrackingContext();
         ctx.add( IdT( (void *) *ppt, &typeid(T)), nid);
     }
 
     template<typename T>
     bool Serializer<T>::queryOutputContext(SF::OStream *stream, UInt32 &nid)
     {
-        ContextWrite &ctx = stream->getContext();
+        ContextWrite &ctx = stream->getTrackingContext();
         return ctx.query( IdT( (void *) *ppt, &typeid(T)), nid);
     }
 

@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -16,8 +19,11 @@
 #include <RCF/Schannel.hpp>
 
 #include <RCF/Exception.hpp>
+#include <RCF/RcfServer.hpp>
 #include <RCF/SspiFilter.hpp>
+#include <RCF/ThreadLocalData.hpp>
 #include <RCF/Tools.hpp>
+#include <RCF/Win32Certificate.hpp>
 
 #include <wincrypt.h>
 #include <schnlsp.h>
@@ -27,12 +33,6 @@
 #define CERT_STORE_ADD_USE_EXISTING                         2
 #endif
 #endif // __MINGW32__
-
-#if defined(_MSC_VER) && _MSC_VER < 1310
-#ifndef SEC_E_UNTRUSTED_ROOT
-#define SEC_E_UNTRUSTED_ROOT             _HRESULT_TYPEDEF_(0x80090325L)
-#endif
-#endif
 
 namespace RCF {
 
@@ -101,10 +101,9 @@ namespace RCF {
         RCF_VERIFY(
             status == SEC_E_OK,
             FilterException(
-                _RcfError_SspiEncrypt(),
+                _RcfError_SspiEncrypt("EncryptMessage()"),
                 status,
-                RcfSubsystem_Os,
-                "EncryptMessage() failed"))(status);
+                RcfSubsystem_Os))(status);
 
         RCF_ASSERT_EQ(rgsb[0].cbBuffer , cbHeader);
         RCF_ASSERT_EQ(rgsb[1].cbBuffer , cbMsg);
@@ -182,10 +181,9 @@ namespace RCF {
         RCF_VERIFY(
             status == SEC_E_OK,
             FilterException(
-                _RcfError_SspiDecrypt(),
+                _RcfError_SspiDecrypt("DecryptMessage()"),
                 status,
-                RcfSubsystem_Os,
-                "DecryptMessage() failed"))(status);
+                RcfSubsystem_Os))(status);
 
         RCF_ASSERT_EQ(rgsb[0].BufferType , SECBUFFER_STREAM_HEADER);
         RCF_ASSERT_EQ(rgsb[1].BufferType , SECBUFFER_DATA);
@@ -238,13 +236,20 @@ namespace RCF {
         ibd.ulVersion           = SECBUFFER_VERSION;
         ibd.pBuffers            = ib;
 
+        DWORD contextRequirements = mContextRequirements;
+        if (mCertValidationCallback || mAutoCertValidation.size() > 0)
+        {
+            // Need this to get the client to send the server a certificate.
+            contextRequirements |= ASC_REQ_MUTUAL_AUTH;
+        }
+
         DWORD   CtxtAttr        = 0;
         TimeStamp Expiration    = {0};
         SECURITY_STATUS status  = getSft()->AcceptSecurityContext(
             &mCredentials,
             mHaveContext ? &mContext : NULL,
             &ibd,
-            mContextRequirements,
+            contextRequirements,
             SECURITY_NATIVE_DREP,
             &mContext,
             &obd,
@@ -303,10 +308,30 @@ namespace RCF {
             resizeWriteBuffer(cbPacket);
             memcpy(mWriteBuffer, ob.pvBuffer, ob.cbBuffer);
             getSft()->FreeContextBuffer(ob.pvBuffer);
+
+            // Extract the peer certificate.
+            PCCERT_CONTEXT pRemoteCertContext = NULL;
+
+            status = getSft()->QueryContextAttributes(
+                &mContext,
+                SECPKG_ATTR_REMOTE_CERT_CONTEXT,
+                (PVOID)&pRemoteCertContext);
+
+            if (pRemoteCertContext)
+            {
+                mRemoteCertPtr.reset( new Win32Certificate(pRemoteCertContext) );
+            }
+
+            // If we have a custom validation callback, call it.
+            if (mCertValidationCallback)
+            {
+                mCertValidationCallback(mRemoteCertPtr.get());
+            }
         }
         else
         {
             // Authorization failed. Do nothing here, the connection will automatically close.
+            RCF_LOG_2() << "Schannel SSL handshake failed. Error: " + RCF::getOsErrorString(status);
         }
 
         return true;
@@ -347,9 +372,16 @@ namespace RCF {
         ibd.ulVersion           = SECBUFFER_VERSION;
         ibd.pBuffers            = ib;
 
-        const TCHAR *target     = mTarget.empty() ? RCF_T("") : mTarget.c_str();
+        tstring strTarget       = mAutoCertValidation;
+        const TCHAR *target     = strTarget.empty() ? RCF_T("") : strTarget.c_str();
         DWORD CtxtAttr          = 0;
         TimeStamp Expiration    = {0};
+
+        DWORD contextRequirements = mContextRequirements;
+        if (mLocalCertPtr && mLocalCertPtr->getWin32Context())
+        {
+            contextRequirements |= ISC_REQ_USE_SUPPLIED_CREDS;
+        }
 
         SECURITY_STATUS status  = getSft()->InitializeSecurityContext(
             &mCredentials,
@@ -416,7 +448,7 @@ namespace RCF {
         {
             // Handshake OK.
 
-            // Extract the server certificate.
+            // Extract the peer certificate.
             PCCERT_CONTEXT pRemoteCertContext = NULL;
 
             status = getSft()->QueryContextAttributes(
@@ -424,15 +456,17 @@ namespace RCF {
                 SECPKG_ATTR_REMOTE_CERT_CONTEXT,
                 (PVOID)&pRemoteCertContext);
 
-            mRemoteCert.reset( new CertContext(pRemoteCertContext) );
+            mRemoteCertPtr.reset( new Win32Certificate(pRemoteCertContext) );
 
             // If we have a custom validation callback, call it.
             if (mCertValidationCallback)
             {
-                SchannelClientFilter & rThis = 
-                    static_cast<SchannelClientFilter &>(*this);
-
-                mCertValidationCallback(rThis);
+                bool ok = mCertValidationCallback(mRemoteCertPtr.get());
+                if (!ok)
+                {
+                    Exception e( _RcfError_SslCertVerificationCustom() );
+                    RCF_THROW(e);
+                }
             }
 
             // And now back to business.
@@ -444,6 +478,7 @@ namespace RCF {
         {
             Exception e(_RcfError_SspiAuthFailClient(), status);
             RCF_THROW(e);
+            return false;
         }
     }
 
@@ -452,32 +487,41 @@ namespace RCF {
         SCHANNEL_CRED schannelCred          = {0};       
         schannelCred.dwVersion              = SCHANNEL_CRED_VERSION;
         PCCERT_CONTEXT pCertContext         = NULL;
-        if(mLocalCert)
+        if(mLocalCertPtr)
         {
-            pCertContext                    = mLocalCert->getContext();
+            pCertContext                    = mLocalCertPtr->getWin32Context();
             schannelCred.cCreds             = 1;
             schannelCred.paCred             = &pCertContext;
         }
 
         schannelCred.grbitEnabledProtocols  = mEnabledProtocols;
 
-#if !defined(_MSC_VER) || _MSC_VER > 1200
-
         if (mServer)
         {
-            schannelCred.dwFlags            = 0;
-        }
-        else if (mCertValidationCallback)
-        {
-            schannelCred.dwFlags            = SCH_CRED_NO_DEFAULT_CREDS | SCH_CRED_MANUAL_CRED_VALIDATION;
+            if (mCertValidationCallback)
+            {
+                // Server side manual validation.
+                schannelCred.dwFlags            = SCH_CRED_MANUAL_CRED_VALIDATION;
+            }
+            else
+            {
+                // Server side auto validation.
+                schannelCred.dwFlags            = 0;
+            }
         }
         else
         {
-            schannelCred.dwFlags            = SCH_CRED_NO_DEFAULT_CREDS | SCH_CRED_AUTO_CRED_VALIDATION;
-
+            if (mCertValidationCallback)
+            {
+                // Client side manual validation.
+                schannelCred.dwFlags            = SCH_CRED_NO_DEFAULT_CREDS | SCH_CRED_MANUAL_CRED_VALIDATION;
+            }
+            else
+            {
+                // Client side auto validation.
+                schannelCred.dwFlags            = SCH_CRED_NO_DEFAULT_CREDS | SCH_CRED_AUTO_CRED_VALIDATION;
+            }
         }
-
-#endif
 
         SECURITY_STATUS status = getSft()->AcquireCredentialsHandle(
             NULL,
@@ -493,8 +537,9 @@ namespace RCF {
         if (status != SEC_E_OK)
         {
             FilterException e(
-                _RcfError_Sspi(), status, RcfSubsystem_Os,
-                "AcquireCredentialsHandle() failed");
+                _RcfError_Sspi("AcquireCredentialsHandle()"), 
+                status, 
+                RcfSubsystem_Os);
 
             RCF_THROW(e)(mPkgInfo.Name)(status);
         }
@@ -503,39 +548,51 @@ namespace RCF {
     }
 
     SchannelServerFilter::SchannelServerFilter(
-        CertContextPtr localCert,
+        RcfServer & server,
         DWORD enabledProtocols,
         ULONG contextRequirements) :
             SspiServerFilter(UNISP_NAME, RCF_T(""), BoolSchannel)
     {
-        mLocalCert = localCert;
+        CertificatePtr certificatePtr = server.getCertificate();
+        Win32CertificatePtr certificateBasePtr = boost::dynamic_pointer_cast<Win32Certificate>(certificatePtr);
+        if (certificateBasePtr)
+        {
+            mLocalCertPtr = certificateBasePtr;
+        }
+
+        mCertValidationCallback = server.getCertificateValidationCallback();
+        mAutoCertValidation = server.getEnableSchannelCertificateValidation();
+
         mContextRequirements = contextRequirements;
         mEnabledProtocols = enabledProtocols;
     }
 
     SchannelFilterFactory::SchannelFilterFactory(
-        CertContextPtr cert, 
         DWORD enabledProtocols,
         ULONG contextRequirements) :
-            mLocalCert(cert),
             mContextRequirements(contextRequirements),
-            mEnabledProtocols(enabledProtocols)
+            mEnabledProtocols(enabledProtocols)/*,
+            mEnableClientCertificateValidation(false)*/
     {
     }
 
-    FilterPtr SchannelFilterFactory::createFilter()
+    FilterPtr SchannelFilterFactory::createFilter(RcfServer & server)
     {
-        return FilterPtr( new SchannelServerFilter(
-            mLocalCert, 
-            mEnabledProtocols,
-            mContextRequirements));
+        boost::shared_ptr<SchannelServerFilter> filterPtr(
+            new SchannelServerFilter(
+                server,
+                mEnabledProtocols,
+                mContextRequirements));
+
+        return filterPtr;
     }
 
     SchannelClientFilter::SchannelClientFilter(
+        ClientStub *            pClientStub,
         DWORD                   enabledProtocols,
         ULONG                   contextRequirements) :
             SspiClientFilter(
-                RCF_T(""),
+                pClientStub,
                 Encryption, 
                 contextRequirements, 
                 UNISP_NAME, 
@@ -543,229 +600,21 @@ namespace RCF {
                 BoolSchannel)
     {
         mEnabledProtocols = enabledProtocols;
-    }
 
-    void SchannelClientFilter::setManualCertValidation(
-        CertValidationCallback certValidationCallback)
-    {
-        mCertValidationCallback = certValidationCallback;
-    }
-
-    void SchannelClientFilter::setAutoCertValidation(const tstring & serverName)
-    {
-        mCertValidationCallback = CertValidationCallback();
-        mTarget = serverName;
-    }
-
-    void SchannelClientFilter::setClientCertificate(CertContextPtr certContext)
-    {
-        mLocalCert = certContext;
-    }
-
-    PCCERT_CONTEXT SchannelClientFilter::getServerCertificate()
-    {
-        if (mRemoteCert)
+        CertificatePtr certificatePtr = pClientStub->getCertificate();
+        Win32CertificatePtr certificateBasePtr = boost::dynamic_pointer_cast<Win32Certificate>(certificatePtr);
+        if (certificateBasePtr)
         {
-            return mRemoteCert->getContext();
+            mLocalCertPtr = certificateBasePtr;
         }
-        return NULL;
+
+        mCertValidationCallback = pClientStub->getCertificateValidationCallback();
+        mAutoCertValidation = pClientStub->getEnableSchannelCertificateValidation();
+    }
+
+    Win32CertificatePtr SspiFilter::getPeerCertificate()
+    {
+        return mRemoteCertPtr;
     }    
-
-#if defined(__MINGW32__) && (__GNUC__ <= 3)
-
-    // PfxCertificate and StoreCertificate have not been implemented for mingw gcc 3.4 and earlier.
-    // A number of Cert* and PFX* functions seem to be missing from the mingw headers, and there
-    // are issues with std::wstring.
-
-#elif defined(_MSC_VER) && _MSC_VER < 1310
-
-    // Similar issues with Visual C++ 6.
-#else
-
-    // Certificate utility classes.
-
-    PfxCertificate::PfxCertificate(
-        const std::string & pathToCert, 
-        const RCF::tstring & password,
-        const RCF::tstring & certName,
-        DWORD dwFindType) : 
-            mPfxStore(NULL)
-    {
-        std::size_t fileSize = static_cast<std::size_t>(RCF::fileSize(pathToCert));
-
-        std::vector<char> buffer(fileSize);
-        std::ifstream fin( pathToCert.c_str() , std::ios::binary);
-
-        fin.read( 
-            &buffer[0], 
-            static_cast<std::streamsize>(buffer.size()) );
-        
-        std::size_t bytesRead = static_cast<std::size_t>(fin.gcount());
-        fin.close();
-        RCF_ASSERT_EQ(bytesRead , fileSize);
-
-        CRYPT_DATA_BLOB blob = {0};
-        blob.cbData   = static_cast<DWORD>(buffer.size());
-        blob.pbData   = (BYTE*) &buffer[0];
-
-        BOOL recognizedPFX = PFXIsPFXBlob(&blob);
-        DWORD dwErr = GetLastError();
-        RCF_VERIFY(recognizedPFX, RCF::Exception("PFXIsPFXBlob() failed"));
-
-        std::wstring wPassword = util::toWstring(password);
-
-        // For Windows 98, the flag CRYPT_MACHINE_KEYSET is not valid.
-        mPfxStore = PFXImportCertStore(
-            &blob, 
-            wPassword.c_str(),
-            CRYPT_MACHINE_KEYSET | CRYPT_EXPORTABLE);
-
-        dwErr = GetLastError();
-
-        RCF_VERIFY(mPfxStore, RCF::Exception("PFXImportCertStore() failed"));
-
-        std::wstring wCertName = util::toWstring(certName);
-
-        PCCERT_CONTEXT pCertStore = CertFindCertificateInStore(
-            mPfxStore, 
-            X509_ASN_ENCODING, 
-            0,
-            dwFindType,
-            wCertName.c_str(),
-            NULL);
-
-        dwErr = GetLastError();
-        RCF_VERIFY(pCertStore, RCF::Exception("CertFindCertificateInStore() failed"));
-
-        mCertContextPtr.reset( new CertContext(pCertStore) ); 
-    }
-
-    void PfxCertificate::addToStore(
-        DWORD dwFlags, 
-        const std::string & storeName)
-    {
-        std::wstring wStoreName(storeName.begin(), storeName.end());
-
-        HCERTSTORE hCertStore = CertOpenStore(
-            (LPCSTR) CERT_STORE_PROV_SYSTEM,
-            X509_ASN_ENCODING,
-            0,
-            dwFlags,
-            wStoreName.c_str());
-
-        DWORD dwErr = GetLastError();
-
-        RCF_VERIFY(
-            hCertStore, 
-            RCF::Exception(
-                _RcfError_Sspi(), 
-                dwErr, 
-                RCF::RcfSubsystem_Os, 
-                "CertOpenStore() failed"));
-
-        BOOL ret = CertAddCertificateContextToStore(
-            hCertStore,
-            mCertContextPtr->getContext(),
-            CERT_STORE_ADD_USE_EXISTING,
-            NULL);
-
-        dwErr = GetLastError();
-
-        RCF_VERIFY(
-            ret, 
-            RCF::Exception(
-                _RcfError_Sspi(), 
-                dwErr, 
-                RCF::RcfSubsystem_Os, 
-                "CertAddCertificateContextToStore() failed"));
-
-        CertCloseStore(hCertStore, 0);
-    }
-
-    PfxCertificate::~PfxCertificate()
-    {
-        CertCloseStore(mPfxStore, 0);
-    }
-
-    CertContextPtr PfxCertificate::getCertContext()
-    {
-        return mCertContextPtr;
-    }
-
-    StoreCertificate::StoreCertificate(
-        DWORD dwStoreFlags, 
-        const std::string & storeName,
-        const tstring & certName,
-        DWORD dwFindType) :
-            mStore(0)
-    {
-        std::wstring wStoreName(storeName.begin(), storeName.end());
-
-        mStore = CertOpenStore(
-            (LPCSTR) CERT_STORE_PROV_SYSTEM,
-            X509_ASN_ENCODING,
-            0,
-            dwStoreFlags,
-            &wStoreName[0]);
-
-        DWORD dwErr = GetLastError();
-    
-        RCF_VERIFY(
-            mStore, 
-            RCF::Exception(
-                _RcfError_Sspi(), 
-                dwErr, 
-                RCF::RcfSubsystem_Os, 
-                "CertOpenStore() failed"));
-
-        std::wstring wCertName(certName.begin(), certName.end());
-
-        PCCERT_CONTEXT pStoreCert = CertFindCertificateInStore(
-            mStore, 
-            X509_ASN_ENCODING, 
-            0,
-            dwFindType,
-            wCertName.c_str(),
-            NULL);
-
-        dwErr = GetLastError();
-
-        mCertContextPtr.reset( new CertContext(pStoreCert) );
-
-        // It's OK if pStoreCert is NULL - user will have to take appropriate action.
-        // ...
-    }
-
-    void StoreCertificate::removeFromStore()
-    {
-        if (mCertContextPtr && mCertContextPtr->getContext())
-        {
-            BOOL ret = CertDeleteCertificateFromStore(mCertContextPtr->getContext());
-            DWORD dwErr = GetLastError();
-
-            RCF_VERIFY(
-                ret, 
-                RCF::Exception(
-                    _RcfError_Sspi(), 
-                    dwErr, 
-                    RCF::RcfSubsystem_Os, 
-                    "CertDeleteCertificateFromStore() failed"));
-
-            mCertContextPtr->setHasBeenDeleted();
-            mCertContextPtr.reset();
-        }
-    }
-
-    StoreCertificate::~StoreCertificate()
-    {
-        CertCloseStore(mStore, 0);
-    }
-
-    CertContextPtr StoreCertificate::getCertContext()
-    {
-        return mCertContextPtr;
-    }
-
-#endif
 
 } // namespace RCF

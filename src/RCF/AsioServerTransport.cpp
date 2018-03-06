@@ -2,29 +2,38 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
 #include <RCF/AsioServerTransport.hpp>
 
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/trim.hpp>
+
 #include <boost/bind.hpp>
 #include <boost/enable_shared_from_this.hpp>
 #include <boost/shared_ptr.hpp>
 
 #include <RCF/Asio.hpp>
-#include <RCF/AsioDeadlineTimer.hpp>
-#include <RCF/AsyncFilter.hpp>
-#include <RCF/ConnectionOrientedClientTransport.hpp>
+#include <RCF/Filter.hpp>
+#include <RCF/ConnectedClientTransport.hpp>
 #include <RCF/CurrentSession.hpp>
+#include <RCF/HttpFrameFilter.hpp>
+#include <RCF/HttpSessionFilter.hpp>
 #include <RCF/MethodInvocation.hpp>
+#include <RCF/ObjectPool.hpp>
 #include <RCF/RcfServer.hpp>
 #include <RCF/TimedBsdSockets.hpp>
 
@@ -35,8 +44,8 @@ namespace RCF {
     class FilterAdapter : public RCF::IdentityFilter
     {
     public:
-        FilterAdapter(AsioSessionState &sessionState) :
-            mSessionState(sessionState)
+        FilterAdapter(AsioNetworkSession &networkSession) :
+            mNetworkSession(networkSession)
         {}
 
     private:
@@ -44,87 +53,80 @@ namespace RCF {
             const ByteBuffer &byteBuffer,
             std::size_t bytesRequested)
         {
-            mSessionState.read(byteBuffer, bytesRequested);
+            mNetworkSession.read(byteBuffer, bytesRequested);
         }
 
         void write(
             const std::vector<ByteBuffer> &byteBuffers)
         {
-            mSessionState.write(byteBuffers);
+            mNetworkSession.write(byteBuffers);
         }
 
         void onReadCompleted(
             const ByteBuffer &byteBuffer)
         {
-            mSessionState.onReadWrite(byteBuffer.getLength());
+            if ( mNetworkSession.mAppReadBufferPtr )
+            {
+                char * pchOriginal = mNetworkSession.mAppReadBufferPtr->getPtr() + mNetworkSession.mAppReadBufferPtr->size() - mNetworkSession.mReadBufferRemaining;
+                if ( byteBuffer.getLength() > 0 && byteBuffer.getPtr() != pchOriginal )
+                {
+                    memcpy(pchOriginal, byteBuffer.getPtr(), byteBuffer.getLength());
+                }
+            }
+            mNetworkSession.onAppReadWriteCompleted(byteBuffer.getLength());
         }
 
         void onWriteCompleted(
             std::size_t bytesTransferred)
         {
-            mSessionState.onReadWrite(bytesTransferred);
+            mNetworkSession.onAppReadWriteCompleted(bytesTransferred);
         }
 
-        const FilterDescription &getFilterDescription() const
+        int getFilterId() const
         {
-            RCF_ASSERT(0);
-            return * (const FilterDescription *) NULL;
+            return RcfFilter_Unknown;
         }
 
-        AsioSessionState &mSessionState;
+        AsioNetworkSession &mNetworkSession;
     };
 
 
-    ReadHandler::ReadHandler(const ReadHandler & rhs) : 
-        mSessionState(rhs.mSessionState)
+    ReadHandler::ReadHandler(AsioNetworkSessionPtr networkSessionPtr) : 
+        mNetworkSessionPtr(networkSessionPtr)
     {
     }
 
-    ReadHandler::ReadHandler(AsioSessionState & sessionState) : 
-        mSessionState(sessionState)
+    void ReadHandler::operator()(AsioErrorCode err, std::size_t bytes)
     {
-    }
-
-    void ReadHandler::operator()(boost::system::error_code err, std::size_t bytes)
-    {
-        AsioSessionStatePtr sessionStatePtr = mSessionState.mThisPtr;
-        mSessionState.mThisPtr.reset();
-        mSessionState.onReadCompletion(err, bytes);
+        mNetworkSessionPtr->onNetworkReadCompleted(err, bytes);
     }
 
     void * ReadHandler::allocate(std::size_t size)
     {
-        if (mSessionState.mReadHandlerBuffer.size() < size)
+        if (mNetworkSessionPtr->mReadHandlerBuffer.size() < size)
         {
-            mSessionState.mReadHandlerBuffer.resize(size);
+            mNetworkSessionPtr->mReadHandlerBuffer.resize(size);
         }
-        return & mSessionState.mReadHandlerBuffer[0];
+        return & mNetworkSessionPtr->mReadHandlerBuffer[0];
     }
 
-    WriteHandler::WriteHandler(const WriteHandler & rhs) : 
-        mSessionState(rhs.mSessionState)
+    WriteHandler::WriteHandler(AsioNetworkSessionPtr networkSessionPtr) : 
+        mNetworkSessionPtr(networkSessionPtr)
     {
     }
 
-    WriteHandler::WriteHandler(AsioSessionState & sessionState) : 
-        mSessionState(sessionState)
+    void WriteHandler::operator()(AsioErrorCode err, std::size_t bytes)
     {
-    }
-
-    void WriteHandler::operator()(boost::system::error_code err, std::size_t bytes)
-    {
-        AsioSessionStatePtr sessionStatePtr = mSessionState.mThisPtr;
-        mSessionState.mThisPtr.reset();
-        mSessionState.onWriteCompletion(err, bytes);
+        mNetworkSessionPtr->onNetworkWriteCompleted(err, bytes);
     }
 
     void * WriteHandler::allocate(std::size_t size)
     {
-        if (mSessionState.mWriteHandlerBuffer.size() < size)
+        if (mNetworkSessionPtr->mWriteHandlerBuffer.size() < size)
         {
-            mSessionState.mWriteHandlerBuffer.resize(size);
+            mNetworkSessionPtr->mWriteHandlerBuffer.resize(size);
         }
-        return & mSessionState.mWriteHandlerBuffer[0];
+        return & mNetworkSessionPtr->mWriteHandlerBuffer[0];
     }
 
     void * asio_handler_allocate(std::size_t size, ReadHandler * pHandler)
@@ -134,6 +136,9 @@ namespace RCF {
 
     void asio_handler_deallocate(void * pointer, std::size_t size, ReadHandler * pHandler)
     {
+        RCF_UNUSED_VARIABLE(pointer);
+        RCF_UNUSED_VARIABLE(size);
+        RCF_UNUSED_VARIABLE(pHandler);
     }
 
     void * asio_handler_allocate(std::size_t size, WriteHandler * pHandler)
@@ -143,36 +148,38 @@ namespace RCF {
 
     void asio_handler_deallocate(void * pointer, std::size_t size, WriteHandler * pHandler)
     {
+        RCF_UNUSED_VARIABLE(pointer);
+        RCF_UNUSED_VARIABLE(size);
+        RCF_UNUSED_VARIABLE(pHandler);
     }
 
-    void AsioSessionState::postRead()
+    void AsioNetworkSession::postRead()
     {
-        mState = AsioSessionState::ReadingDataCount;
-        mReadByteBuffer.clear();
-        mTempByteBuffer.clear();
-        getUniqueReadBuffer().resize(0);
-        mReadBufferRemaining = 0;
-        mIssueZeroByteRead = true;
-        invokeAsyncRead();
-    }
-
-    ByteBuffer AsioSessionState::getReadByteBuffer()
-    {
-        if (mReadBufferPtr->empty())
+        if (mLastError)
         {
-            return ByteBuffer();
+            return;
         }
 
-        return ByteBuffer(
-            &(*mReadBufferPtr)[0],
-            (*mReadBufferPtr).size(),
-            mReadBufferPtr);
+        mState = AsioNetworkSession::ReadingDataCount;
+
+        mAppReadByteBuffer.clear();
+        mAppReadBufferPtr.reset();
+
+        mNetworkReadByteBuffer.clear();
+        mNetworkReadBufferPtr.reset();
+
+        mReadBufferRemaining = 0;
+        mIssueZeroByteRead = true;
+        beginRead();
     }
 
-    void AsioSessionState::postWrite(
+    void AsioNetworkSession::postWrite(
         std::vector<ByteBuffer> &byteBuffers)
     {
-        RCF_ASSERT_EQ(mState , Ready);
+        if (mLastError)
+        {
+            return;
+        }
 
         BOOST_STATIC_ASSERT(sizeof(unsigned int) == 4);
 
@@ -186,73 +193,114 @@ namespace RCF {
 
         byteBuffers.resize(0);
 
-        int messageSize = 
-            static_cast<int>(RCF::lengthByteBuffers(mWriteByteBuffers));
-        
-        ByteBuffer &byteBuffer = mWriteByteBuffers.front();
+        if (!mTransport.mCustomFraming)
+        {
+            // Add frame (4 byte length prefix).
+            int messageSize = 
+                static_cast<int>(RCF::lengthByteBuffers(mWriteByteBuffers));
 
-        RCF_ASSERT_GTEQ(byteBuffer.getLeftMargin() , 4);
+            ByteBuffer &byteBuffer = mWriteByteBuffers.front();
 
-        byteBuffer.expandIntoLeftMargin(4);
-        memcpy(byteBuffer.getPtr(), &messageSize, 4);
-        RCF::machineToNetworkOrder(byteBuffer.getPtr(), 4, 1);
+            RCF_ASSERT_GTEQ(byteBuffer.getLeftMargin() , 4);
+            byteBuffer.expandIntoLeftMargin(4);
+            memcpy(byteBuffer.getPtr(), &messageSize, 4);
+            RCF::machineToNetworkOrder(byteBuffer.getPtr(), 4, 1);
+        }
 
-        mState = AsioSessionState::WritingData;
+        mState = AsioNetworkSession::WritingData;
         
         mWriteBufferRemaining = RCF::lengthByteBuffers(mWriteByteBuffers);
         
-        invokeAsyncWrite();
+        beginWrite();
     }
 
-    void AsioSessionState::postClose()
+    void AsioNetworkSession::postClose()
     {
         close();
     }
 
-    I_ServerTransport & AsioSessionState::getServerTransport()
+    ServerTransport & AsioNetworkSession::getServerTransport()
     {
         return mTransport;
     }
 
-    const I_RemoteAddress &
-        AsioSessionState::getRemoteAddress()
+    AsioServerTransport & AsioNetworkSession::getAsioServerTransport()
+    {
+        return mTransport;
+    }
+
+    const RemoteAddress &
+        AsioNetworkSession::getRemoteAddress()
     {
         return implGetRemoteAddress();
     }
 
-    int AsioSessionState::getNativeHandle() const
+    bool AsioNetworkSession::isConnected()
     {
-        return implGetNative();
+        return implIsConnected();
     }
 
-    // SessionState
+    // NetworkSession
 
 #ifdef _MSC_VER
 #pragma warning( push )
 #pragma warning( disable : 4355 )  // warning C4355: 'this' : used in base member initializer list
 #endif
 
-    AsioSessionState::AsioSessionState(
+    AsioNetworkSession::AsioNetworkSession(
         AsioServerTransport & transport,
         AsioIoService & ioService) :
+            mIoService(ioService),
             mState(Ready),
             mIssueZeroByteRead(false),
-            mReadBufferRemaining(RCF_DEFAULT_INIT),
-            mWriteBufferRemaining(RCF_DEFAULT_INIT),
+            mReadBufferRemaining(),
+            mWriteBufferRemaining(),
             mTransport(transport),
             mFilterAdapterPtr(new FilterAdapter(*this)),
-            mHasBeenClosed(RCF_DEFAULT_INIT),
-            mCloseAfterWrite(RCF_DEFAULT_INIT),
-            mReflecting(RCF_DEFAULT_INIT),
-            mIoService(ioService)
+            mCloseAfterWrite()
     {
+        std::vector<FilterPtr> wireFilters;
+
+        if (transport.mWireProtocol == Wp_Http || transport.mWireProtocol == Wp_Https)
+        {
+#if RCF_FEATURE_HTTP==1
+            wireFilters.push_back(FilterPtr(new HttpSessionFilter(*this)));
+            wireFilters.push_back( FilterPtr(new HttpFrameFilter(transport.getMaxMessageLength())) );
+#else
+            RCF_ASSERT(0 && "This RCF build does not support HTTP tunneling.");
+#endif
+        }
+
+        if (transport.mWireProtocol == Wp_Https)
+        {
+            FilterPtr sslFilterPtr;
+            if (transport.mpServer->getSslImplementation() == Si_Schannel)
+            {
+                sslFilterPtr = transport.mpServer->createFilter(RcfFilter_SspiSchannel);
+            }
+            else
+            {
+                sslFilterPtr = transport.mpServer->createFilter(RcfFilter_OpenSsl);
+            }
+            if (!sslFilterPtr)
+            {
+                RCF_THROW( Exception(_RcfError_SslNotSupported()) );
+            }
+
+            wireFilters.push_back( sslFilterPtr );
+        }
+
+        if (wireFilters.size() > 0)
+        {
+            setWireFilters(wireFilters);
+        }
     }
 
 #ifdef _MSC_VER
 #pragma warning( pop )
 #endif
 
-    AsioSessionState::~AsioSessionState()
+    AsioNetworkSession::~AsioNetworkSession()
     {
         RCF_DTOR_BEGIN
 
@@ -262,120 +310,70 @@ namespace RCF {
 
         mTransport.unregisterSession(mWeakThisPtr);
 
-        RCF_LOG_4()(mState)(mSessionPtr.get())(mHasBeenClosed) 
-            << "AsioSessionState - destructor.";
-
-        // close reflecting session if appropriate
-        if (mReflecting)
-        {
-            AsioSessionStatePtr sessionStatePtr(mReflecteeWeakPtr.lock());
-            if (sessionStatePtr)
-            {
-                sessionStatePtr->close();
-            }
-        }
+        RCF_LOG_4()(mState)(mRcfSessionPtr.get()) << "AsioNetworkSession - destructor.";
 
         RCF_DTOR_END;
     }
 
-    AsioSessionStatePtr AsioSessionState::sharedFromThis()
+    AsioNetworkSessionPtr AsioNetworkSession::sharedFromThis()
     {
-        return boost::static_pointer_cast<AsioSessionState>(shared_from_this());
+        return boost::static_pointer_cast<AsioNetworkSession>(shared_from_this());
     }
 
-    ReallocBuffer & AsioSessionState::getReadBuffer()
+    ByteBuffer AsioNetworkSession::getReadByteBuffer()
     {
-        if (!mReadBufferPtr)
+        if (!mAppReadBufferPtr)
         {
-            mReadBufferPtr.reset( new ReallocBuffer() );
+            return ByteBuffer();            
         }
-        return *mReadBufferPtr;
+        return ByteBuffer(mAppReadBufferPtr);
     }
 
-    ReallocBuffer & AsioSessionState::getUniqueReadBuffer()
-    {
-        if (!mReadBufferPtr || !mReadBufferPtr.unique())
-        {
-            mReadBufferPtr.reset( new ReallocBuffer() );
-        }
-        return *mReadBufferPtr;
-    }
-
-    ByteBuffer AsioSessionState::getReadByteBuffer() const
-    {
-        return ByteBuffer(
-            &(*mReadBufferPtr)[0],
-            (*mReadBufferPtr).size(),
-            mReadBufferPtr);
-    }
-
-    ReallocBuffer & AsioSessionState::getReadBufferSecondary()
-    {
-        if (!mReadBufferSecondaryPtr)
-        {
-            mReadBufferSecondaryPtr.reset( new ReallocBuffer() );
-        }
-        return *mReadBufferSecondaryPtr;
-    }
-
-    ReallocBuffer & AsioSessionState::getUniqueReadBufferSecondary()
-    {
-        if (!mReadBufferSecondaryPtr || !mReadBufferSecondaryPtr.unique())
-        {
-            mReadBufferSecondaryPtr.reset( new ReallocBuffer() );
-        }
-        return *mReadBufferSecondaryPtr;
-    }
-
-    ByteBuffer 
-        AsioSessionState::getReadByteBufferSecondary() const
-    {
-        if (mReadBufferSecondaryPtr->empty())
-        {
-            return ByteBuffer();
-        }
-
-        return ByteBuffer(
-            &(*mReadBufferSecondaryPtr)[0],
-            (*mReadBufferSecondaryPtr).size(),
-            mReadBufferSecondaryPtr);
-    }
-
-    void AsioSessionState::read(
+    void AsioNetworkSession::read(
         const ByteBuffer &byteBuffer,
         std::size_t bytesRequested)
     {
-
-        if (byteBuffer.getLength() == 0)
+        if (byteBuffer.getLength() == 0 && bytesRequested > 0)
         {
-            ReallocBuffer &vec = getUniqueReadBufferSecondary();
-            vec.resize(bytesRequested);
-            mTempByteBuffer = getReadByteBufferSecondary();
+            if (!mNetworkReadBufferPtr || mNetworkReadBufferPtr.unique())
+            {
+                mNetworkReadBufferPtr = getObjectPool().getReallocBufferPtr();
+            }
+            mNetworkReadBufferPtr->resize(bytesRequested);
+            mNetworkReadByteBuffer = ByteBuffer(mNetworkReadBufferPtr);
         }
         else
         {
-            mTempByteBuffer = ByteBuffer(byteBuffer, 0, bytesRequested);
+            mNetworkReadByteBuffer = ByteBuffer(byteBuffer, 0, bytesRequested);
         }
 
-        RCF_ASSERT_LTEQ(bytesRequested , mTempByteBuffer.getLength());
+        RCF_ASSERT_LTEQ(bytesRequested, mNetworkReadByteBuffer.getLength());
 
-        char *buffer = mTempByteBuffer.getPtr();
-        std::size_t bufferLen = mTempByteBuffer.getLength();
+        char *buffer = mNetworkReadByteBuffer.getPtr();
+        std::size_t bufferLen = mNetworkReadByteBuffer.getLength();
 
-        Lock lock(mMutex);
-        if (!mHasBeenClosed)
+        if (mSocketOpsMutexPtr)
+        {
+            Lock lock(*mSocketOpsMutexPtr);
+            implRead(buffer, bufferLen);
+        }
+        else
         {
             implRead(buffer, bufferLen);
         }
     }
 
-    void AsioSessionState::write(
+    void AsioNetworkSession::write(
         const std::vector<ByteBuffer> &byteBuffers)
     {
         RCF_ASSERT(!byteBuffers.empty());
 
-        Lock lock(mMutex);
-        if (!mHasBeenClosed)
+        if ( mSocketOpsMutexPtr )
+        {
+            Lock lock(*mSocketOpsMutexPtr);
+            implWrite(byteBuffers);
+        }
+        else
         {
             implWrite(byteBuffers);
         }
@@ -383,18 +381,22 @@ namespace RCF {
 
     // TODO: merge onReadCompletion/onWriteCompletion into one function
 
-    void AsioSessionState::onReadCompletion(
-        boost::system::error_code error, size_t bytesTransferred)
+    void AsioNetworkSession::onNetworkReadCompleted(
+        AsioErrorCode error, size_t bytesTransferred)
     {
-        RCF_LOG_4()(this)(bytesTransferred) << "AsioSessionState - read from socket completed.";
+        RCF_LOG_4()(this)(bytesTransferred) << "AsioNetworkSession - read from socket completed.";
 
         ThreadTouchGuard threadTouchGuard;
+
+        mLastError = error;
+
+        mBytesReceivedCounter += bytesTransferred;
 
 #ifdef BOOST_WINDOWS
 
         if (error.value() == ERROR_OPERATION_ABORTED)
         {
-            error.clear();
+            error = AsioErrorCode();
         }
 
 #endif
@@ -403,76 +405,76 @@ namespace RCF {
         {
             if (bytesTransferred == 0 && mIssueZeroByteRead)
             {
-                getUniqueReadBuffer().resize(4);
+                // TCP framing.
+                if (!mAppReadBufferPtr || !mAppReadBufferPtr.unique())
+                {
+                    mAppReadBufferPtr = getObjectPool().getReallocBufferPtr();
+                }
+                mAppReadBufferPtr->resize(4);
+
                 mReadBufferRemaining = 4;
                 mIssueZeroByteRead = false;
-                invokeAsyncRead();
-            }
-            else if (mReflecting)
-            {
-                boost::system::error_code ec;
-                onReflectedReadWrite(ec, bytesTransferred);
+                beginRead();
             }
             else
             {
-                CurrentRcfSessionSentry guard(*mSessionPtr);
+                CurrentRcfSessionSentry guard(mRcfSessionPtr);
 
-                mTempByteBuffer = ByteBuffer(
-                    mTempByteBuffer, 
-                    0, 
+                mNetworkReadByteBuffer = ByteBuffer(
+                    mNetworkReadByteBuffer,
+                    0,
                     bytesTransferred);
 
                 mTransportFilters.empty() ?
-                    onReadWrite(bytesTransferred) : 
-                    mTransportFilters.back()->onReadCompleted(mTempByteBuffer);
+                    onAppReadWriteCompleted(bytesTransferred) : 
+                    mTransportFilters.back()->onReadCompleted(mNetworkReadByteBuffer);
             }
         }
     }
 
-    void AsioSessionState::onWriteCompletion(
-        boost::system::error_code error, 
+    void AsioNetworkSession::onNetworkWriteCompleted(
+        AsioErrorCode error, 
         size_t bytesTransferred)
     {
-        RCF_LOG_4()(this)(bytesTransferred) << "AsioSessionState - write to socket completed.";
+        RCF_LOG_4()(this)(bytesTransferred) << "AsioNetworkSession - write to socket completed.";
 
         ThreadTouchGuard threadTouchGuard;
+
+        mLastError = error;
+
+        mBytesSentCounter += bytesTransferred;
 
 #ifdef BOOST_WINDOWS
 
         if (error.value() == ERROR_OPERATION_ABORTED)
         {
-            error.clear();
+            error = AsioErrorCode();
         }
 
 #endif
 
         if (!error && !mTransport.mStopFlag)
         {
-            if (mReflecting)
-            {
-                if (mReflecteePtr)
-                {
-                    mReflecteePtr.reset();
-                }
-                boost::system::error_code ec;
-                onReflectedReadWrite(ec, bytesTransferred);
-            }
-            else
-            {
-                CurrentRcfSessionSentry guard(*mSessionPtr);
-                mTransportFilters.empty() ?
-                    onReadWrite(bytesTransferred) :
-                    mTransportFilters.back()->onWriteCompleted(bytesTransferred);
-            }
+            CurrentRcfSessionSentry guard(mRcfSessionPtr);
+
+            mTransportFilters.empty() ?
+                onAppReadWriteCompleted(bytesTransferred) :
+                mTransportFilters.back()->onWriteCompleted(bytesTransferred);
         }
     }
 
-    void AsioSessionState::setTransportFilters(
+    void AsioNetworkSession::setTransportFilters(
         const std::vector<FilterPtr> &filters)
     {
-
         mTransportFilters.assign(filters.begin(), filters.end());
+
+        std::copy(
+            mWireFilters.begin(), 
+            mWireFilters.end(), 
+            std::back_inserter(mTransportFilters));
+
         connectFilters(mTransportFilters);
+
         if (!mTransportFilters.empty())
         {
             mTransportFilters.front()->setPreFilter( *mFilterAdapterPtr );
@@ -480,24 +482,57 @@ namespace RCF {
         }
     }
 
-    void AsioSessionState::getTransportFilters(
+    void AsioNetworkSession::getTransportFilters(
         std::vector<FilterPtr> &filters)
     {
         filters = mTransportFilters;
+        for (std::size_t i=0; i<mWireFilters.size(); ++i)
+        {
+            filters.pop_back();
+        }
     }
 
-    void AsioSessionState::invokeAsyncRead()
+    void AsioNetworkSession::setWireFilters(
+        const std::vector<FilterPtr> &filters)
     {
-        mReadByteBuffer = ByteBuffer(
-            getReadByteBuffer(),
-            getReadByteBuffer().getLength()-mReadBufferRemaining);
+        std::vector<FilterPtr> transportFilters;
+        getTransportFilters(transportFilters);
+
+        mWireFilters = filters;
+        setTransportFilters(transportFilters);
+    }
+
+    void AsioNetworkSession::getWireFilters(
+        std::vector<FilterPtr> &filters)
+    {
+        filters = mWireFilters;
+    }
+
+
+    void AsioNetworkSession::beginRead()
+    {
+        if ( mCloseAfterWrite )
+        {
+            return;
+        }
+
+        RCF_ASSERT(
+                mReadBufferRemaining == 0 
+            ||  (mAppReadBufferPtr && mAppReadBufferPtr->size() >= mReadBufferRemaining));
+
+        mAppReadByteBuffer = ByteBuffer();
+        if (mAppReadBufferPtr)
+        {
+            char * pch = & (*mAppReadBufferPtr)[mAppReadBufferPtr->size() - mReadBufferRemaining];
+            mAppReadByteBuffer = ByteBuffer(pch, mReadBufferRemaining, mAppReadBufferPtr);
+        }
 
         mTransportFilters.empty() ?
-            read(mReadByteBuffer, mReadBufferRemaining) :
-            mTransportFilters.front()->read(mReadByteBuffer, mReadBufferRemaining);
+            read(mAppReadByteBuffer, mReadBufferRemaining) :
+            mTransportFilters.front()->read(mAppReadByteBuffer, mReadBufferRemaining);
     }
 
-    void AsioSessionState::invokeAsyncWrite()
+    void AsioNetworkSession::beginWrite()
     {
         mSlicedWriteByteBuffers.resize(0);
 
@@ -509,48 +544,41 @@ namespace RCF {
         mTransportFilters.empty() ?
             write(mSlicedWriteByteBuffers) :
             mTransportFilters.front()->write(mSlicedWriteByteBuffers);
-
     }
 
-    void AsioSessionState::invokeAsyncAccept()
+    void AsioNetworkSession::beginAccept()
     {
         mState = Accepting;
         implAccept();
     }
 
-    void AsioSessionState::onAccept(
-        const boost::system::error_code& error)
+    void AsioNetworkSession::onAcceptCompleted(
+        const AsioErrorCode & error)
     {
         RCF_LOG_4()(error.value())
-            << "AsioSessionState - onAccept().";
+            << "AsioNetworkSession - onAccept().";
 
         if (mTransport.mStopFlag)
         {
             RCF_LOG_4()(error.value())
-                << "AsioSessionState - onAccept(). Returning early, stop flag is set.";
+                << "AsioNetworkSession - onAccept(). Returning early, stop flag is set.";
 
             return;
         }
 
-        if (
-            error == boost::asio::error::connection_aborted ||
-            error == boost::asio::error::operation_aborted)
-        {
-            invokeAsyncAccept();
-            return;
-        }
-
-        // create a new SessionState, and do an accept on that
-        mTransport.createSessionState()->invokeAsyncAccept();
+        // create a new NetworkSession, and do an accept on that
+        mTransport.createNetworkSession()->beginAccept();
 
         if (!error)
         {
-            // save the remote address in the SessionState object
+            // save the remote address in the NetworkSession object
             bool clientAddrAllowed = implOnAccept();
             mState = WritingData;
 
             // set current RCF session
-            CurrentRcfSessionSentry guard(*mSessionPtr);
+            mRcfSessionPtr = mTransport.getSessionManager().createSession();
+            mRcfSessionPtr->setNetworkSession( *this );
+            CurrentRcfSessionSentry guard(mRcfSessionPtr);
 
             if (clientAddrAllowed)
             {
@@ -573,7 +601,7 @@ namespace RCF {
                 if (allowConnect)
                 {
                     // start things rolling by faking a completed write operation
-                    onReadWrite(0);
+                    onAppReadWriteCompleted(0);
                 }
                 else
                 {
@@ -584,224 +612,201 @@ namespace RCF {
     }
 
     void onError(
-        boost::system::error_code &error1, 
-        const boost::system::error_code &error2)
+        AsioErrorCode & error1, 
+        const AsioErrorCode & error2)
     {
         error1 = error2;
     }
 
-    void AsioSessionState::sendServerError(int error)
+    void AsioNetworkSession::sendServerError(int error)
     {
         mState = Ready;
         mCloseAfterWrite = true;
         std::vector<ByteBuffer> byteBuffers(1);
         encodeServerError(*mTransport.mpServer, byteBuffers.front(), error);
-        mSessionPtr->getSessionState().postWrite(byteBuffers);
+        postWrite(byteBuffers);
     }
 
-    void AsioSessionState::onReadWrite(
-        size_t bytesTransferred)
+    void AsioNetworkSession::doRegularFraming(size_t bytesTransferred)
     {
-        RCF_ASSERT(!mReflecting);
+        RCF_ASSERT_LTEQ(bytesTransferred , mReadBufferRemaining);
+        mReadBufferRemaining -= bytesTransferred;
+        if (mReadBufferRemaining > 0)
         {
-            switch(mState)
+            beginRead();
+        }
+        else if (mReadBufferRemaining == 0 && mIssueZeroByteRead)
+        {
+            if (!mAppReadBufferPtr || !mAppReadBufferPtr.unique())
             {
-            case ReadingDataCount:
-            case ReadingData:
+                mAppReadBufferPtr = getObjectPool().getReallocBufferPtr();
+            }
+            mAppReadBufferPtr->resize(4);
 
-                RCF_ASSERT_LTEQ(bytesTransferred , mReadBufferRemaining);
+            mReadBufferRemaining = 4;
+            mIssueZeroByteRead = false;
+            beginRead();
+        }
+        else
+        {
+            RCF_ASSERT_EQ(mReadBufferRemaining , 0);
+            if (mState == ReadingDataCount)
+            {
+                ReallocBuffer & readBuffer = *mAppReadBufferPtr;
+                RCF_ASSERT_EQ(readBuffer.size() , 4);
 
-                mReadBufferRemaining -= bytesTransferred;
-                if (    mReadBufferRemaining > 0 
-                    ||  (mReadBufferRemaining == 0 && mIssueZeroByteRead))
+                unsigned int packetLength = 0;
+                memcpy(&packetLength, &readBuffer[0], 4);
+                networkToMachineOrder(&packetLength, 4, 1);
+
+                if (    mTransport.getMaxMessageLength() 
+                    &&  packetLength > mTransport.getMaxMessageLength())
                 {
-                    if (mReadBufferRemaining == 0 && mIssueZeroByteRead)
-                    {
-                        getUniqueReadBuffer().resize(4);
-                        mReadBufferRemaining = 4;
-                        mIssueZeroByteRead = false;
-                    }
-                    invokeAsyncRead();
+                    sendServerError(RcfError_ServerMessageLength);
                 }
                 else
                 {
-                    RCF_ASSERT_EQ(mReadBufferRemaining , 0);
-                    if (mState == ReadingDataCount)
-                    {
-                        ReallocBuffer &readBuffer = getReadBuffer();
-                        RCF_ASSERT_EQ(readBuffer.size() , 4);
-
-                        unsigned int packetLength = 0;
-                        memcpy(&packetLength, &readBuffer[0], 4);
-                        networkToMachineOrder(&packetLength, 4, 1);
-                        
-                        if (    0 < packetLength 
-                            &&  packetLength <= mTransport.getMaxMessageLength())
-                        {
-                            readBuffer.resize(packetLength);
-                            mReadBufferRemaining = packetLength;
-                            mState = ReadingData;
-                            invokeAsyncRead();
-                        }
-                        else
-                        {
-                            sendServerError(RcfError_ServerMessageLength);
-                        }
-
-                    }
-                    else if (mState == ReadingData)
-                    {
-                        mState = Ready;
-
-                        mTransport.getSessionManager().onReadCompleted(
-                            getSessionPtr());
-
-                        if (mTransport.mInterrupt)
-                        {
-                            mTransport.mInterrupt = false;
-                            mTransport.mpIoService->stop();
-                        }
-                    }
+                    readBuffer.resize(packetLength);
+                    mReadBufferRemaining = packetLength;
+                    mState = ReadingData;
+                    beginRead();
                 }
-                break;
+            }
+            else if (mState == ReadingData)
+            {
+                mState = Ready;
 
-
-            case WritingData:
-
-                RCF_ASSERT_LTEQ(bytesTransferred , mWriteBufferRemaining);
-
-                mWriteBufferRemaining -= bytesTransferred;
-                if (mWriteBufferRemaining > 0)
-                {
-                    invokeAsyncWrite();
-                }
-                else
-                {
-                    if (mCloseAfterWrite)
-                    {
-                        // TODO: this code is only valid for a TCP connection, 
-                        // so should really be in TcpAsioServerTransport.cpp.
-
-                        int fd = implGetNative();
-                        const int BufferSize = 8*1024;
-                        char buffer[BufferSize];
-                        while (recv(fd, buffer, BufferSize, 0) > 0);
-#ifdef BOOST_WINDOWS
-                        int ret = shutdown(fd, SD_BOTH);
-#else
-                        int ret = shutdown(fd, SHUT_RDWR);
-#endif
-                        RCF_UNUSED_VARIABLE(ret);
-                        postRead();
-                    }
-                    else
-                    {
-                        mState = Ready;
-
-                        mSlicedWriteByteBuffers.resize(0);
-                        mWriteByteBuffers.resize(0);
-
-                        mTransport.getSessionManager().onWriteCompleted(
-                            getSessionPtr());
-
-                        if (mTransport.mInterrupt)
-                        {
-                            mTransport.mInterrupt = false;
-                            mTransport.mpIoService->stop();
-                        }
-                    }
-                }
-                break;
-
-            default:
-                RCF_ASSERT(0);
+                mTransport.getSessionManager().onReadCompleted(
+                    getSessionPtr());
             }
         }
     }
 
-    void AsioSessionState::onReflectedReadWrite(
-        const boost::system::error_code& error,
-        size_t bytesTransferred)
+    void AsioNetworkSession::doCustomFraming(size_t bytesTransferred)
     {
-        RCF_UNUSED_VARIABLE(error);
-
-        RCF_ASSERT(
-            mState == ReadingData ||
-            mState == ReadingDataCount ||
-            mState == WritingData)
-            (mState);
-
-        RCF_ASSERT(mReflecting);
-
-        if (bytesTransferred == 0)
+        RCF_ASSERT_LTEQ(bytesTransferred , mReadBufferRemaining);
+        mReadBufferRemaining -= bytesTransferred;
+        if (mReadBufferRemaining > 0)
         {
-            // Previous operation was aborted for some reason (probably because
-            // of a thread exiting). Reissue the operation.
-
-            mState = (mState == WritingData) ? ReadingData : WritingData;
+            beginRead();
         }
-
-        if (mState == WritingData)
+        else if (mReadBufferRemaining == 0 && mIssueZeroByteRead)
         {
-            mState = ReadingData;
-            ReallocBuffer &readBuffer = getReadBuffer();
-            readBuffer.resize(8*1024);
-
-            char *buffer = &readBuffer[0];
-            std::size_t bufferLen = readBuffer.size();
-
-            Lock lock(mMutex);
-            if (!mHasBeenClosed)
+            if (!mAppReadBufferPtr || !mAppReadBufferPtr.unique())
             {
-                implRead(buffer, bufferLen);
+                mAppReadBufferPtr = getObjectPool().getReallocBufferPtr();
             }
+            mAppReadBufferPtr->resize(4);
+
+            mReadBufferRemaining = 4;
+            mIssueZeroByteRead = false;
+            beginRead();
         }
-        else if (
-            mState == ReadingData ||
-            mState == ReadingDataCount)
+        else
         {
-            mState = WritingData;
-            ReallocBuffer &readBuffer = getReadBuffer();
-
-            char *buffer = &readBuffer[0];
-            std::size_t bufferLen = bytesTransferred;
-
-            // mReflecteePtr will be nulled in onWriteCompletion(), otherwise 
-            // we could easily end up with a cycle
-            RCF_ASSERT(!mReflecteePtr);
-            mReflecteePtr = mReflecteeWeakPtr.lock();
-            if (mReflecteePtr)
+            RCF_ASSERT_EQ(mReadBufferRemaining , 0);
+            if (mState == ReadingDataCount)
             {
-                RCF_ASSERT(mReflecteePtr->mReflecting);
+                ReallocBuffer & readBuffer = *mAppReadBufferPtr;
+                RCF_ASSERT_EQ(readBuffer.size() , 4);
 
-                Lock lock(mReflecteePtr->mMutex);
-                if (!mReflecteePtr->mHasBeenClosed)
+                std::size_t messageLength = mTransportFilters[0]->getFrameSize();
+
+                if (    mTransport.getMaxMessageLength() 
+                    &&  messageLength > mTransport.getMaxMessageLength())
                 {
-                    // TODO: if this can throw, then we need a scope_guard
-                    // to reset mReflecteePtr
-                    mReflecteePtr->implWrite(*this, buffer, bufferLen);
+                    sendServerError(RcfError_ServerMessageLength);
+                }
+                else
+                {
+                    RCF_ASSERT( messageLength > 4 );
+                    readBuffer.resize(messageLength);
+                    mReadBufferRemaining = messageLength - 4;
+                    mState = ReadingData;
+                    beginRead();
                 }
             }
+            else if (mState == ReadingData)
+            {
+                mState = Ready;
+
+                mTransport.getSessionManager().onReadCompleted(
+                    getSessionPtr());
+            }
+        }
+    }
+
+    void AsioNetworkSession::onAppReadWriteCompleted(
+        size_t bytesTransferred)
+    {
+        setLastActivityTimestamp();
+
+        switch(mState)
+        {
+        case ReadingDataCount:
+        case ReadingData:
+
+            if (mTransport.mCustomFraming)
+            {
+                doCustomFraming(bytesTransferred);
+            }
+            else
+            {
+                doRegularFraming(bytesTransferred);
+            }
+            
+            break;
+
+        case WritingData:
+
+            RCF_ASSERT_LTEQ(bytesTransferred , mWriteBufferRemaining);
+
+            mWriteBufferRemaining -= bytesTransferred;
+            if (mWriteBufferRemaining > 0)
+            {
+                beginWrite();
+            }
+            else
+            {
+                if (mCloseAfterWrite)
+                {
+                    // For TCP sockets, call shutdown() so client receives 
+                    // the message before we close the connection.
+
+                    implCloseAfterWrite();                        
+                }
+                else
+                {
+                    mState = Ready;
+
+                    mSlicedWriteByteBuffers.resize(0);
+                    mWriteByteBuffers.resize(0);
+
+                    mTransport.getSessionManager().onWriteCompleted(
+                        getSessionPtr());
+                }
+            }
+            break;
+
+        default:
+            RCF_ASSERT(0);
         }
     }
 
     // AsioServerTransport
 
-    AsioSessionStatePtr AsioServerTransport::createSessionState()
+    AsioNetworkSessionPtr AsioServerTransport::createNetworkSession()
     {
-        AsioSessionStatePtr sessionStatePtr( implCreateSessionState() );
-        SessionPtr sessionPtr( getSessionManager().createSession() );
-        sessionPtr->setSessionState( *sessionStatePtr );
-        sessionStatePtr->setSessionPtr(sessionPtr);
-        sessionStatePtr->mWeakThisPtr = sessionStatePtr;
-        registerSession(sessionStatePtr->mWeakThisPtr);
-        return sessionStatePtr;
+        AsioNetworkSessionPtr networkSessionPtr( implCreateNetworkSession() );
+        networkSessionPtr->mWeakThisPtr = networkSessionPtr;
+        registerSession(networkSessionPtr->mWeakThisPtr);
+        return networkSessionPtr;
     }
 
     // I_ServerTransportEx implementation
 
     ClientTransportAutoPtr AsioServerTransport::createClientTransport(
-        const I_Endpoint &endpoint)
+        const Endpoint &endpoint)
     {
         return implCreateClientTransport(endpoint);
     }
@@ -811,127 +816,123 @@ namespace RCF {
         StubEntryPtr stubEntryPtr,
         bool keepClientConnection)
     {
-        AsioSessionStatePtr sessionStatePtr(createSessionState());
-        SessionPtr sessionPtr(sessionStatePtr->getSessionPtr());
-        sessionStatePtr->implTransferNativeFrom(*clientTransportAutoPtr);
+        // Create a new network session.
+        AsioNetworkSessionPtr networkSessionPtr(createNetworkSession());
+        
+        // Create a RCF session for the network session.
+        SessionPtr sessionPtr = getSessionManager().createSession();
+        sessionPtr->setIsCallbackSession(true);
+        sessionPtr->setNetworkSession(*networkSessionPtr);
+        networkSessionPtr->mRcfSessionPtr = sessionPtr;
+
+        // Move socket from client transport to network session.
+        networkSessionPtr->implTransferNativeFrom(*clientTransportAutoPtr);
 
         if (stubEntryPtr)
         {
             sessionPtr->setDefaultStubEntryPtr(stubEntryPtr);
         }
 
-        clientTransportAutoPtr.reset();
-        if (keepClientConnection)
+        // Copy over the wire filters from the client transport.
+        ConnectedClientTransport& clientTransport = 
+            static_cast<ConnectedClientTransport&>(*clientTransportAutoPtr);
+
+        bool doingHttp = false;
+
+        // If wire filters are present, some special gymnastics are needed. For now
+        // we assume that the presence of wire filters indicates an HTTP connection.
+        if ( clientTransport.mWireFilters.size() > 0 )
         {
-            clientTransportAutoPtr = createClientTransport(sessionPtr);
+            doingHttp = true;
+
+            std::size_t wireFilterCount = clientTransport.mWireFilters.size();
+            RCF_ASSERT(wireFilterCount == 1 || wireFilterCount == 3);
+            RCF_UNUSED_VARIABLE(wireFilterCount);
+            networkSessionPtr->setWireFilters(clientTransport.mWireFilters);
         }
 
-        sessionStatePtr->mState = AsioSessionState::WritingData;
-        sessionStatePtr->onReadWrite(0);
+        // Create a new controlling client transport, if applicable.
+        clientTransportAutoPtr.reset();
+        if ( keepClientConnection && !doingHttp )
+        {
+            clientTransportAutoPtr.reset( createClientTransport(sessionPtr).release() );
+        }
+
+        // Start reading on the server session.
+        networkSessionPtr->mState = AsioNetworkSession::WritingData;
+        networkSessionPtr->onAppReadWriteCompleted(0);
         return sessionPtr;
     }
 
     ClientTransportAutoPtr AsioServerTransport::createClientTransport(
         SessionPtr sessionPtr)
     {
-        AsioSessionState & sessionState = 
-            dynamic_cast<AsioSessionState &>(sessionPtr->getSessionState());
+        // If wire filters are present, some special gymnastics are needed. For now
+        // we assume that the presence of wire filters indicates an HTTP connection.
 
-        AsioSessionStatePtr sessionStatePtr = sessionState.sharedFromThis();
+        AsioNetworkSession & networkSession =
+            dynamic_cast<AsioNetworkSession &>(sessionPtr->getNetworkSession());
 
-        ClientTransportAutoPtr clientTransportPtr =
-            sessionStatePtr->implCreateClientTransport();
+        bool doingHttp = false;
+        if ( networkSession.mWireFilters.size() > 0 )
+        {
+            doingHttp = true;
+            
+            // TODO: better check for HTTP/HTTPS.
+            std::size_t wireFilterCount = networkSession.mWireFilters.size();
+            RCF_ASSERT(wireFilterCount == 2 || wireFilterCount == 3);
+            RCF_UNUSED_VARIABLE(wireFilterCount);
 
-        ConnectionOrientedClientTransport & coClientTransport =
-            static_cast<ConnectionOrientedClientTransport &>(
-                *clientTransportPtr);
+            FilterPtr httpFrameFilterPtr = networkSession.mWireFilters[1];
+            HttpFrameFilter& httpFrame = static_cast<HttpFrameFilter&>(*httpFrameFilterPtr);
+            httpFrame.mChunkedResponseMode = true;
+            httpFrame.mChunkedResponseCounter = 0;
+        }
 
-        coClientTransport.setNotifyCloseFunctor( boost::bind(
-            &AsioServerTransport::notifyClose,
-            this,
-            AsioSessionStateWeakPtr(sessionStatePtr)));
+        // Make sure the network session stays alive for the time being.
+        AsioNetworkSessionPtr networkSessionPtr = networkSession.sharedFromThis();
 
-        coClientTransport.setCloseFunctor( 
-            sessionStatePtr->implGetCloseFunctor() );
+        ClientTransportAutoPtr clientTransportPtr = networkSession.implCreateClientTransport();
+        ConnectedClientTransport & connClientTransport = static_cast<ConnectedClientTransport &>(*clientTransportPtr);
+        connClientTransport.setRcfSession(networkSession.mRcfSessionPtr);
+
+        networkSession.mSocketOpsMutexPtr.reset( new Mutex() );
+        connClientTransport.setSocketOpsMutex(networkSession.mSocketOpsMutexPtr);
+
+        if ( doingHttp )
+        {
+            // Drop the HTTP session filter at the front of the wire filter sequence.
+            std::vector<FilterPtr> wireFilters;
+            networkSession.getWireFilters(wireFilters);
+            wireFilters.erase(wireFilters.begin());
+            networkSession.setWireFilters(wireFilters);
+        }
 
         return clientTransportPtr;
-    }
-
-    bool AsioServerTransport::reflect(
-        const SessionPtr &sessionPtr1, 
-        const SessionPtr &sessionPtr2)
-    {
-        AsioSessionState & sessionState1 = 
-            dynamic_cast<AsioSessionState &>(sessionPtr1->getSessionState());
-
-        AsioSessionStatePtr sessionStatePtr1 = sessionState1.sharedFromThis();
-
-        AsioSessionState & sessionState2 = 
-            dynamic_cast<AsioSessionState &>(sessionPtr2->getSessionState());
-
-        AsioSessionStatePtr sessionStatePtr2 = sessionState2.sharedFromThis();
-
-        sessionStatePtr1->mReflecteeWeakPtr = sessionStatePtr2;
-        sessionStatePtr2->mReflecteeWeakPtr = sessionStatePtr1;
-
-        sessionStatePtr1->mReflecting = true;
-        sessionStatePtr2->mReflecting = true;
-
-        return true;
-    }
-
-    bool AsioServerTransport::isConnected(const SessionPtr &sessionPtr)
-    {
-        AsioSessionState & sessionState = 
-            dynamic_cast<AsioSessionState &>(sessionPtr->getSessionState());
-
-        AsioSessionStatePtr sessionStatePtr = sessionState.sharedFromThis();
-
-        // TODO: what to do for non-TCP sockets
-        return 
-            sessionStatePtr.get() 
-            && isFdConnected(sessionStatePtr->implGetNative());
     }
 
     // I_Service implementation
 
     void AsioServerTransport::open()
     {
-        mInterrupt = false;
         mStopFlag = false;
         implOpen();
     }
 
-    void AsioSessionState::setSessionPtr(
-        SessionPtr sessionPtr)    
-    { 
-        mSessionPtr = sessionPtr; 
-    }
-    
-    SessionPtr AsioSessionState::getSessionPtr()
-    { 
-        return mSessionPtr; 
+
+    void AsioNetworkSession::close()
+    {
+        implClose();
     }
 
-    void AsioSessionState::close()
+    AsioErrorCode AsioNetworkSession::getLastError()
     {
-        Lock lock(mMutex);
-        if (!mHasBeenClosed)
-        {
-            implClose();
-            mHasBeenClosed = true;
-        }
+        return mLastError;
     }
 
-    void AsioServerTransport::notifyClose(
-        AsioSessionStateWeakPtr sessionStateWeakPtr)
+    void AsioNetworkSession::setCloseAfterWrite()
     {
-        AsioSessionStatePtr sessionStatePtr(sessionStateWeakPtr.lock());
-        if (sessionStatePtr)
-        {
-            Lock lock(sessionStatePtr->mMutex);
-            sessionStatePtr->mHasBeenClosed = true;
-        }
+        mCloseAfterWrite = true;
     }
 
     void AsioServerTransport::close()
@@ -939,13 +940,6 @@ namespace RCF {
         mAcceptorPtr.reset();
         mStopFlag = true;
         cancelOutstandingIo();
-        mpIoService->reset();
-        std::size_t items = mpIoService->poll();
-        while (items)
-        {
-            mpIoService->reset();
-            items = mpIoService->poll();
-        }
 
         mpIoService = NULL;
         mpServer = NULL;
@@ -975,9 +969,81 @@ namespace RCF {
         mpIoService = mTaskEntries[0].getThreadPool().getIoService();        
     }
 
+    void AsioServerTransport::startAcceptingThread(Exception & eRet)
+    {
+        try
+        {
+            std::size_t initialNumberOfConnections = getInitialNumberOfConnections();
+            for (std::size_t i=0; i<initialNumberOfConnections; ++i)
+            {
+                createNetworkSession()->beginAccept();
+            }
+        }
+        catch(const Exception & e)
+        {
+            eRet = e;
+        }
+        catch(const std::exception & e)
+        {
+            eRet = Exception(e.what());
+        }
+        catch(...)
+        {
+            eRet = Exception("Unknown exception type caught in AsioServerTransport::startAcceptingThread().");
+        }
+    }
+
     void AsioServerTransport::startAccepting()
     {
-        createSessionState()->invokeAsyncAccept();
+        bool runningOnWindowsVistaOrLater = false;
+
+#ifdef BOOST_WINDOWS
+        OSVERSIONINFO osvi = {0};
+        osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4996) // warning C4996: 'GetVersionExA': was declared deprecated
+#endif
+
+        GetVersionEx(&osvi);
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+
+        if (osvi.dwMajorVersion >= 6)
+        {
+            runningOnWindowsVistaOrLater = true;
+        }
+#endif
+
+        Exception e;
+        if (runningOnWindowsVistaOrLater)
+        {
+            // http://stackoverflow.com/questions/12047960/getqueuedcompletionstatus-cant-dequeue-io-from-iocp-if-the-thread-which-origina
+
+            // Due to a bug in Windows 8, we need to make the async accept calls
+            // on a thread that won't subsequently block on I/O. If we do it on
+            // this thread, and the user then calls e.g. std::cin.get() after
+            // starting the server, none of the accepts will ever complete.
+
+            // To simplify testing, we apply this workaround from Vista onwards. 
+            // We can't apply it on earlier Windows (XP, 2003), because async 
+            // calls are canceled when the issuing thread terminates.
+
+            Thread t( boost::bind(&AsioServerTransport::startAcceptingThread, this, boost::ref(e)) );
+            t.join();
+        }
+        else
+        {
+            startAcceptingThread(e);
+        }
+
+        if (e.bad())
+        {
+            e.throwSelf();
+        }
     }
 
     void AsioServerTransport::onServerStop(RcfServer &)
@@ -1001,11 +1067,11 @@ namespace RCF {
     }
 
     AsioServerTransport::AsioServerTransport() :
-        mpIoService(RCF_DEFAULT_INIT),
+        mpIoService(),
         mAcceptorPtr(),
-        mInterrupt(RCF_DEFAULT_INIT),
-        mStopFlag(RCF_DEFAULT_INIT),
-        mpServer(RCF_DEFAULT_INIT)
+        mWireProtocol(Wp_None),
+        mStopFlag(),
+        mpServer()
     {
     }
 
@@ -1013,13 +1079,13 @@ namespace RCF {
     {
     }
 
-    void AsioServerTransport::registerSession(AsioSessionStateWeakPtr session)
+    void AsioServerTransport::registerSession(AsioNetworkSessionWeakPtr session)
     {
         Lock lock(mSessionsMutex);
         mSessions.insert(session);
     }
 
-    void AsioServerTransport::unregisterSession(AsioSessionStateWeakPtr session)
+    void AsioServerTransport::unregisterSession(AsioNetworkSessionWeakPtr session)
     {
         Lock lock(mSessionsMutex);
         mSessions.erase(session);
@@ -1028,25 +1094,24 @@ namespace RCF {
     void AsioServerTransport::cancelOutstandingIo()
     {
         Lock lock(mSessionsMutex);
-        std::for_each( 
-            mSessions.begin(), 
-            mSessions.end(), 
-            boost::bind(&AsioServerTransport::closeSessionState, this, _1));
-    }
 
-    void AsioServerTransport::closeSessionState(
-        AsioSessionStateWeakPtr sessionStateWeakPtr)
-    {
-        AsioSessionStatePtr sessionStatePtr(sessionStateWeakPtr.lock());
-        if (sessionStatePtr)
+        std::set<NetworkSessionWeakPtr>::iterator iter;
+        for (iter = mSessions.begin(); iter != mSessions.end(); ++iter)
         {
-            sessionStatePtr->close();
+            NetworkSessionPtr networkSessionPtr = iter->lock();
+            if (networkSessionPtr)
+            {
+                AsioNetworkSessionPtr asioNetworkSessionPtr = 
+                    boost::static_pointer_cast<AsioNetworkSession>(networkSessionPtr);
+
+                asioNetworkSessionPtr->close();
+            }
         }
     }
 
-    AsioAcceptorPtr AsioServerTransport::getAcceptorPtr()
+    AsioAcceptor & AsioServerTransport::getAcceptor()
     {
-        return mAcceptorPtr;
+        return *mAcceptorPtr;
     }
 
     AsioIoService & AsioServerTransport::getIoService()

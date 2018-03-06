@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -16,115 +19,104 @@
 #ifndef INCLUDE_RCF_WIN32NAMEDPIPESERVERTRANSPORT_HPP
 #define INCLUDE_RCF_WIN32NAMEDPIPESERVERTRANSPORT_HPP
 
+#include <RCF/AsioFwd.hpp>
+#include <RCF/AsioServerTransport.hpp>
 #include <RCF/Export.hpp>
-#include <RCF/IocpServerTransport.hpp>
-#include <RCF/ServerTransport.hpp>
-#include <RCF/Service.hpp>
-
-#include <RCF/util/Tchar.hpp>
-#include "tchar.h"
 
 namespace RCF {
 
-    class Win32NamedPipeSessionState;
-    class Win32NamedPipeImpersonator;
+    class Win32NamedPipeServerTransport;
 
-    // Win32NamedPipeServerTransport
+    // Win32NamedPipeNetworkSession
 
-    class RCF_EXPORT Win32NamedPipeServerTransport : 
-        public IocpServerTransport
+    class Win32NamedPipeNetworkSession : public AsioNetworkSession
     {
     public:
-        Win32NamedPipeServerTransport(const tstring & pipeName);
-        ~Win32NamedPipeServerTransport();
+        Win32NamedPipeNetworkSession(
+            Win32NamedPipeServerTransport & transport,
+            AsioIoService & ioService);
 
-        ServerTransportPtr      clone();
+        ~Win32NamedPipeNetworkSession();
 
-        void                    setSecurityAttributes(LPSECURITY_ATTRIBUTES pSec);
+        const RemoteAddress & implGetRemoteAddress();
 
-        tstring                 getPipeName();
+        void implRead(char * buffer, std::size_t bufferLen);
 
-    private:
+        void implWrite(const std::vector<ByteBuffer> & buffers);
 
-        void                    onServerStart(RcfServer & server);
+        void implWrite(AsioNetworkSession &toBeNotified, const char * buffer, std::size_t bufferLen);
 
-        IocpSessionStatePtr     implCreateServerSession(I_ClientTransport & clientTransport);
-        ClientTransportAutoPtr  implCreateClientTransport(const I_Endpoint &endpoint);
-        void                    implOpen();
-        void                    implClose();
+        void implAccept();
 
-        typedef Win32NamedPipeSessionState          SessionState;
-        typedef boost::shared_ptr<SessionState>     SessionStatePtr;
+        bool implOnAccept();
 
-        SessionStatePtr         createSessionState();
+        bool implIsConnected();
 
-        tstring                                     mPipeName;
-        HANDLE                                      mPipeNameLock;
-        LPSECURITY_ATTRIBUTES                       mpSec;
+        void implClose();
 
-        Mutex                                       mQueuedAcceptsMutex;
-        boost::int32_t                              mQueuedAccepts;
-        
-        friend class Win32NamedPipeSessionState;
-    };
+        ClientTransportAutoPtr implCreateClientTransport();
 
-    // Win32NamedPipeSessionState
+        void implTransferNativeFrom(ClientTransport & clientTransport);
 
-    class RCF_EXPORT Win32NamedPipeSessionState : public IocpSessionState
-    {
-    public:
-        Win32NamedPipeSessionState(
-            Win32NamedPipeServerTransport &serverTransport, 
-            HANDLE hPipe);
+        static void closeSocket(AsioPipeHandlePtr socketPtr);
 
-        ~Win32NamedPipeSessionState();
-
-        const I_RemoteAddress & getRemoteAddress();
-        HANDLE                  getNativeHandle();
+        HANDLE getNativeHandle();
 
     private:
-        void                    implOnAccept();
-        
-        void                    implRead(
-                                    const ByteBuffer &byteBuffer, 
-                                    std::size_t bufferLen);
-
-        void                    implWrite(
-                                    const std::vector<ByteBuffer> &byteBuffers, 
-                                    IocpSessionState * pReflectee = NULL);
-
-        ClientTransportAutoPtr  implCreateClientTransport();
-
-        void                    implDelayCloseAfterSend();
-        void                    implClose();
-        bool                    implIsConnected();
-
-        virtual
-        void                    implOnMessageLengthError();
-
-        void                    accept();
-        void                    reconnect();
-
-        Win32NamedPipeServerTransport & mTransport;
-        HANDLE                          mhPipe;
-        NoRemoteAddress                 mRemoteAddress;
-        tstring                         mRemotePipeName;
-
+        AsioPipeHandlePtr           mSocketPtr;
+        tstring                     mRemotePipeName;
+        NoRemoteAddress             mRemoteAddress;
 
         friend class Win32NamedPipeServerTransport;
         friend class Win32NamedPipeImpersonator;
+    };
 
-        typedef Win32NamedPipeSessionState          SessionState;
-        typedef boost::shared_ptr<SessionState>     SessionStatePtr;
+    class RCF_EXPORT Win32NamedPipeServerTransport : 
+        public AsioServerTransport
+    {
+    public:
+
+        Win32NamedPipeServerTransport(const tstring & pipeName);
+        ~Win32NamedPipeServerTransport();
+
+        TransportType getTransportType();
+
+        ServerTransportPtr clone();
+
+        AsioNetworkSessionPtr implCreateNetworkSession();
+        void implOpen();
+        ClientTransportAutoPtr implCreateClientTransport(
+            const Endpoint &endpoint);
+
+        tstring getPipeName() const;
+
+        void onServerStart(RcfServer & server);
+        void onServerStop(RcfServer & server);
+
+        void setSecurityAttributes(LPSECURITY_ATTRIBUTES pSec);
+
+    private:
+
+        friend class Win32NamedPipeNetworkSession;
+
+        tstring                         mPipeName;
+        HANDLE                          mPipeNameLock;
+
+        LPSECURITY_ATTRIBUTES           mpSec;
     };
 
     class RCF_EXPORT Win32NamedPipeImpersonator
     {
     public:
         Win32NamedPipeImpersonator();
+        Win32NamedPipeImpersonator(Win32NamedPipeNetworkSession & pipeSession);
         ~Win32NamedPipeImpersonator();
         void impersonate();
         void revertToSelf() const;
+
+    private:
+
+        Win32NamedPipeNetworkSession & mPipeSession;
     };
 
     class RCF_EXPORT NullDacl

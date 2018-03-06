@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -18,37 +21,44 @@
 
 #include <fstream>
 #include <map>
+#include <set>
 
-#include <RCF/FileIoThreadPool.hpp>
 #include <RCF/FileStream.hpp>
-#include <RCF/Idl.hpp>
+#include <RCF/RcfSession.hpp>
 #include <RCF/Service.hpp>
-#include <RCF/StubEntry.hpp>
-#include <RCF/Timer.hpp>
-#include <RCF/Token.hpp>
 
 #include <SF/vector.hpp>
 #include <SF/map.hpp>
 
 #include <boost/filesystem/path.hpp>
 
-#ifdef RCF_USE_SF_SERIALIZATION
+#if RCF_FEATURE_SF==1
 
-namespace boost {
-namespace serialization {
+namespace SF {
 
     RCF_EXPORT void serialize(SF::Archive &ar, boost::filesystem::path &p);
-} }
+
+} // namespace SF
 
 #endif
 
-#ifdef RCF_USE_BOOST_SERIALIZATION
+#if RCF_FEATURE_BOOST_SERIALIZATION==1
 
-namespace boost {
-namespace serialization {
+#include <boost/config.hpp>
+#include <boost/version.hpp>
+
+#if BOOST_VERSION <= 104300
+#define BOOST_FS_NAMESPACE filesystem
+#elif BOOST_VERSION <= 104500
+#define BOOST_FS_NAMESPACE filesystem2
+#else
+#define BOOST_FS_NAMESPACE filesystem3
+#endif
+
+namespace boost { namespace BOOST_FS_NAMESPACE {
 
     template<typename Archive>
-    void serialize(Archive & ar, boost::filesystem::path & p, const unsigned int)
+    void serialize(Archive & ar, boost::BOOST_FS_NAMESPACE::path & p, const unsigned int)
     {
         typedef typename Archive::is_saving IsSaving;
         const bool isSaving = IsSaving::value;
@@ -62,155 +72,55 @@ namespace serialization {
         {
             std::string s;
             ar & s;
-            p = boost::filesystem::path(s);
+            p = path(s);
         }
     }
 
 } }
 
-#endif
+#undef BOOST_FS_NAMESPACE
 
+#endif
 
 namespace RCF {
 
-    //--------------------------------------------------------------------------
-    // I_FileTransferService
-    
-    class FileChunk
+    std::string nativeString(const boost::filesystem::path & p);
+
+    class FileTransferService;
+
+    class FileUploadInfo;
+    class FileDownloadInfo;
+
+    class RCF_EXPORT BandwidthQuota : boost::noncopyable
     {
     public:
+        BandwidthQuota();
+        BandwidthQuota(boost::uint32_t quotaBps);
 
-        FileChunk() : mFileIndex(0), mOffset(0)
-        {}
-
-        boost::uint32_t mFileIndex;
-        boost::uint64_t mOffset;
-        ByteBuffer mData;
-
-#ifdef RCF_USE_SF_SERIALIZATION
-        void serialize(SF::Archive & ar);
-#endif
-
-#ifdef RCF_USE_BOOST_SERIALIZATION
-        template<typename Archive>
-        void serialize(Archive & ar, const unsigned int)
-        {
-            ar & mFileIndex & mOffset & mData;
-        }
-#endif
-
-    };
-
-    class FileTransferRequest
-    {
-    public:
-        FileTransferRequest() : mFile(0), mPos(0), mChunkSize(0)
-        {}
-
-        boost::uint32_t mFile;
-        boost::uint64_t mPos;
-        boost::uint32_t mChunkSize;
-
-#ifdef RCF_USE_SF_SERIALIZATION
-        void serialize(SF::Archive & ar);
-#endif
-
-#ifdef RCF_USE_BOOST_SERIALIZATION
-        template<typename Archive>
-        void serialize(Archive & ar, const unsigned int)
-        {
-            ar & mFile & mPos & mChunkSize;
-        }
-#endif
-
-    };
-
-
-    RCF_BEGIN(I_FileTransferService, "I_FileTransferService")
-
-        RCF_METHOD_V7(
-            void,
-                BeginUpload,
-                    const FileManifest &,           // upload manifest
-                    const std::vector<FileChunk> &, // optional first chunks
-                    FileChunk &,                    // where to start uploading
-                    boost::uint32_t &,              // max message length
-                    boost::uint32_t &,              // upload id
-                    boost::uint32_t &,              // bps
-                    boost::uint32_t)                // session local id
-        
-        RCF_METHOD_V2(
-            void,
-                UploadChunks, 
-                    const std::vector<FileChunk> &, // file chunks to upload
-                    boost::uint32_t &)              // bps
-
-        RCF_METHOD_V5(
-            void,
-                BeginDownload,
-                    FileManifest &,                 // download manifest
-                    const FileTransferRequest &,    // transfer request
-                    std::vector<FileChunk> &,       // optional first chunks
-                    boost::uint32_t &,              // max message length
-                    boost::uint32_t)                // session local id
-
-        RCF_METHOD_V1(
-            void,
-                TrimDownload,
-                    const FileChunk &)              // where to start downloading
-
-        RCF_METHOD_V3(
-            void,
-                DownloadChunks,
-                    const FileTransferRequest &,    // transfer request
-                    std::vector<FileChunk> &,       // file chunks to download
-                    boost::uint32_t &)              // advised wait for next call
-
-    RCF_END(I_FileTransferService)
-
-    typedef std::vector< std::pair<boost::uint32_t, boost::uint32_t> > ThrottleSettings;
-
-    class Throttle
-    {
-    public:
-        Throttle();
-
-        void set(const ThrottleSettings & settings);
-        void get(ThrottleSettings& settings);
-
-        class Reservation
-        {
-        public:
-            Reservation(Throttle & throttle);
-            ~Reservation();
-
-            void allocate();
-            void release(bool sync = true);
-            boost::uint32_t getBps();
-
-        private:
-
-            void releaseImpl();
-
-            Throttle & mThrottle;
-            unsigned int mChangeCounter;
-            boost::uint32_t mBps;
-            bool mReserved;
-        };
+        void setQuota(boost::uint32_t quotaBps);
+        boost::uint32_t calculateLineSpeedLimit();
 
     private:
 
-        Mutex mMutex;
+        friend class FileUploadInfo;
+        friend class FileDownloadInfo;
 
-        // bps -> (max, booked)
-        typedef 
-        std::map<
-            boost::uint32_t, 
-            std::pair<boost::uint32_t, boost::uint32_t> > Settings;
-        
-        unsigned int mChangeCounter;
-        Settings mSettings;
+        void addUpload(FileUploadInfo * pUpload);
+        void removeUpload(FileUploadInfo * pUpload);
+        void addDownload(FileDownloadInfo * pDownload);
+        void removeDownload(FileDownloadInfo * pDownload);       
+
+    private:
+
+        Mutex                           mMutex;
+        boost::uint32_t                 mQuotaBps;
+
+        std::set<FileDownloadInfo *>    mDownloadsInProgress;
+        std::set<FileUploadInfo *>      mUploadsInProgress;
     };
+
+    typedef boost::shared_ptr<BandwidthQuota> BandwidthQuotaPtr;
+   
 
     class FileUploadInfo;
     class FileDownloadInfo;
@@ -220,19 +130,24 @@ namespace RCF {
 
     typedef boost::function1<bool, const FileUploadInfo &>      UploadAccessCallback;
     typedef boost::function1<bool, const FileDownloadInfo &>    DownloadAccessCallback;
+
+    typedef boost::shared_ptr< std::ifstream > IfstreamPtr;
+    typedef boost::shared_ptr< std::ofstream > OfstreamPtr;
+
+    class FileIoRequest;
+    typedef boost::shared_ptr<FileIoRequest> FileIoRequestPtr;
     
-    class FileUploadInfo : 
-        public TokenMapped, 
-        boost::noncopyable
+    class FileUploadInfo : boost::noncopyable
     {
     public:
-        FileUploadInfo(Throttle & uploadThrottle);
+        FileUploadInfo(BandwidthQuotaPtr quotaPtr);
         ~FileUploadInfo();
 
         FileManifest            mManifest;
         boost::filesystem::path mUploadPath;
         
         OfstreamPtr             mFileStream;
+        boost::filesystem::path mFileStreamPath;
         FileIoRequestPtr        mWriteOp;
 
         bool                    mCompleted;
@@ -241,22 +156,22 @@ namespace RCF {
         boost::uint32_t         mCurrentFile;
         boost::uint64_t         mCurrentPos;
         boost::uint32_t         mSessionLocalId;
-        boost::uint32_t         mUploadId;
-        Throttle::Reservation   mReservation;
+        std::string             mUploadId;
+
+        BandwidthQuotaPtr       mQuotaPtr;
     };
 
-    class FileDownloadInfo : 
-        public TokenMapped, 
-        boost::noncopyable
+    class FileDownloadInfo : boost::noncopyable
     {
     public:
-        FileDownloadInfo(Throttle & downloadThrottle);
+        FileDownloadInfo(BandwidthQuotaPtr quotaPtr);
         ~FileDownloadInfo();
         
         boost::filesystem::path mDownloadPath;
         FileManifest            mManifest;
 
         IfstreamPtr             mFileStream;
+        boost::filesystem::path mFileStreamPath;
         FileIoRequestPtr        mReadOp;
         ByteBuffer              mReadBuffer;
         ByteBuffer              mSendBuffer;
@@ -270,32 +185,34 @@ namespace RCF {
         boost::uint32_t         mTransferWindowBytesSoFar;
         boost::uint32_t         mTransferWindowBytesTotal;
 
-        Throttle::Reservation   mReservation;
-
         bool                    mCancel;
 
         boost::uint32_t         mSessionLocalId;
+
+        BandwidthQuotaPtr       mQuotaPtr;
     };
 
     typedef boost::shared_ptr<FileUploadInfo>   FileUploadInfoPtr;
     typedef boost::shared_ptr<FileDownloadInfo> FileDownloadInfoPtr;
 
+    class FileChunk;
+    class FileTransferRequest;
+
     class RCF_EXPORT FileTransferService : public I_Service
     {
     public:
-        FileTransferService(const boost::filesystem::path & tempFileDirectory = "");
+        FileTransferService();
 
-        void setDownloadThrottleSettings(const ThrottleSettings & settings);
-        void getDownloadThrottleSettings(ThrottleSettings & settings);
+        typedef boost::function<void(RcfSession&, FileDownloadInfo &)> OnFileDownloadProgress;
+        typedef boost::function<void(RcfSession&, FileUploadInfo &)> OnFileUploadProgress;
 
-        void setUploadThrottleSettings(const ThrottleSettings & settings);
-        void getUploadThrottleSettings(ThrottleSettings & settings);
-
-        void setUploadCallback(UploadAccessCallback uploadCallback);
+        typedef boost::function1<BandwidthQuotaPtr, RcfSession &> BandwidthQuotaCallback;
+        typedef BandwidthQuotaCallback UploadQuotaCallback;
+        typedef BandwidthQuotaCallback DownloadQuotaCallback;
 
         // For testing.
-        void setTransferWindowS(boost::uint32_t transferWindowS);
-        boost::uint32_t getTransferWindowS();
+        void                setTransferWindowS(boost::uint32_t transferWindowS);
+        boost::uint32_t     getTransferWindowS();
 
         //----------------------------------------------------------------------
         // Remotely accessible.
@@ -305,7 +222,7 @@ namespace RCF {
                                 const std::vector<FileChunk> & chunks,
                                 FileChunk & startPos,
                                 boost::uint32_t & maxMessageLength,
-                                boost::uint32_t & uploadId,
+                                std::string & uploadId,
                                 boost::uint32_t & bps,
                                 boost::uint32_t sessionLocalId);
 
@@ -318,6 +235,7 @@ namespace RCF {
                                 const FileTransferRequest & request,
                                 std::vector<FileChunk> & chunks,
                                 boost::uint32_t & maxMessageLength,
+                                boost::uint32_t & bps,
                                 boost::uint32_t sessionLocalId);
 
         void                TrimDownload(
@@ -326,38 +244,42 @@ namespace RCF {
         void                DownloadChunks(
                                 const FileTransferRequest & request,
                                 std::vector<FileChunk> & chunks,
-                                boost::uint32_t & adviseWaitMs);
+                                boost::uint32_t & adviseWaitMs,
+                                boost::uint32_t & bps);
 
         //----------------------------------------------------------------------
 
     private:
 
-        boost::uint32_t             addUpload(const boost::filesystem::path & uploadPath);
-        void                        removeUpload(boost::uint32_t uploadId);
-        boost::filesystem::path     findUpload(boost::uint32_t uploadId);
+        std::string                 addUpload(const boost::filesystem::path & uploadPath);
+        void                        removeUpload(const std::string & uploadId);
+        boost::filesystem::path     findUpload(const std::string & uploadId);
+        
+        void                        processZeroSizeEntries(RCF::FileUploadInfo & uploadInfo);
+        void                        checkForUploadCompletion(FileUploadInfoPtr uploadInfoPtr);
 
         typedef std::map<
-            boost::uint32_t, 
+            std::string, 
             boost::filesystem::path> UploadsInProgress;
 
         Mutex                   mUploadsInProgressMutex;
         UploadsInProgress       mUploadsInProgress; 
 
-
-        void                onServiceAdded(
-                                RcfServer &         server);
-
-        void                onServiceRemoved(
-                                RcfServer &         server);
+        void                onServerStart(RcfServer & server);
+        void                onServerStop(RcfServer & server);
 
         boost::filesystem::path mUploadDirectory;
 
-        UploadAccessCallback    mUploadCallback;
-
-        Throttle                mDownloadThrottle;
-        Throttle                mUploadThrottle;
+        OnFileDownloadProgress  mOnFileDownloadProgress;
+        OnFileUploadProgress    mOnFileUploadProgress;
 
         boost::uint32_t         mTransferWindowS;
+
+        BandwidthQuotaPtr       mUploadQuota;
+        BandwidthQuotaPtr       mDownloadQuota;
+
+        BandwidthQuotaCallback  mUploadQuotaCallback;
+        BandwidthQuotaCallback  mDownloadQuotaCallback;
     };
 
     typedef boost::shared_ptr<FileTransferService> FileTransferServicePtr;

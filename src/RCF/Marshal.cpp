@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -21,10 +24,11 @@
 
 #include <RCF/AmiThreadPool.hpp>
 #include <RCF/ClientProgress.hpp>
+#include <RCF/Future.hpp>
 #include <RCF/InitDeinit.hpp>
+#include <RCF/OverlappedAmi.hpp>
 #include <RCF/RcfServer.hpp>
 #include <RCF/SerializationProtocol.hpp>
-#include <RCF/ThreadLocalCache.hpp>
 #include <RCF/ThreadLocalData.hpp>
 
 namespace RCF {
@@ -74,6 +78,21 @@ namespace RCF {
     Mutex * gpCandidatesMutex = NULL;
     Candidates * gpCandidates = NULL;
 
+    void initAmi()
+    {
+        gpCandidatesMutex = new Mutex; 
+        gpCandidates = new Candidates;
+    }
+
+    void deinitAmi()
+    {
+        delete gpCandidatesMutex; 
+        gpCandidatesMutex = NULL; 
+        delete gpCandidates; 
+        gpCandidates = NULL;
+    }
+
+
     Mutex & gCandidatesMutex()
     {
         return *gpCandidatesMutex; 
@@ -84,11 +103,6 @@ namespace RCF {
         return *gpCandidates;
     }
 
-    RCF_ON_INIT_DEINIT_NAMED( 
-        gpCandidatesMutex = new Mutex; gpCandidates = new Candidates; ,
-        delete gpCandidatesMutex; gpCandidatesMutex = NULL; delete gpCandidates; gpCandidates = NULL,
-        InitDeinitCandidates)
-
     void ClientStub::enrol(I_Future *pFuture)
     {
         mFutures.push_back(pFuture);
@@ -96,14 +110,14 @@ namespace RCF {
     }
 
     void ClientStub::init( 
-        const std::string &subInterface, 
+        const std::string & interfaceName,
         int fnId, 
         RCF::RemoteCallSemantics rcs)
-    {        
+    {
         mRequest.init(
             getTargetToken(),
             getTargetName(),
-            subInterface,
+            interfaceName,
             fnId,
             getSerializationProtocol(),
             mMarshalingProtocol,
@@ -113,23 +127,24 @@ namespace RCF {
             false,
             mPingBackIntervalMs,
             mArchiveVersion,
-            mUseNativeWstringSerialization);
+            mUseNativeWstringSerialization,
+            mEnableSfPointerTracking);
+
+        ::RCF::CurrentClientStubSentry sentry(*this);
 
         mOut.reset(
             getSerializationProtocol(),
             32,
             mRequest.encodeRequestHeader(),
             mRuntimeVersion,
-            mArchiveVersion);
+            mArchiveVersion,
+            mEnableSfPointerTracking);
 
         bool asyncParameters = false;
-        {
-            ::RCF::CurrentClientStubSentry sentry(*this);
-            mpParameters->write(mOut);
+        mpParameters->write(mOut);
+        mFutures.clear();
+        asyncParameters = mpParameters->enrolFutures(this);
 
-            mFutures.clear();
-            asyncParameters = mpParameters->enrolFutures(this);
-        }
         if (asyncParameters)
         {
             setAsync(true);
@@ -140,11 +155,26 @@ namespace RCF {
     {
         CurrentClientStubSentry sentry(*this);
         instantiateTransport();
-        if (    !mConnected 
-            ||    (    mConnected 
-                &&    mAutoReconnect 
-                &&    mRcs == Twoway 
-                &&    !mTransport->isConnected()))
+
+        // Do we need to reconnect?
+
+        bool shouldReconnect = false;
+
+        if (!mConnected)
+        {
+            // Not connected.
+            shouldReconnect = true;
+        }
+        else if (       mConnected 
+                    &&  mAutoReconnect 
+                    &&  mRcs == Twoway 
+                    &&  !mTransport->isConnected())
+        {
+            // Auto reconnect.
+            shouldReconnect = true;
+        }
+
+        if (shouldReconnect)
         {
             std::string endpoint;
             if (mEndpoint.get())
@@ -155,15 +185,28 @@ namespace RCF {
             RCF_LOG_2()(this)(endpoint)(mConnectTimeoutMs) 
                 << "RcfClient - connect to server.";
 
-            mTransport->disconnect(mConnectTimeoutMs);
-
-            if (mAsync)
+            if ( getTransportType() == Tt_Http || getTransportType() == Tt_Https )
             {
-                mAsyncTimerReason = Connect;
-                mAsyncTimerEntry = mTransport->setTimer(mConnectTimeoutMs, this);
+                if ( getHttpProxy().size() > 0 )
+                {
+                    RCF_LOG_2()(this) << "RcfClient - HTTP proxy: " << getHttpProxy() << ":" << getHttpProxyPort();
+                }
+                else
+                {
+                    RCF_LOG_2()(this) << "RcfClient - HTTP proxy: <None configured>";
+                }
             }
 
-            mTransport->connect(*this, mConnectTimeoutMs);            
+            unsigned int connectTimeoutMs = mConnectTimeoutMs;
+            if (connectTimeoutMs == 0)
+            {
+                connectTimeoutMs = MaxTimeoutMs;
+            }
+            mTransport->disconnect(connectTimeoutMs);
+
+            mAsyncOpType = Connect;
+
+            mTransport->connect(*this, connectTimeoutMs);
         }
         else
         {
@@ -178,9 +221,12 @@ namespace RCF {
         mTransport->setAsync(mAsync);
         setAsyncCallback(onCompletion);
         connect();
+
+        // In case the connect completes on this thread (as it would for a named pipe).
+        getTlsAmiNotification().run();
     }
 
-    void ClientStub::waitAsync(
+    void ClientStub::wait(
         boost::function0<void> onCompletion, 
         boost::uint32_t timeoutMs)
     {
@@ -189,40 +235,69 @@ namespace RCF {
         mTransport->setAsync(mAsync);
         setAsyncCallback(onCompletion);
 
-        RCF_ASSERT_EQ(mAsyncTimerReason , None);
-        mAsyncTimerReason = Wait;
-        mAsyncTimerEntry = mTransport->setTimer(timeoutMs, this);
+        mAsyncOpType = Wait;
+        mTransport->setTimer(timeoutMs, this);
     }
 
-    void ClientStub::onConnectCompleted(bool alreadyConnected)
+    void ClientStub::doBatching()
     {
-        if (!alreadyConnected)
+        RCF_ASSERT_EQ(mRcs , Oneway);
+        RCF_ASSERT(!mAsync);
+        RCF_ASSERT(mBatchBufferPtr);
+
+        // Accumulate in the batch buffer.
+        std::size_t appendLen = lengthByteBuffers(mEncodedByteBuffers);
+        std::size_t currentSize = mBatchBufferPtr->size();
+
+        bool usingTempBuffer = false;
+
+        // If this message will cause us to exceed the limit, then flush first.
+        if (    mBatchMaxMessageLength 
+            &&  currentSize + appendLen > mBatchMaxMessageLength)
         {
-            if (mAsync)
-            {
-                if (mAsyncTimerEntry != TimerEntry())
-                {
-                    mTransport->killTimer(mAsyncTimerEntry);
-                    mAsyncTimerEntry = TimerEntry();
-                }
-                mAsyncTimerReason = None;
-            }
+            mBatchBufferTemp.resize(appendLen);
+            copyByteBuffers(mEncodedByteBuffers, & mBatchBufferTemp[0] );
+            usingTempBuffer = true;
 
-            std::vector<FilterPtr> filters;
-            mTransport->getTransportFilters(filters);
+            unsigned int timeoutMs = generateTimeoutMs(mEndTimeMs);
+            flushBatch(timeoutMs);
+            currentSize = mBatchBufferPtr->size();
+        }
 
-            std::for_each(
-                filters.begin(),
-                filters.end(),
-                boost::bind(&Filter::reset, _1));
+        mBatchBufferPtr->resize( currentSize + appendLen);
 
-            mTransport->setTransportFilters(std::vector<FilterPtr>());
-            if (!filters.empty())
-            {
-                requestTransportFilters(filters);
-            }
+        if (usingTempBuffer)
+        {
+            memcpy(
+                & (*mBatchBufferPtr)[currentSize], 
+                &mBatchBufferTemp[0], 
+                mBatchBufferTemp.size());
+        }
+        else
+        {
+            copyByteBuffers(
+                mEncodedByteBuffers, 
+                & (*mBatchBufferPtr)[currentSize] );
+        }
+
+        ++mBatchMessageCount;
+    }
+
+    void ClientStub::onRequestTransportFiltersCompleted()
+    {
+        if (mAsync && hasAsyncException())
+        {
+            scheduleAmiNotification();
+            getTlsAmiNotification().run();
+            return;
+        }
+
+        try
+        {
+            mSetTransportProtocol = false;
             mConnected = true;
 
+            // Progress notification when connection is established.
             if (
                 mClientProgressPtr.get() &&
                 (mClientProgressPtr->mTriggerMask & ClientProgress::Event))
@@ -240,93 +315,162 @@ namespace RCF {
                     action != ClientProgress::Cancel,
                     Exception(_RcfError_ClientCancel()));
             }
-        }
 
-        if (!mEncodedByteBuffers.empty())
-        {
-            unsigned int timeoutMs = generateTimeoutMs(mEndTimeMs);
-
-            if (mAsync)
+            // If we're only connecting, mEncodedByteBuffers will be empty.
+            if (!mEncodedByteBuffers.empty())
             {
-                mAsyncTimerReason = Write;
-                mAsyncTimerEntry = mTransport->setTimer(timeoutMs, this);
-            }
-
-            // Prepend the length field.
-            BOOST_STATIC_ASSERT(sizeof(unsigned int) == 4);
-
-            unsigned int messageLength = static_cast<unsigned int>(
-                lengthByteBuffers(mEncodedByteBuffers));
-
-            ByteBuffer & byteBuffer = mEncodedByteBuffers.front();
-            byteBuffer.expandIntoLeftMargin(4);
-            memcpy(byteBuffer.getPtr(), &messageLength, 4);
-            RCF::machineToNetworkOrder(byteBuffer.getPtr(), 4, 1);
-
-            if (mBatchMode)
-            {
-                RCF_ASSERT_EQ(mRcs , Oneway);
-                RCF_ASSERT(!mAsync);
-                RCF_ASSERT(mBatchBufferPtr);
-
-                // Accumulate in the batch buffer.
-                std::size_t appendLen = lengthByteBuffers(mEncodedByteBuffers);
-                std::size_t currentSize = mBatchBufferPtr->size();
-
-                bool usingTempBuffer = false;
-
-                // If this message will cause us to exceed the limit, then flush first.
-                if (    mBatchMaxMessageLength 
-                    &&  currentSize + appendLen > mBatchMaxMessageLength)
-                {
-                    mBatchBufferTemp.resize(appendLen);
-                    copyByteBuffers(mEncodedByteBuffers, & mBatchBufferTemp[0] );
-                    usingTempBuffer = true;
-
-                    flushBatch(timeoutMs);
-                    currentSize = mBatchBufferPtr->size();
-                }
-                
-                mBatchBufferPtr->resize( currentSize + appendLen);
-
-                if (usingTempBuffer)
-                {
-                    memcpy(
-                        & (*mBatchBufferPtr)[currentSize], 
-                        &mBatchBufferTemp[0], 
-                        mBatchBufferTemp.size());
-                }
-                else
-                {
-                    copyByteBuffers(
-                        mEncodedByteBuffers, 
-                        & (*mBatchBufferPtr)[currentSize] );
-                }
-
-                ++mBatchMessageCount;
+                beginSend();
             }
             else
             {
-                int err = getTransport().send(*this, mEncodedByteBuffers, timeoutMs);
-                RCF_UNUSED_VARIABLE(err);
+                if (mAsync)
+                {
+                    scheduleAmiNotification();
+                }
+            }   
+        }
+        catch(const RCF::Exception & e)
+        {
+            if (mAsync)
+            {
+                std::auto_ptr<Exception> ePtr(e.clone());
+                setAsyncException(ePtr);
+                scheduleAmiNotification();
+                getTlsAmiNotification().run();
+            }
+            else
+            {
+                throw;
+            }
+        }
+    }
+
+    void ClientStub::beginSend()
+    {
+        RCF_ASSERT( !mEncodedByteBuffers.empty() );
+
+        unsigned int timeoutMs = generateTimeoutMs(mEndTimeMs);
+
+        if (mAsync)
+        {
+            mAsyncOpType = Write;
+        }
+
+        // Add framing (4 byte length prefix).
+        int messageSize = 
+            static_cast<int>(RCF::lengthByteBuffers(mEncodedByteBuffers));
+
+        ByteBuffer &byteBuffer = mEncodedByteBuffers.front();
+
+        RCF_ASSERT_GTEQ(byteBuffer.getLeftMargin() , 4);
+        byteBuffer.expandIntoLeftMargin(4);
+        memcpy(byteBuffer.getPtr(), &messageSize, 4);
+        RCF::machineToNetworkOrder(byteBuffer.getPtr(), 4, 1);
+
+        if (mBatchMode)
+        {
+            doBatching();
+        }
+        else
+        {
+            int err = getTransport().send(*this, mEncodedByteBuffers, timeoutMs);
+            RCF_UNUSED_VARIABLE(err);
+        }
+    }
+
+    void ClientStub::onConnectCompleted(bool alreadyConnected)
+    {
+        CurrentClientStubSentry sentry(*this);
+
+        if (alreadyConnected && !mSetTransportProtocol)
+        {
+            if (mEncodedByteBuffers.size() > 0)
+            {
+                beginSend();
             }
         }
         else
         {
             if (mAsync)
             {
-                prepareAmiNotification();
+                mAsyncOpType = None;
             }
-        }        
+
+            std::vector<FilterPtr> filters;
+            mTransport->getTransportFilters(filters);
+            if (
+                    mTransportProtocol == Tp_Clear 
+                &&  !mEnableCompression 
+                &&  filters.size() > 0)
+            {
+                // Custom filter sequence. Setup transport filters again for a 
+                // new connection.
+                std::vector<FilterPtr> filterVec;
+                mTransport->getTransportFilters(filterVec);
+
+                for ( std::size_t i = 0; i<filterVec.size(); ++i )
+                {
+                    filterVec[i]->resetState();
+                }
+
+                mTransport->setTransportFilters(std::vector<FilterPtr>());
+                if ( !filterVec.empty() )
+                {
+                    requestTransportFilters(filterVec);
+                }
+                onRequestTransportFiltersCompleted();
+            }
+            else
+            {
+                if (!mTransport->supportsTransportFilters())
+                {
+                    onRequestTransportFiltersCompleted();
+                }
+                else
+                {
+                    mTransport->setTransportFilters(std::vector<FilterPtr>());
+                    if (mTransportProtocol == Tp_Clear && !mEnableCompression)
+                    {
+                        onRequestTransportFiltersCompleted();
+                    }
+                    else
+                    {
+                        std::vector<FilterPtr> filterVec;
+                        createFilterSequence(filterVec);
+
+                        if (mAsync)
+                        {
+                            requestTransportFiltersAsync(
+                                filterVec, 
+                                boost::bind(&ClientStub::onRequestTransportFiltersCompleted, this));
+                        }
+                        else
+                        {
+                            requestTransportFilters(filterVec);
+                            onRequestTransportFiltersCompleted();
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    void ClientStub::send()
+    void ClientStub::beginCall()
     {
         CurrentClientStubSentry sentry(*this);
 
         unsigned int totalTimeoutMs = getRemoteCallTimeoutMs();
         unsigned int startTimeMs = getCurrentTimeMs();
-        mEndTimeMs = startTimeMs + totalTimeoutMs;            
+        if (totalTimeoutMs)
+        {
+            mEndTimeMs = startTimeMs + totalTimeoutMs;
+        }
+        else
+        {
+            // Disable timeout.
+            static const unsigned int maxTimeoutMs = (((unsigned int)-1)/10)*9;
+            mEndTimeMs = startTimeMs + maxTimeoutMs;
+        }
 
         ThreadLocalCached< std::vector<ByteBuffer> > tlcByteBuffers;
         std::vector<ByteBuffer> &byteBuffers = tlcByteBuffers.get();
@@ -363,38 +507,34 @@ namespace RCF {
 
     void ClientStub::onSendCompleted()
     {
-        mEncodedByteBuffers.resize(0);
         if (mRcs == RCF::Oneway)
         {
+            mEncodedByteBuffers.resize(0);
+
             // TODO: Refactor. This code is identical to what happens when a 
             // receive completes, in a twoway call.
 
             if (mAsync)
             {
-                if (mAsyncTimerEntry != TimerEntry())
-                {
-                    mTransport->killTimer(mAsyncTimerEntry);
-                    mAsyncTimerEntry = TimerEntry();
-                }            
-                mAsyncTimerReason = None;
-
-                prepareAmiNotification();
+                mAsyncOpType = None;
+                scheduleAmiNotification();
             }
         }
         else
         {
-            receive();
+            mEncodedByteBuffers.resize(0);
+            beginReceive();
         }
     }
 
-    void ClientStub::receive()
+    void ClientStub::beginReceive()
     {
         if (mPingBackIntervalMs && mRuntimeVersion >= 5)
         {
             mPingBackCheckIntervalMs = 3 * mPingBackIntervalMs;
 
             mNextPingBackCheckMs = 
-                Platform::OS::getCurrentTimeMs() + mPingBackCheckIntervalMs;
+                RCF::getCurrentTimeMs() + mPingBackCheckIntervalMs;
 
             // So we avoid the special value 0.
             mNextPingBackCheckMs |= 1;
@@ -402,7 +542,7 @@ namespace RCF {
 
         if (mAsync)
         {
-            mAsyncTimerReason = Read;
+            mAsyncOpType = Read;
         }
 
         unsigned int timeoutMs = generateTimeoutMs(mEndTimeMs);
@@ -428,12 +568,7 @@ namespace RCF {
     {
         if (mAsync)
         {
-            if (mAsyncTimerEntry != TimerEntry())
-            {
-                mTransport->killTimer(mAsyncTimerEntry);
-                mAsyncTimerEntry = TimerEntry();
-            }            
-            mAsyncTimerReason = None;
+            mAsyncOpType = None;
         }
 
         ByteBuffer unfilteredByteBuffer;
@@ -452,7 +587,8 @@ namespace RCF {
             unfilteredByteBuffer,
             mOut.getSerializationProtocol(),
             mRuntimeVersion,
-            mArchiveVersion);
+            mArchiveVersion,
+            response.getEnableSfPointerTracking());
 
         RCF_LOG_3()(this)(response) << "RcfClient - received response.";
 
@@ -489,37 +625,25 @@ namespace RCF {
                 int clientRuntimeVersion = getRuntimeVersion();
                 int clientArchiveVersion = getArchiveVersion();
 
-                // We should only get this error response, if server runtime or
-                // archive version is older.
-
-                RCF_VERIFY(
-                        serverRuntimeVersion < clientRuntimeVersion 
-                    ||  serverArchiveVersion < clientArchiveVersion,
-                    Exception(_RcfError_Encoding()))
-                        (serverRuntimeVersion)(serverArchiveVersion)
-                        (clientRuntimeVersion)(clientArchiveVersion);
-
-                RCF_VERIFY(
-                    serverRuntimeVersion <= clientRuntimeVersion, 
-                    Exception(_RcfError_Encoding()))
-                        (serverRuntimeVersion)(clientRuntimeVersion);
-
-                RCF_VERIFY(
-                    serverArchiveVersion <= clientArchiveVersion, 
-                    Exception(_RcfError_Encoding()))
-                        (serverArchiveVersion)(clientArchiveVersion);
+                // We get this response from the server, if either the
+                // client runtime version or client archive version, is
+                // greater than what the server supports.
 
                 if (getAutoVersioning() && getTries() == 0)
                 {
-                    setRuntimeVersion(serverRuntimeVersion);
+                    int adjustedRuntimeVersion = RCF_MIN(serverRuntimeVersion, clientRuntimeVersion);
+                    setRuntimeVersion(adjustedRuntimeVersion);
+
+                    
                     if (serverArchiveVersion)
                     {
-                        setArchiveVersion(serverArchiveVersion);
+                        int adjustedArchiveVersion = RCF_MIN(serverArchiveVersion, clientArchiveVersion);
+                        setArchiveVersion(adjustedArchiveVersion);
                     }
                     setTries(1);
 
                     init(mRequest.getSubInterface(), mRequest.getFnId(), mRcs);
-                    send();
+                    beginCall();
                 }
                 else
                 {
@@ -540,11 +664,11 @@ namespace RCF {
                 // Record a timestamp and go back to receiving.
 
                 ++mPingBackCount;
-                mPingBackTimeStamp = Platform::OS::getCurrentTimeMs();
+                mPingBackTimeStamp = RCF::getCurrentTimeMs();
 
                 applyRecursionLimiter(
                     mRecursionState,
-                    &ClientStub::receive,
+                    &ClientStub::beginReceive,
                     *this);
             }
             else
@@ -558,7 +682,7 @@ namespace RCF {
             mpParameters->read(mIn);
             mIn.clearByteBuffer();
 
-#ifdef RCF_USE_BOOST_FILESYSTEM
+#if RCF_FEATURE_FILETRANSFER==1
 
             // Check for any file downloads.
             {
@@ -577,17 +701,31 @@ namespace RCF {
 
             if (mAsync)
             {
-                prepareAmiNotification();
+                scheduleAmiNotification();
             }
         }
     }
 
-    void ClientStub::prepareAmiNotification()
+    void ClientStub::scheduleAmiNotification()
     {
-        std::auto_ptr<Lock> lockPtr( new Lock(*mSignalledMutex) );
+        if (!mCurrentCallDesc.empty())
+        {
+            RCF_LOG_2() << "RcfClient - end remote call. " << mCurrentCallDesc;
+        }
 
+        if (mSignalledLockPtr)
+        {
+            RCF_ASSERT( !mSignalledLockPtr->locked() );
+            mSignalledLockPtr->lock();
+        }
+        else
+        {
+            mSignalledLockPtr.reset( new Lock(*mSignalledMutexPtr) );
+        }
+
+        mCallInProgress = false;
         mSignalled = true;
-        mSignalledCondition->notify_all();
+        mSignalledConditionPtr->notify_all(*mSignalledLockPtr);
 
         boost::function0<void> cb;
         if (mAsyncCallback)
@@ -596,35 +734,38 @@ namespace RCF {
             mAsyncCallback = boost::function0<void>();                
         }
 
-        getCurrentAmiNotification().set(cb, lockPtr, mSignalledMutex);
+        getTlsAmiNotification().set(cb, mSignalledLockPtr, mSignalledMutexPtr);
     }
 
     bool ClientStub::ready()
     {
-        Lock lock(*mSignalledMutex);
+        Lock lock(*mSignalledMutexPtr);
         return mSignalled;
     }
 
-    void ClientStub::wait(boost::uint32_t timeoutMs)
+    void ClientStub::waitForReady(boost::uint32_t timeoutMs)
     {
-        Lock lock(*mSignalledMutex);
+        Lock lock(*mSignalledMutexPtr);
         if (!mSignalled)
         {
             if (timeoutMs)
             {
-                mSignalledCondition->timed_wait(lock, timeoutMs);
+                mSignalledConditionPtr->timed_wait(lock, timeoutMs);
             }
             else
             {
-                mSignalledCondition->wait(lock);
+                mSignalledConditionPtr->wait(lock);
             }            
         }
     }
 
     void ClientStub::cancel()
     {
-        mTransport->cancel();
-        getCurrentAmiNotification().run();
+        if (mTransport.get())
+        {
+            mTransport->cancel();
+        }
+        getTlsAmiNotification().run();
     }
 
     void ClientStub::setSubRcfClientPtr(RcfClientPtr clientStubPtr)
@@ -642,12 +783,18 @@ namespace RCF {
     void ClientStub::call( 
         RCF::RemoteCallSemantics rcs)
     {
+
+        if (    rcs == RCF::Oneway 
+            &&  (getTransportType() == RCF::Tt_Http || getTransportType() == RCF::Tt_Https) )
+        {
+            // Oneway is not possible over HTTP/HTTPS.
+            throw RCF::Exception(_RcfError_OnewayHttp());
+        }
+
         mRetry = false;
         mRcs = rcs;
         mPingBackTimeStamp = 0;
         mPingBackCount = 0;
-
-        RCF_ASSERT_EQ(mAsyncTimerReason , None);
 
         // Set the progress timer timeouts.
         mTimerIntervalMs = 0;
@@ -659,7 +806,7 @@ namespace RCF {
             mTimerIntervalMs = mClientProgressPtr->mTimerIntervalMs;
 
             mNextTimerCallbackMs = 
-                Platform::OS::getCurrentTimeMs() + mTimerIntervalMs;
+                RCF::getCurrentTimeMs() + mTimerIntervalMs;
 
             // So we avoid the special value 0.
             mNextTimerCallbackMs |= 1;
@@ -671,17 +818,17 @@ namespace RCF {
 
         mSignalled = false;
         
-        send();
+        beginCall();
     }
 
     void ClientStub::setAsync(bool async)
     {
         mAsync = async;
 
-        if (mAsync && !mSignalledMutex)
+        if (mAsync && !mSignalledMutexPtr)
         {
-            mSignalledMutex.reset( new Mutex() );
-            mSignalledCondition.reset( new Condition() );
+            mSignalledMutexPtr.reset( new Mutex() );
+            mSignalledConditionPtr.reset( new Condition() );
         }
     }
 
@@ -697,40 +844,42 @@ namespace RCF {
 
     std::auto_ptr<Exception> ClientStub::getAsyncException()
     {
-        Lock lock(*mSignalledMutex);
+        Lock lock(*mSignalledMutexPtr);
         return mAsyncException;
     }
 
     void ClientStub::setAsyncException(std::auto_ptr<Exception> asyncException)
     {
-        Lock lock(*mSignalledMutex);
+        Lock lock(*mSignalledMutexPtr);
         mAsyncException = asyncException;
     }
 
     bool ClientStub::hasAsyncException()
     {
-        Lock lock(*mSignalledMutex);
+        Lock lock(*mSignalledMutexPtr);
         return mAsyncException.get() != NULL;
     }
 
     typedef boost::shared_ptr< ClientTransportAutoPtr > ClientTransportAutoPtrPtr;
 
     void vc6_helper(
-        boost::function1<void, ClientTransportAutoPtr> func,
+        boost::function2<void, RcfSessionPtr, ClientTransportAutoPtr> func,
+        RcfSessionPtr sessionPtr,
         ClientTransportAutoPtrPtr clientTransportAutoPtrPtr)
     {
-        func(*clientTransportAutoPtrPtr);
+        func(sessionPtr, *clientTransportAutoPtrPtr);
     }
 
     void convertRcfSessionToRcfClient(
-        boost::function1<void, ClientTransportAutoPtr> func,
+        OnCallbackConnectionCreated func,
         RemoteCallSemantics rcs)
     {
-        RcfSession & rcfSession = getCurrentRcfSession();
+        RcfSessionPtr sessionPtr = getCurrentRcfSessionPtr()->shared_from_this();
+        RcfSession & rcfSession = *sessionPtr;
 
-        I_ServerTransportEx & serverTransport =
-            dynamic_cast<I_ServerTransportEx &>(
-                rcfSession.getSessionState().getServerTransport());
+        ServerTransportEx & serverTransport =
+            dynamic_cast<ServerTransportEx &>(
+                rcfSession.getNetworkSession().getServerTransport());
 
         ClientTransportAutoPtrPtr clientTransportAutoPtrPtr(
             new ClientTransportAutoPtr(
@@ -740,6 +889,7 @@ namespace RCF {
             boost::bind(
                 vc6_helper,
                 func,
+                sessionPtr,
                 clientTransportAutoPtrPtr) );
 
         bool closeSession = (rcs == RCF::Twoway);
@@ -749,11 +899,11 @@ namespace RCF {
 
     RcfSessionPtr convertRcfClientToRcfSession(
         ClientStub & clientStub, 
-        I_ServerTransport & serverTransport,
+        ServerTransport & serverTransport,
         bool keepClientConnection)
     {
-        I_ServerTransportEx &serverTransportEx =
-            dynamic_cast<RCF::I_ServerTransportEx &>(serverTransport);
+        ServerTransportEx &serverTransportEx =
+            dynamic_cast<RCF::ServerTransportEx &>(serverTransport);
 
         ClientTransportAutoPtr clientTransportAutoPtr(
             clientStub.releaseTransport());
@@ -766,6 +916,115 @@ namespace RCF {
         clientStub.setTransport(clientTransportAutoPtr);
 
         return sessionPtr;
+    }
+
+    RcfSessionPtr convertRcfClientToRcfSession(
+        ClientStub & clientStub, 
+        RcfServer & server,
+        bool keepClientConnection)
+    {
+        return convertRcfClientToRcfSession(
+            clientStub, 
+            server.getServerTransport(), 
+            keepClientConnection);
+    }
+
+    void createCallbackConnectionImpl(
+        ClientStub & clientStubOrig, 
+        ServerTransport & callbackServer)
+    {
+        if (clientStubOrig.getRuntimeVersion() <= 11)
+        {
+            createCallbackConnectionImpl_Legacy(clientStubOrig, callbackServer);
+        }
+        else
+        {
+            I_RcfClient client("", clientStubOrig);
+            ClientStub & stub = client.getClientStub();
+            stub.setTransport( clientStubOrig.releaseTransport() );
+
+            OobCreateCallbackConnection msg(clientStubOrig.getRuntimeVersion());
+            ByteBuffer controlRequest;
+            msg.encodeRequest(controlRequest);
+            stub.setOutofBandRequest(controlRequest);
+
+            stub.ping(RCF::Twoway);
+
+            // Get OOB response.
+            ByteBuffer controlResponse = stub.getOutOfBandResponse();
+            stub.setOutofBandRequest(ByteBuffer());
+            stub.setOutofBandResponse(ByteBuffer());
+            msg.decodeResponse(controlResponse);
+
+            int ret = msg.mResponseError; 
+            RCF_VERIFY(ret == RcfError_Ok, RemoteException( Error(ret) ));
+
+            convertRcfClientToRcfSession(client.getClientStub(), callbackServer);
+        }
+    }
+
+    void createCallbackConnectionImpl(
+        ClientStub & clientStub, 
+        RcfServer & callbackServer)
+    {
+        createCallbackConnectionImpl(clientStub, callbackServer.getServerTransport());
+    }
+
+    void setCurrentCallDesc(
+        std::string& desc, 
+        RCF::MethodInvocationRequest& request, 
+        const char * szFunc, 
+        const char * szArity)
+    {
+        desc.clear();
+        if (LogManager::instance().isEnabled(LogNameRcf, LogLevel_2))
+        {
+            const std::string & subInterface = request.getSubInterface();
+            const std::string & target = request.getService();
+
+            if (subInterface == target)
+            {
+                desc = request.getSubInterface();
+                desc += "::";
+                desc += szFunc;
+                desc += "().";
+            }
+            else
+            {
+                desc = request.getSubInterface();
+                desc += "::";
+                desc += szFunc;
+                if (request.getService().empty())
+                {
+                    desc += "().";
+                }
+                else
+                {
+                    desc += "() on ";
+                    desc += request.getService();
+                    desc += ".";
+                }
+            }
+
+            char szFnid[10] = {0};
+
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4995) // 'sprintf': name was marked as #pragma deprecated
+#pragma warning(disable: 4996) // 'sprintf'/'localtime': This function or variable may be unsafe.
+#endif
+
+            sprintf(szFnid, "%d", request.getFnId());
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+
+            desc += " Fnid: ";
+            desc += szFnid;
+            desc += ". Type: ";
+            desc += szArity;
+        }
     }
 
 } // namespace RCF

@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -23,16 +26,10 @@
 #include <stdexcept>
 #include <vector>
 
-#ifndef ASSERT
-#include "Assert.hpp"
-#define ASSERT(x) UTIL_ASSERT(x, std::runtime_error("Assertion failure (command line parser)"))
-#define REMEMBER_TO_UNDEFINE_ASSERT
-#endif
-
 //*****************************************
 // Command line parsing utility
 
-namespace util {
+namespace RCF {
 
     class I_CommandLineOption {
     public:
@@ -62,10 +59,6 @@ namespace util {
         {
             parse(argc, const_cast<const char **>(argv), exitOnHelp);
         }
-
-#if defined(_MSC_VER) && _MSC_VER <= 1200
-#define for if (0) {} else for
-#endif
 
         void parse(int argc, const char **argv, bool exitOnHelp = true)
         {
@@ -157,11 +150,7 @@ namespace util {
                 }
             }
         }
-
-#if defined(_MSC_VER) && _MSC_VER <= 1200
-#undef for
-#endif
-       
+     
         void registerOption(I_CommandLineOption *option)
         {
             mOptions[ option->getName() ] = option;
@@ -222,14 +211,31 @@ namespace util {
 
         bool isKey(const std::string &arg)
         {
-            return (arg.size() > 1 && arg[0] == '-' );
+            bool startsWithDash = (arg.size() > 1 && arg[0] == '-' );
+            bool startsWithDoubleDash = (arg.size() > 2 && arg[0] == '-' && arg[1] == '-');
+            return startsWithDash || startsWithDoubleDash;
         }
 
         std::string toKey(const std::string &arg)
         {
             assert( isKey(arg) );
-            //return std::string(arg, 1);
-            return arg.substr(1);
+
+            bool startsWithDash = (arg.size() > 1 && arg[0] == '-' );
+            bool startsWithDoubleDash = (arg.size() > 2 && arg[0] == '-' && arg[1] == '-');
+
+            if (startsWithDoubleDash)
+            {
+                return arg.substr(2);
+            }
+            else if (startsWithDash)
+            {
+                return arg.substr(1);
+            }
+            else
+            {
+                assert(0 && "invalid command line option syntax");
+                return "";
+            }
         }
 
         void lexical_cast( const std::string &strValue, bool &value )
@@ -349,17 +355,12 @@ namespace util {
     }
 
     template<typename T>
-    inline std::ostream &operator<<(std::ostream &os, CommandLineOption<T> &option)
+    inline RCF::MemOstream &operator<<(RCF::MemOstream &os, CommandLineOption<T> &option)
     {
         os << option.get();
         return os;
     }
 
-} // namespace util
-
-#ifdef REMEMBER_TO_UNDEFINE_ASSERT
-#undef REMEMBER_TO_UNDEFINE_ASSERT
-#undef ASSERT
-#endif
+} // namespace RCF
 
 #endif // ! INCLUDE_UTIL_COMMANDLINE_HPP

@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -22,8 +25,9 @@
 #include <boost/shared_ptr.hpp>
 #include <boost/weak_ptr.hpp>
 
-#include <boost/asio/buffer.hpp>
-
+#include <RCF/Asio.hpp>
+#include <RCF/AsioBuffers.hpp>
+#include <RCF/Enums.hpp>
 #include <RCF/Export.hpp>
 #include <RCF/IpAddress.hpp>
 #include <RCF/IpServerTransport.hpp>
@@ -31,31 +35,15 @@
 #include <RCF/Service.hpp>
 #include <RCF/ThreadLibrary.hpp>
 
-namespace boost {
-    namespace asio {
-        class io_service;
-    }
-    namespace system {
-        class error_code;
-    }
-}
-
 namespace RCF {
 
     class RcfServer;
     class TcpClientTransport;
-    class AsioSessionState;
-    class AsioAcceptor;
-    class AsioDeadlineTimer;
+    class AsioNetworkSession;
     class AsioServerTransport;
 
-    typedef boost::asio::io_service    AsioIoService;
-
-    typedef boost::shared_ptr<AsioIoService>            AsioIoServicePtr;
-    typedef boost::shared_ptr<AsioAcceptor>             AsioAcceptorPtr;
-    typedef boost::shared_ptr<AsioDeadlineTimer>        AsioDeadlineTimerPtr;
-    typedef boost::shared_ptr<AsioSessionState>         AsioSessionStatePtr;
-    typedef boost::weak_ptr<AsioSessionState>           AsioSessionStateWeakPtr;
+    typedef boost::shared_ptr<AsioNetworkSession>         AsioNetworkSessionPtr;
+    typedef boost::weak_ptr<AsioNetworkSession>           AsioNetworkSessionWeakPtr;
 
     class AsioAcceptor
     {
@@ -64,32 +52,32 @@ namespace RCF {
         {}
     };
 
+    typedef boost::scoped_ptr<AsioAcceptor>           AsioAcceptorPtr;
+
     class RCF_EXPORT AsioServerTransport :
-        public I_ServerTransport,
-        public I_ServerTransportEx,
+        public ServerTransport,
+        public ServerTransportEx,
         public I_Service
     {
     private:
 
         // Needs to call open().
-        friend class TcpAsioTransportFactory;
+        friend class TcpTransportFactory;
+        friend class HttpTransportFactory;
+        friend class HttpsTransportFactory;
+
+        friend class Win32NamedPipeNetworkSession;
 
         typedef boost::weak_ptr<I_Session>              SessionWeakPtr;
 
-        AsioSessionStatePtr createSessionState();
-        
-        void                notifyClose(
-                                AsioSessionStateWeakPtr sessionStateWeakPtr);
+        AsioNetworkSessionPtr createNetworkSession();
 
-        void                closeSessionState(
-                                AsioSessionStateWeakPtr sessionStateWeakPtr);
-
-        
+    protected:
 
         // I_ServerTransportEx implementation
         ClientTransportAutoPtr  
                             createClientTransport(
-                                const I_Endpoint &endpoint);
+                                const Endpoint &endpoint);
 
         SessionPtr          createServerSession(
                                 ClientTransportAutoPtr & clientTransportAutoPtr, 
@@ -100,11 +88,7 @@ namespace RCF {
                             createClientTransport(
                                 SessionPtr sessionPtr);
 
-        bool                reflect(
-                                const SessionPtr &sessionPtr1, 
-                                const SessionPtr &sessionPtr2);
-
-        bool                isConnected(const SessionPtr &sessionPtr);
+    private:
 
         // I_Service implementation
         void                open();
@@ -119,22 +103,28 @@ namespace RCF {
         void                onServerStart(      RcfServer & server);
         void                onServerStop(       RcfServer & server);
         void                setServer(          RcfServer & server);
-
+        
         void                startAccepting();
 
     private:
+
+        void                startAcceptingThread(Exception & eRet);
+
+    public:
 
         RcfServer &         getServer();
         RcfServer &         getSessionManager();
 
     private:
 
-        void                registerSession(AsioSessionStateWeakPtr session);
-        void                unregisterSession(AsioSessionStateWeakPtr session);
+        void                registerSession(AsioNetworkSessionWeakPtr session);
+        void                unregisterSession(AsioNetworkSessionWeakPtr session);
         void                cancelOutstandingIo();
 
-        friend class AsioSessionState;
+        friend class AsioNetworkSession;
         friend class FilterAdapter;
+        friend class ServerTcpFrame;
+        friend class ServerHttpFrame;
 
     protected:
 
@@ -144,49 +134,44 @@ namespace RCF {
         AsioIoService *                 mpIoService;
         AsioAcceptorPtr                 mAcceptorPtr;
 
+        WireProtocol                    mWireProtocol;
+
     private:
         
-        bool                            mOpen;
-        bool                            mInterrupt;
         volatile bool                   mStopFlag;
         RcfServer *                     mpServer;
 
-        Mutex                               mSessionsMutex;
-        std::set<AsioSessionStateWeakPtr>   mSessions;
-
     private:
 
-        virtual AsioSessionStatePtr implCreateSessionState() = 0;
-        virtual void implOpen() = 0;
+        virtual AsioNetworkSessionPtr     implCreateNetworkSession() = 0;
+        virtual void                    implOpen() = 0;
 
-        virtual ClientTransportAutoPtr implCreateClientTransport(
-            const I_Endpoint &endpoint) = 0;
+        virtual ClientTransportAutoPtr  implCreateClientTransport(
+                                            const Endpoint &endpoint) = 0;
 
     public:
 
-        AsioAcceptorPtr getAcceptorPtr();
+        AsioAcceptor &                getAcceptor();
 
-        AsioIoService & getIoService();
+        AsioIoService &                 getIoService();
     };
 
     class ReadHandler
     {
     public:
-        ReadHandler(const ReadHandler & rhs);
-        ReadHandler(AsioSessionState & sessionState);
-        void operator()(boost::system::error_code err, std::size_t bytes);
+        ReadHandler(AsioNetworkSessionPtr networkSessionPtr);
+        void operator()(AsioErrorCode err, std::size_t bytes);
         void * allocate(std::size_t size);
-        AsioSessionState & mSessionState;
+        AsioNetworkSessionPtr mNetworkSessionPtr;
     };
 
     class WriteHandler
     {
     public:
-        WriteHandler(const WriteHandler & rhs);
-        WriteHandler(AsioSessionState & sessionState);
-        void operator()(boost::system::error_code err, std::size_t bytes);
+        WriteHandler(AsioNetworkSessionPtr networkSessionPtr);
+        void operator()(AsioErrorCode err, std::size_t bytes);
         void * allocate(std::size_t size);
-        AsioSessionState & mSessionState;
+        AsioNetworkSessionPtr mNetworkSessionPtr;
     };
 
     void *  asio_handler_allocate(std::size_t size, ReadHandler * pHandler);
@@ -194,83 +179,46 @@ namespace RCF {
     void *  asio_handler_allocate(std::size_t size, WriteHandler * pHandler);
     void    asio_handler_deallocate(void * pointer, std::size_t size, WriteHandler * pHandler);
 
-    // This adapter around a std::vector prevents asio from making a deep copy
-    // of the buffer list, when sending multiple buffers. The deep copy would
-    // involve making memory allocations.
-    class AsioBuffers
-    {
-    public:
-
-        typedef std::vector<boost::asio::const_buffer>  BufferVec;
-        typedef boost::shared_ptr<BufferVec>            BufferVecPtr;
-
-        typedef boost::asio::const_buffer               value_type;
-        typedef BufferVec::const_iterator               const_iterator;
-
-        AsioBuffers()
-        {
-            mVecPtr.reset( new std::vector<boost::asio::const_buffer>() );
-        }
-
-        const_iterator begin() const
-        {
-            return mVecPtr->begin();
-        }
-
-        const_iterator end() const
-        {
-            return mVecPtr->end();
-        }
-
-        BufferVecPtr mVecPtr;
-    };
-
-
-    class AsioSessionState :
-        public I_SessionState,
+    class RCF_EXPORT AsioNetworkSession :
+        public NetworkSession,
         boost::noncopyable
     {
     public:
 
         friend class ReadHandler;
         friend class WriteHandler;
+        friend class ServerTcpFrame;
+        friend class ServerHttpFrame;
 
 
-        typedef boost::weak_ptr<AsioSessionState>       AsioSessionStateWeakPtr;
-        typedef boost::shared_ptr<AsioSessionState>     AsioSessionStatePtr;
+        typedef boost::weak_ptr<AsioNetworkSession>       AsioNetworkSessionWeakPtr;
+        typedef boost::shared_ptr<AsioNetworkSession>     AsioNetworkSessionPtr;
 
-        AsioSessionState(
+        AsioNetworkSession(
             AsioServerTransport &transport,
             AsioIoService & ioService);
 
-        virtual ~AsioSessionState();
+        virtual ~AsioNetworkSession();
 
-        AsioSessionStatePtr sharedFromThis();
-
-        void            setSessionPtr(SessionPtr sessionPtr);
-        SessionPtr      getSessionPtr();
+        AsioNetworkSessionPtr sharedFromThis();
 
         void            close();
-        void            invokeAsyncAccept();
 
-        int             getNativeHandle() const;
+        AsioErrorCode   getLastError();
+
+        void            setCloseAfterWrite();
 
     protected:
-
-        void            onReadCompletion(
-                            boost::system::error_code error, 
-                            size_t bytesTransferred);
-
-        void            onWriteCompletion(
-                            boost::system::error_code error, 
-                            size_t bytesTransferred);
+        AsioIoService &         mIoService;
 
         std::vector<char>       mReadHandlerBuffer;
         std::vector<char>       mWriteHandlerBuffer;
-        AsioSessionStatePtr     mThisPtr;
+
+        AsioErrorCode           mLastError;
 
     private:
 
+        // read()/write() are used to connect with the filter sequence.
         void            read(
                             const ByteBuffer &byteBuffer, 
                             std::size_t bytesRequested);
@@ -278,7 +226,7 @@ namespace RCF {
         void            write(
                             const std::vector<ByteBuffer> &byteBuffers);
 
-        
+    public:
 
         void            setTransportFilters(
                             const std::vector<FilterPtr> &filters);
@@ -286,39 +234,52 @@ namespace RCF {
         void            getTransportFilters(
                             std::vector<FilterPtr> &filters);
 
-        void            invokeAsyncRead();
-        void            invokeAsyncWrite();
-        void            onAccept(const boost::system::error_code& error);
+        void            setWireFilters(
+                            const std::vector<FilterPtr> &filters);
 
-        void            onReadWrite(
+        void            getWireFilters(
+                            std::vector<FilterPtr> &filters);
+
+        AsioServerTransport &   getAsioServerTransport();
+
+    private:
+    
+        void            beginAccept();
+        void            beginRead();
+        void            beginWrite();
+
+        void            onAcceptCompleted(const AsioErrorCode & error);
+
+        void            onNetworkReadCompleted(
+                            AsioErrorCode error, 
+                            size_t bytesTransferred);
+
+        void            onNetworkWriteCompleted(
+                            AsioErrorCode error, 
+                            size_t bytesTransferred);
+
+        friend class HttpSessionFilter;
+        void            onAppReadWriteCompleted(
                             size_t bytesTransferred);
 
         void            sendServerError(int error);
 
-        void            onReflectedReadWrite(
-                            const boost::system::error_code& error, 
-                            size_t bytesTransferred);
-
-        ReallocBuffer &             getReadBuffer();
-        ReallocBuffer &             getUniqueReadBuffer();
-        ByteBuffer                  getReadByteBuffer() const;
-
-        ReallocBuffer &             getReadBufferSecondary();
-        ReallocBuffer &             getUniqueReadBufferSecondary();
-        ByteBuffer                  getReadByteBufferSecondary() const;
+        void            doCustomFraming(size_t bytesTransferred);
+        void            doRegularFraming(size_t bytesTransferred);
 
         // TODO: too many friends
         friend class    AsioServerTransport;
-        friend class    TcpAsioSessionState;
-        friend class    UnixLocalSessionState;
+        friend class    TcpNetworkSession;
+        friend class    UnixLocalNetworkSession;
+        friend class    Win32NamedPipeNetworkSession;
         friend class    FilterAdapter;
 
         enum State
         {
             Ready,
             Accepting,
-            ReadingDataCount,
             ReadingData,
+            ReadingDataCount,
             WritingData
         };
 
@@ -326,36 +287,36 @@ namespace RCF {
         bool                        mIssueZeroByteRead;
         std::size_t                 mReadBufferRemaining;
         std::size_t                 mWriteBufferRemaining;
-        SessionPtr                  mSessionPtr;
+
         std::vector<FilterPtr>      mTransportFilters;
+
+        friend class HttpServerTransport;
+        friend class PublishingService;
+        std::vector<FilterPtr>      mWireFilters;        
 
         AsioServerTransport &       mTransport;
 
         std::vector<ByteBuffer>     mWriteByteBuffers;
         std::vector<ByteBuffer>     mSlicedWriteByteBuffers;
 
-        ReallocBufferPtr            mReadBufferPtr;
-        ReallocBufferPtr            mReadBufferSecondaryPtr;
+        ReallocBufferPtr            mAppReadBufferPtr;
+        ByteBuffer                  mAppReadByteBuffer;
+        
+        ReallocBufferPtr            mNetworkReadBufferPtr;
+        ByteBuffer                  mNetworkReadByteBuffer;
 
-        ByteBuffer                  mReadByteBuffer;
-        ByteBuffer                  mTempByteBuffer;
-
+        // So we can connect our read()/write() functions to the filter sequence.
         FilterPtr                   mFilterAdapterPtr;
 
-        Mutex                       mMutex;
-        bool                        mHasBeenClosed;
         bool                        mCloseAfterWrite;
-        AsioSessionStateWeakPtr     mReflecteeWeakPtr;
-        AsioSessionStatePtr         mReflecteePtr;
-        bool                        mReflecting;
 
-        AsioIoService &             mIoService;
-
-        AsioSessionStateWeakPtr     mWeakThisPtr;
+        AsioNetworkSessionWeakPtr   mWeakThisPtr;
 
         AsioBuffers                 mBufs;
 
-        // I_SessionState
+        boost::shared_ptr<Mutex>    mSocketOpsMutexPtr;
+
+        // I_NetworkSession
 
     private:
         
@@ -363,21 +324,21 @@ namespace RCF {
         ByteBuffer              getReadByteBuffer();
         void                    postWrite(std::vector<ByteBuffer> &byteBuffers);
         void                    postClose();
-        I_ServerTransport &     getServerTransport();
-        const I_RemoteAddress & getRemoteAddress();
+        ServerTransport &       getServerTransport();
+        const RemoteAddress &   getRemoteAddress();
+        bool                    isConnected();
 
     private:
 
-        virtual const I_RemoteAddress & implGetRemoteAddress() = 0;
+        virtual const RemoteAddress & implGetRemoteAddress() = 0;
         virtual void implRead(char * buffer, std::size_t bufferLen) = 0;
         virtual void implWrite(const std::vector<ByteBuffer> & buffers) = 0;
-        virtual void implWrite(AsioSessionState &toBeNotified, const char * buffer, std::size_t bufferLen) = 0;
         virtual void implAccept() = 0;
         virtual bool implOnAccept() = 0;
-        virtual int implGetNative() const = 0;
-        virtual boost::function0<void> implGetCloseFunctor() = 0;
+        virtual bool implIsConnected() = 0;
         virtual void implClose() = 0;
-        virtual void implTransferNativeFrom(I_ClientTransport & clientTransport) = 0;
+        virtual void implCloseAfterWrite() {}
+        virtual void implTransferNativeFrom(ClientTransport & clientTransport) = 0;
         virtual ClientTransportAutoPtr implCreateClientTransport() = 0;
     };
 

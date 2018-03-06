@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -23,8 +26,8 @@ namespace RCF {
 
     SerializationProtocolIn *getCurrentSerializationProtocolIn()
     {
-        ClientStub * pClientStub = RCF::getCurrentClientStubPtr();
-        RcfSession * pRcfSession = RCF::getCurrentRcfSessionPtr();
+        ClientStub * pClientStub = RCF::getTlsClientStubPtr();
+        RcfSession * pRcfSession = RCF::getTlsRcfSessionPtr();
         if (pClientStub)
         {
             return &pClientStub->getSpIn();
@@ -41,8 +44,8 @@ namespace RCF {
 
     SerializationProtocolOut *getCurrentSerializationProtocolOut()
     {
-        ClientStub * pClientStub = RCF::getCurrentClientStubPtr();
-        RcfSession * pRcfSession = RCF::getCurrentRcfSessionPtr();
+        ClientStub * pClientStub = RCF::getTlsClientStubPtr();
+        RcfSession * pRcfSession = RCF::getTlsRcfSessionPtr();
         if (pClientStub)
         {
             return &pClientStub->getSpOut();

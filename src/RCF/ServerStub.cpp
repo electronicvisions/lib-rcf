@@ -2,13 +2,16 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -21,36 +24,39 @@
 
 namespace RCF {
 
-    void ServerStub::invoke(
+    void ServerBinding::setAccessControl(CbAccessControl cbAccessControl)
+    {
+        Lock lock(mMutex);
+        mCbAccessControl = cbAccessControl;
+    }
+
+
+    void ServerBinding::invoke(
         const std::string &         subInterface,
         int                         fnId,
         RcfSession &                session)
     {
-        // no mutex here, since there is never anyone writing to mInvokeFunctorMap
+        // Check access control.
+
+        {
+            Lock lock(mMutex);
+            if (mCbAccessControl)
+            {
+                bool ok = mCbAccessControl(fnId);
+                if (!ok)
+                {
+                    RCF_THROW( RCF::Exception(_RcfError_ServerStubAccessDenied()));
+                }
+            }
+        }
+
+        // No mutex here, since there is never anyone writing to mInvokeFunctorMap.
 
         RCF_VERIFY(
             mInvokeFunctorMap.find(subInterface) != mInvokeFunctorMap.end(),
-            Exception(_RcfError_UnknownInterface(subInterface)))
-            (subInterface)(fnId)(mInvokeFunctorMap.size())(mMergedStubs.size());
+            Exception(_RcfError_UnknownInterface(subInterface)));
 
         mInvokeFunctorMap[subInterface](fnId, session);
-    }
-
-    void ServerStub::merge(RcfClientPtr rcfClientPtr)
-    {
-        InvokeFunctorMap &invokeFunctorMap =
-            rcfClientPtr->getServerStub().mInvokeFunctorMap;
-
-        std::copy(
-            invokeFunctorMap.begin(),
-            invokeFunctorMap.end(),
-            std::insert_iterator<InvokeFunctorMap>(
-                mInvokeFunctorMap,
-                mInvokeFunctorMap.begin()));
-
-        invokeFunctorMap.clear();
-
-        mMergedStubs.push_back(rcfClientPtr);
     }
 
 } // namespace RCF

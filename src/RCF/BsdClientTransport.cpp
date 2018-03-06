@@ -2,44 +2,70 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2011, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
 // Consult your particular license for conditions of use.
 //
-// Version: 1.3.1
+// If you have not purchased a commercial license, you are using RCF 
+// under GPL terms.
+//
+// Version: 2.0
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
 #include <RCF/BsdClientTransport.hpp>
 
+#include <RCF/AmiIoHandler.hpp>
+#include <RCF/AmiThreadPool.hpp>
+#include <RCF/AsioBuffers.hpp>
 #include <RCF/ClientStub.hpp>
 #include <RCF/Exception.hpp>
 #include <RCF/RcfServer.hpp>
 #include <RCF/ThreadLocalData.hpp>
 #include <RCF/TimedBsdSockets.hpp>
 
-#ifdef BOOST_WINDOWS
-#include <RCF/IocpServerTransport.hpp>
-#endif
+#include <RCF/AsioServerTransport.hpp>
 
 namespace RCF {
 
     BsdClientTransport::BsdClientTransport() :
-        mFd(-1)
+        mFd(-1),
+        mpIoService(NULL),
+        mWriteCounter(0)
     {}
 
-    BsdClientTransport::BsdClientTransport(int fd) :
-        mFd(fd)
+    BsdClientTransport::BsdClientTransport(TcpSocketPtr socketPtr) :
+        mFd(-1),
+        mTcpSocketPtr(socketPtr),
+        mpIoService(& socketPtr->get_io_service()),
+        mWriteCounter(0)
     {
         mClosed = false;
+        mAsioTimerPtr.reset( new AsioDeadlineTimer( *mpIoService ));
     }
 
+#ifdef RCF_HAS_LOCAL_SOCKETS
+
+    BsdClientTransport::BsdClientTransport(UnixLocalSocketPtr socketPtr) :
+        mFd(-1),
+        mLocalSocketPtr(socketPtr),
+        mpIoService(& socketPtr->get_io_service()),
+        mWriteCounter(0)
+    {
+        mClosed = false;
+        mAsioTimerPtr.reset( new AsioDeadlineTimer( *mpIoService ));
+    }
+
+#endif
+
     BsdClientTransport::BsdClientTransport(const BsdClientTransport & rhs) :
-        ConnectionOrientedClientTransport(rhs),
-        mFd(-1)
+        ConnectedClientTransport(rhs),
+        mFd(-1),
+        mpIoService(NULL),
+        mWriteCounter(0)
     {}
 
     BsdClientTransport::~BsdClientTransport()
@@ -63,7 +89,7 @@ namespace RCF {
         RCF_UNUSED_VARIABLE(err);
         RCF_UNUSED_VARIABLE(activity);
 
-        ClientStub & clientStub = *getCurrentClientStubPtr();
+        ClientStub & clientStub = *getTlsClientStubPtr();
 
         int uiMessageFilter = clientProgressPtr->mUiMessageFilter;
 
@@ -74,6 +100,7 @@ namespace RCF {
 
         int nRet = WSAEventSelect(fd, readEvent, bRead ? FD_READ : FD_WRITE);
         RCF_ASSERT_EQ(nRet , 0);
+        RCF_UNUSED_VARIABLE(nRet);
         HANDLE handles[] = { readEvent };
 
         while (true)
@@ -167,7 +194,11 @@ namespace RCF {
         const ByteBuffer &byteBuffer,
         std::size_t bytesRequested)
     {
+        mWriteCounter = 0;
+
         std::size_t bytesToRead = RCF_MIN(bytesRequested, byteBuffer.getLength());
+
+        RCF_ASSERT(!mNoTimeout);
 
         PollingFunctor pollingFunctor(
             mClientProgressPtr,
@@ -176,12 +207,14 @@ namespace RCF {
 
         RCF_LOG_4()(byteBuffer.getLength())(bytesToRead) << "BsdClientTransport - initiating read from socket.";
 
+        int fd = getNativeHandle();
+
         int err = 0;
         int ret = RCF::timedRecv(
             *this,
             pollingFunctor,
             err,
-            mFd,
+            fd,
             byteBuffer,
             bytesToRead,
             0);
@@ -223,72 +256,60 @@ namespace RCF {
         return ret;
     }
 
-#ifdef BOOST_WINDOWS
-
     std::size_t BsdClientTransport::implReadAsync(
         const ByteBuffer &byteBuffer,
         std::size_t bytesRequested)
     {
-        WSABUF wsabuf = {0};
-        wsabuf.buf = byteBuffer.getPtr();
-        wsabuf.len = static_cast<u_long>(bytesRequested);
+        mWriteCounter = 0;
 
-        OverlappedAmiPtr overlappedPtr = getOverlappedPtr();
+        RecursiveLock lock(mOverlappedPtr->mMutex);
 
-        RCF_ASSERT(!overlappedPtr->mThisPtr);
-        overlappedPtr->mThisPtr = overlappedPtr;
-        RCF_ASSERT(overlappedPtr->mThisPtr);
+        mOverlappedPtr->ensureLifetime(byteBuffer);
 
-        using namespace boost::multi_index::detail;
-        scope_guard clearSelfReferenceGuard =
-            make_guard(clearSelfReference, boost::ref(overlappedPtr->mThisPtr));
+        mOverlappedPtr->mOpType = Read;
 
-        DWORD dwReceived = 0;
-        DWORD dwFlags = 0;
-        int ret = WSARecv(
-            mFd, 
-            &wsabuf, 
-            1, 
-            &dwReceived, 
-            &dwFlags, 
-            overlappedPtr.get(), 
-            NULL);
-        int err = WSAGetLastError();
-
-        RCF_ASSERT(ret == -1 || ret == 0);
-        if (err == S_OK || err == WSA_IO_PENDING)
+        if (mTcpSocketPtr)
         {
-            clearSelfReferenceGuard.dismiss();
+            mTcpSocketPtr->async_read_some(
+                ASIO_NS::buffer( byteBuffer.getPtr(), bytesRequested),
+                AmiIoHandler(mOverlappedPtr));
         }
         else
         {
-            RCF::Exception e(_RcfError_Socket(), err);
-            mClientStubCallbackPtr.onError(e);
+            RCF_ASSERT(mLocalSocketPtr);
+
+            mLocalSocketPtr->async_read_some(
+                ASIO_NS::buffer( byteBuffer.getPtr(), bytesRequested),
+                AmiIoHandler(mOverlappedPtr));
         }
 
-        // TODO: error handling. Sync or async?
-        // ...
+        if (mNoTimeout)
+        {
+            // Timeouts are being handled at a higher level (MulticastClientTransport).
+            // ...
+        }
+        else
+        {
+            boost::uint32_t nowMs = getCurrentTimeMs();
+            boost::uint32_t timeoutMs = mEndTimeMs - nowMs;
+            mAsioTimerPtr->expires_from_now( boost::posix_time::milliseconds(timeoutMs) );
+            mAsioTimerPtr->async_wait( AmiTimerHandler(mOverlappedPtr) );
+        }
 
         return 0;
-
     }
-
-#else
-
-    std::size_t BsdClientTransport::implReadAsync(
-        const ByteBuffer &byteBuffer,
-        std::size_t bytesRequested)
-    {
-        RCF_ASSERT(0);
-        return 0;
-    }
-
-#endif
-
 
     std::size_t BsdClientTransport::implWrite(
         const std::vector<ByteBuffer> &byteBuffers)
     {
+        ++mWriteCounter;
+
+        if (mWriteCounter > 1)
+        {
+            // Put a breakpoint here to catch write buffer fragmentation.
+            mWriteCounter = mWriteCounter;
+        }
+
         PollingFunctor pollingFunctor(
             mClientProgressPtr,
             ClientProgress::Send,
@@ -299,10 +320,12 @@ namespace RCF {
         RCF_LOG_4()(lengthByteBuffers(byteBuffers)) 
             << "BsdClientTransport - initiating send on socket.";
 
+        int fd = getNativeHandle();
+
         int ret = RCF::timedSend(
             pollingFunctor,
             err,
-            mFd,
+            fd,
             byteBuffers,
             getMaxSendSize(),
             0);
@@ -346,112 +369,106 @@ namespace RCF {
         return ret;
     }
 
-#ifdef BOOST_WINDOWS
-
     std::size_t BsdClientTransport::implWriteAsync(
         const std::vector<ByteBuffer> &byteBuffers)
     {
-        // Some WSA magic
+        ++mWriteCounter;
 
-        if (!mRegisteredForAmi)
+        if (mWriteCounter > 1)
         {
-            RcfServer * preferred = mClientStubCallbackPtr.getAsyncDispatcher();
-            if (preferred)
-            {
-                I_ServerTransport & transport = preferred->getServerTransport();
-                IocpServerTransport & iocpTransport = dynamic_cast<IocpServerTransport &>(transport);
-                iocpTransport.associateSocket(mFd);
-            }
-            else
-            {
-                gAmiThreadPoolPtr->mIocp.AssociateSocket(mFd, mFd);
-            }
-
-            mRegisteredForAmi = true;
+            // Put a breakpoint here to catch write buffer fragmentation.
+            mWriteCounter = mWriteCounter;
         }
 
-        std::vector<WSABUF> wsabufs;
+        RecursiveLock lock(mOverlappedPtr->mMutex);
+
+        mAsioBuffers.mVecPtr->resize(0);
+
         for (std::size_t i=0; i<byteBuffers.size(); ++i)
         {
-            WSABUF wsabuf = {0};
-            wsabuf.buf = byteBuffers[i].getPtr();
-            wsabuf.len = static_cast<u_long>(byteBuffers[i].getLength());
-            wsabufs.push_back(wsabuf);
+            const ByteBuffer & buffer = byteBuffers[i];
+            mAsioBuffers.mVecPtr->push_back( AsioConstBuffer(
+                buffer.getPtr(), 
+                buffer.getLength()));
         }
 
-        OverlappedAmiPtr overlappedPtr = getOverlappedPtr();
+        mOverlappedPtr->ensureLifetime(byteBuffers);
 
-        RCF_ASSERT(!overlappedPtr->mThisPtr);
-        overlappedPtr->mThisPtr = overlappedPtr;
-        RCF_ASSERT(overlappedPtr->mThisPtr);
+        mOverlappedPtr->mOpType = Write;
 
-        using namespace boost::multi_index::detail;
-        scope_guard clearSelfReferenceGuard =
-            make_guard(clearSelfReference, boost::ref(overlappedPtr->mThisPtr));
-
-        DWORD dwSent = 0;
-        DWORD dwFlags = 0;
-        int ret = WSASend(
-            mFd,
-            &wsabufs[0],
-            static_cast<DWORD>(wsabufs.size()),
-            &dwSent,
-            dwFlags,
-            overlappedPtr.get(),
-            NULL);
-        int err = WSAGetLastError();
-
-        RCF_ASSERT(ret == -1 || ret == 0)(ret);
-        if (err == S_OK || err == WSA_IO_PENDING)
+        if (mTcpSocketPtr)
         {
-            clearSelfReferenceGuard.dismiss();
+            ASIO_NS::async_write(
+                *mTcpSocketPtr, 
+                mAsioBuffers,
+                AmiIoHandler(mOverlappedPtr));
         }
         else
         {
-            RCF::Exception e(_RcfError_Socket(), err);
-            mClientStubCallbackPtr.onError(e);
+            RCF_ASSERT(mLocalSocketPtr);
+
+            ASIO_NS::async_write(
+                *mLocalSocketPtr, 
+                mAsioBuffers, 
+                AmiIoHandler(mOverlappedPtr));
         }
 
-        // TODO: error handling. Sync or async?
-        // ...
+        if (mNoTimeout)
+        {
+            // Timeouts are being handled at a higher level (MulticastClientTransport).
+            // ...
+        }
+        else
+        {
+            boost::uint32_t nowMs = getCurrentTimeMs();
+            boost::uint32_t timeoutMs = mEndTimeMs - nowMs;
+            mAsioTimerPtr->expires_from_now( boost::posix_time::milliseconds(timeoutMs) );
+            mAsioTimerPtr->async_wait( AmiTimerHandler(mOverlappedPtr) );
+        }
 
         return 0;
     }
-
-#else
-
-    std::size_t BsdClientTransport::implWriteAsync(
-        const std::vector<ByteBuffer> &byteBuffers)
-    {
-        RCF_ASSERT(0);
-        return 0;
-    }
-
-#endif
 
     bool BsdClientTransport::isConnected()
     {
-        return isFdConnected(mFd);
+        int fd = getNativeHandle();
+        return isFdConnected(fd);
     }
 
-    int BsdClientTransport::releaseFd()
+    TcpSocketPtr BsdClientTransport::releaseTcpSocket()
     {
-        // We've got problems if there is a close functor involved.
-        RCF_ASSERT( !mNotifyCloseFunctor );
+        RCF_ASSERT( mFd == -1 );
+        RCF_ASSERT( mTcpSocketPtr );
 
-        int myFd = mFd;
-        mFd = -1;
-        return myFd;
+        TcpSocketPtr socketPtr = mTcpSocketPtr;
+        mTcpSocketPtr.reset();
+        return socketPtr;
     }
 
-    int BsdClientTransport::getFd() const
+    UnixLocalSocketPtr BsdClientTransport::releaseLocalSocket()
     {
-        return mFd;
+        RCF_ASSERT( mFd == -1 );
+        RCF_ASSERT( mLocalSocketPtr );
+
+        UnixLocalSocketPtr socketPtr = mLocalSocketPtr;
+        mLocalSocketPtr.reset();
+        return socketPtr;
     }
 
-    int    BsdClientTransport::getNativeHandle() const
+    int BsdClientTransport::getNativeHandle() const
     {
-        return mFd;
+        if (mTcpSocketPtr)
+        {
+            return static_cast<int>(mTcpSocketPtr->native());
+        }
+        else if (mLocalSocketPtr)
+        {
+            return static_cast<int>(mLocalSocketPtr->native());
+        }
+        else
+        {
+            return mFd;
+        }
     }
     
 } // namespace RCF
