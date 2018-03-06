@@ -1,0 +1,14 @@
+#!/usr/bin/env python
+# encoding: utf-8
+
+for binary in ["client", "server"]:
+    bld(
+        target = 'rcf-roundrobin-' + binary,
+        features = 'cxx cxxprogram',
+        cxxflags = [],
+        source = [
+            binary + ".cpp",
+            ],
+        use = ["rcf-sf-only", "rcf_extensions", "DL4RCF", "BOOST_PO"],
+        install_path = '${PREFIX}/bin',
+    )

@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 import os, copy
 
+def depends(ctx):
+    ctx('logger')
+
 
 def options(opt):
     opt.load('compiler_cxx')
@@ -28,6 +31,7 @@ def configure(cfg):
     cfg.check_boost(lib='serialization system', uselib_store='BOOST4RCF_WSERIALIZATION')
     cfg.check_boost(lib='filesystem serialization system', uselib_store='BOOST4RCF_WSERIALIZATION_WFS')
 
+    cfg.check_boost(lib='program_options', uselib_store='BOOST_PO')
 
     cfg.env.DEFINES_RCF_COMMON     = ['RCF_USE_ZLIB']
     cfg.env.DEFINES_RCF_SF_ONLY    = ['RCF_USE_SF_SERIALIZATION'] # automatically defined
@@ -51,6 +55,8 @@ def configure(cfg):
                   features='cxx',
                   cxxflags=['-isystem', inc],
                   uselib_store="rcf_includes")
+
+    cfg.env.INCLUDES_RCF_EXTENSIONS = cfg.path.find_dir('rcf-extensions/include').abspath()
 
 
 def build(bld):
@@ -107,3 +113,9 @@ def build(bld):
                 install_path    = '${PREFIX}/lib',
                 **flags
         )
+    bld(
+        target = "rcf_extensions",
+        export_includes = bld.env.INCLUDES_RCF_EXTENSIONS,
+        use = ["logger_obj"])
+
+    bld.recurse("playground/round-robin-scheduler")
