@@ -51,25 +51,26 @@ def build(bld):
     )
 
     # TODO: ugly target names, but for backwards compatibility
-    for i,s in enumerate(['rcf', 'sf', 'rcfsf', 'rcf_fs']):
+    # TODO: fix rcf-boost-fs target if it is needed in the future --obreitwi, 23-02-18 14:37:25
+    for i,s in enumerate(['rcf-sf-only', 'rcf-boost-only', 'rcf-sf-boost']):
         flags = copy.deepcopy(common_flags)
-        if s == 'sf': # pure sf
+        if s == 'rcf-sf-only': # pure sf
             flags['use'].extend([
                 'BOOST4RCF',
                 'RCF_SF_ONLY'
                 ])
-        if s == 'rcf': # pure boost
+        if s == 'rcf-boost-only': # pure boost
             flags['use'].extend([
                 'BOOST4RCF_WSERIALIZATION',
                 'RCF_BOOST_ONLY'
                 ])
-        if s == 'rcf_fs': # pure boost with filesystem support
+        if s == 'rcf-boost-fs': # pure boost with filesystem support
             flags['use'].extend([
                 'BOOST4RCF_WSERIALIZATION_WFS',
                 'RCF_BOOST_ONLY'
                 ])
             flags['use'].append('BOOST4RCF_WSERIALIZATION_WFS')
-        if s == 'rcfsf': # both
+        if s == 'rcf-sf-boost': # both
             flags['use'].extend([
                 'BOOST4RCF_WSERIALIZATION',
                 'RCF_SF_BOOST'

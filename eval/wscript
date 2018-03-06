@@ -70,14 +70,14 @@ def build(ctx):
 
     ctx.program(target  =   'testRCF',
                 source  =   'Test_Functionality.cpp',
-                use     =   'sf',
+                use     =   'rcf-sf-only',
                 **flags
     )
 
     if (ctx.env.serSF):
         ctx.program(    target   = 'testSF',
                         source  = ['Test_RCF_SF_Seriz.cpp'],
-                        use      = 'sf',
+                        use      = 'rcf-sf-only',
                         **flags
         )
 
