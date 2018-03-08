@@ -27,6 +27,8 @@ def configure(cfg):
     cfg.env.DEFINES_RCF_BOOST_FS   = ['RCF_USE_BOOST_FILESYSTEM',
                                       'BOOST_FILESYSTEM_DEPRECATED']
 
+    cfg.check_cxx(lib="dl", uselib_store="DL4RCF", mandatory=True)
+
 
 def build(bld):
     inc = bld.path.find_dir('include').abspath()
@@ -39,6 +41,7 @@ def build(bld):
                   'RCF_COMMON',
                   'PTHREAD',
                   'ZLIB',
+                  'DL4RCF'
                   ],
     }
 
