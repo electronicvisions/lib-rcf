@@ -6,6 +6,12 @@ def options(opt):
     opt.load('compiler_cxx')
     opt.load('boost')
 
+    hopts = opt.add_option_group('RCF Options')
+    hopts.add_option(
+            '--rcf-enable-warnings',
+            action='store_true', default=False,
+            help='RCF produces a lot of warnings that are disabled by default.')
+
 
 def configure(cfg):
     cfg.check_waf_version(mini='1.6.10') # ECM: bleeding EDGE!!1! (needed for multiple boost checks below)
@@ -13,6 +19,10 @@ def configure(cfg):
     cfg.load('boost')
 
     cfg.check_cxx(lib="pthread", uselib_store="PTHREAD")
+
+    cfg.env.rcf_enable_warnings = getattr(
+            cfg.options, "rcf_enable_warnings", False)
+
     cfg.check_cfg(package='zlib', args='--libs --cflags')
     cfg.check_boost(lib='system', uselib_store='BOOST4RCF')
     cfg.check_boost(lib='serialization system', uselib_store='BOOST4RCF_WSERIALIZATION')
@@ -29,26 +39,39 @@ def configure(cfg):
 
     cfg.check_cxx(lib="dl", uselib_store="DL4RCF", mandatory=True)
 
+    inc = cfg.path.find_dir('rcf-core/include').abspath()
+    if getattr(cfg.options, "rcf_enable_warnings", False):
+        cfg.check(msg="Enabling RCF warnings",
+                  features='cxx',
+                  includes=[inc],
+                  uselib_store="rcf_includes")
+    else:
+        # suppress warnings by declaring include directory as system header
+        cfg.check(msg="Checking if RCF warnings can be suppressed",
+                  features='cxx',
+                  cxxflags=['-isystem', inc],
+                  uselib_store="rcf_includes")
+
 
 def build(bld):
-    inc = bld.path.find_dir('include').abspath()
+    if bld.env.rcf_enable_warnings:
+        cxxflags = []
+    else:
+        cxxflags = ["-w"]
+
     common_flags = {
               'linkflags' : [],
-              'includes'  : [inc],
-              'cxxflags'  : [],
+              'includes'  : [],
+              'cxxflags'  : cxxflags,
               'defines'   : [],
               'use'       : [
+                  'rcf_includes',
                   'RCF_COMMON',
                   'PTHREAD',
                   'ZLIB',
                   'DL4RCF'
                   ],
     }
-
-    bld(
-        target          = 'rcf_inc',
-        export_includes = inc
-    )
 
     # TODO: ugly target names, but for backwards compatibility
     # TODO: fix rcf-boost-fs target if it is needed in the future --obreitwi, 23-02-18 14:37:25
@@ -80,8 +103,7 @@ def build(bld):
                 features        = 'cxx cxxshlib',
                 target          = s,
                 idx             = i,
-                source          = 'src/RCF/RCF.cpp',
-                export_includes = inc,
+                source          = 'rcf-core/src/RCF/RCF.cpp',
                 install_path    = '${PREFIX}/lib',
                 **flags
         )
