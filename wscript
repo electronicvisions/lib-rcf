@@ -3,6 +3,7 @@ import os, copy
 
 def depends(ctx):
     ctx('logger')
+    ctx('hate')
 
 
 def options(opt):
@@ -75,7 +76,7 @@ def build(bld):
                   'RCF_COMMON',
                   'PTHREAD',
                   'ZLIB',
-                  'DL4RCF'
+                  'DL4RCF',
                   ],
     }
 
@@ -116,6 +117,6 @@ def build(bld):
     bld(
         target = "rcf_extensions",
         export_includes = bld.env.INCLUDES_RCF_EXTENSIONS,
-        use = ["logger_obj"])
+        use = ["logger_obj", "hate_inc"])
 
     bld.recurse("playground/round-robin-scheduler")

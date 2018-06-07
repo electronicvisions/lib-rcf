@@ -5,6 +5,7 @@
 #include <iostream>
 #include <list>
 #include <map>
+#include <optional>
 #include <utility>
 #include <vector>
 #include <boost/assert.hpp>
@@ -25,12 +26,23 @@
  *  // (should acuqire all needed resources).
  *  void setup();
  *
- *  // Verify that the given string authorizes a given user.
- *  // If false is returned, the work is not executed
- *  bool verify_user(std::string const&);
+ *  // Verify that the given string authorizes a given user (e.g. by treating
+ *  // the string as a munge token and decoding it).
+ *  //
+ *  // The supplied parameter is the extracted user_data attribute from the
+ *  // RCF-call.
+ *  //
+ *  // The return value is an optional of a CopyAssignable and
+ *  // CopyConstructable UserIdentifierT-type.
+ *  // If the optional does not contain a value the user is deemed not
+ *  // authorized and the work will not be executed. Otherwise, the contained
+ *  // UserIdentifierT-value will be used to assign the given work unit to a
+ *  // user.
+ *  std::optional<UserIdentifierT> verify_user(std::string const&);
  *
  *  // Function that does the acutal work. Both the supplied parameter and the
  *  // return value can be any type.
+ *  // The return type has to be default-constructable!
  *  MyReturnType work(MyWorkParameters const& work);
  *
  *  // function exectuted when the server is about to go idle
@@ -60,8 +72,8 @@
  * std::string my_user_data = "HERE BE AUTH";
  * client.getClientStub().setRequestUserData(my_user_data);
  * ```
- * prior to calling submit_work. This user-data is also used to identify unique
- * users in order to achieve round-robin balancing.
+ * prior to calling submit_work. From this user-data a unique user identity is
+ * derived on the server-side in order to achieve round-robin balancing.
  *
  * A fully working example can be found under `playground/round-robin-scheduler`.
  */
@@ -81,16 +93,17 @@ public:
 	typedef Worker worker_t;
 
 	// inference done in extra helper struct for RR_GENERATE macro
-	using work_t = typename detail::infer_work_method_traits<Worker>::work_t;
+	using work_argument_t = typename detail::infer_work_method_traits<Worker>::work_argument_t;
 	using work_return_t = typename detail::infer_work_method_traits<Worker>::work_return_t;
+	using user_id_t = typename detail::infer_work_method_traits<Worker>::user_id_t;
 
 	using rcf_interface_t = RCFInterface;
 
 	RoundRobinScheduler(
-		RCF::TcpEndpoint const& endpoint,
-		worker_t&& worker,
-		size_t num_threads_pre = 1,
-		size_t num_threads_post = 1);
+	    RCF::TcpEndpoint const& endpoint,
+	    worker_t&& worker,
+	    size_t num_threads_pre = 1,
+	    size_t num_threads_post = 1);
 	~RoundRobinScheduler();
 
 	// start server and shut down server after a given timeout of being idle
@@ -103,7 +116,7 @@ public:
 	RCF::RcfServer& get_server() { return *m_server; }
 	worker_t& get_worker() { return m_worker; }
 
-	work_return_t submit_work(work_t);
+	work_return_t submit_work(work_argument_t);
 
 	// Set and retrieve the period after which the teardown()-method is called.
 	// If there is still work left to do, setup() will be called immediately.
@@ -114,7 +127,7 @@ public:
 	void reset_idle_timeout();
 
 private:
-	typedef RCF::RemoteCallContext<work_return_t, work_t> work_context_t;
+	typedef RCF::RemoteCallContext<work_return_t, work_argument_t> work_context_t;
 
 	// members
 	std::unique_ptr<RCF::RcfServer> m_server;
@@ -136,7 +149,7 @@ private:
 	bool m_stop_flag;
 
 	RCF::Mutex m_mutex_input_queue;
-	typedef std::map<std::string, std::deque<work_context_t> > user_to_inputqueue_t;
+	typedef std::map<user_id_t, std::deque<work_context_t> > user_to_inputqueue_t;
 	user_to_inputqueue_t m_user_to_input_queue;
 
 	std::deque<work_context_t> m_output_queue;
@@ -144,9 +157,10 @@ private:
 	RCF::Mutex m_mutex_output_queue;
 	RCF::Condition m_cond_output_queue;
 
-	typedef std::list<std::string> users_t;
+	using users_t = typename std::list<user_id_t>;
+	using users_citer_t = typename users_t::const_iterator;
 	users_t m_users;
-	users_t::const_iterator m_it_current_user;
+	users_citer_t m_it_current_user;
 
 	// methods
 	void worker_main_thread();
@@ -179,8 +193,8 @@ private:
 #define RR_GENERATE(WORKERTYPE, DESIRED_ALIAS)                                                     \
 	RCF_BEGIN(I_##DESIRED_ALIAS, "I_" #DESIRED_ALIAS)                                              \
 	RCF_METHOD_R1(                                                                                 \
-		typename rcf_extensions::detail::infer_work_method_traits<WORKERTYPE>::work_return_t,      \
-		submit_work,                                                                               \
-		typename rcf_extensions::detail::infer_work_method_traits<WORKERTYPE>::work_t)             \
+	    typename rcf_extensions::detail::infer_work_method_traits<WORKERTYPE>::work_return_t,      \
+	    submit_work,                                                                               \
+	    typename rcf_extensions::detail::infer_work_method_traits<WORKERTYPE>::work_argument_t)    \
 	RCF_END(I_##DESIRED_ALIAS)                                                                     \
 	typedef rcf_extensions::RoundRobinScheduler<WORKERTYPE, I_##DESIRED_ALIAS> DESIRED_ALIAS;

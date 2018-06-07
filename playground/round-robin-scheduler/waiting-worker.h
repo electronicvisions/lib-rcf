@@ -16,21 +16,21 @@ public:
 
 	void setup() { std::cout << "Setting up waiting worker " << std::endl; }
 
-	bool verify_user(std::string const& user_data)
+	std::optional<std::string> verify_user(std::string const& user_data)
 	{
 		if (user_data != "mueller") {
 			std::stringstream msg;
 			msg << "Waiting Worker: [" << user_data << "] "
 				<< "(verified) " << std::endl;
 			std::cout << msg.str();
-			return true;
+			return std::make_optional(user_data);
 		} else {
 			// mueller darf nicht
 			std::stringstream msg;
 			msg << "Waiting Worker: [" << user_data << "] "
 				<< "NEIN! " << std::endl;
 			std::cout << msg.str();
-			return false;
+			return std::nullopt;
 		}
 	}
 
