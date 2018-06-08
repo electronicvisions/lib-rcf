@@ -2,6 +2,6 @@
 host=brainscales-r.kip.uni-heidelberg.de
 port=29418
 project=lib-rcf
-defaultbranch=master
+defaultbranch=v2
 defaultremote=review
 defaultrebase=0
