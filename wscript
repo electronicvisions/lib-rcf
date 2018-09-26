@@ -106,6 +106,17 @@ def build(bld):
                 'RCF_SF_BOOST'
                 ])
 
+        objects_flags = copy.deepcopy(flags)
+        objects_flags['cxxflags'] = '-fPIC'
+        bld.objects(
+                features        = 'cxx',
+                target          = '{}_objects'.format(s),
+                idx             = i,
+                source          = 'rcf-core/src/RCF/RCF.cpp',
+                install_path    = '${PREFIX}/lib',
+                **objects_flags
+        )
+
         bld(
                 features        = 'cxx cxxshlib',
                 target          = s,
