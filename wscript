@@ -82,7 +82,8 @@ def build(bld):
 
     # TODO: ugly target names, but for backwards compatibility
     # TODO: fix rcf-boost-fs target if it is needed in the future --obreitwi, 23-02-18 14:37:25
-    for i,s in enumerate(['rcf-sf-only', 'rcf-boost-only', 'rcf-sf-boost']):
+    rcf_targets = ['rcf-sf-only', 'rcf-boost-only', 'rcf-sf-boost']
+    for i,s in enumerate(rcf_targets):
         flags = copy.deepcopy(common_flags)
         if s == 'rcf-sf-only': # pure sf
             flags['use'].extend([
@@ -108,10 +109,11 @@ def build(bld):
 
         objects_flags = copy.deepcopy(flags)
         objects_flags['cxxflags'] = '-fPIC'
+        programme_flags = copy.deepcopy(flags)
+        programme_flags['use'].extend(['{}_objects'.format(s)])
         bld.objects(
                 features        = 'cxx',
                 target          = '{}_objects'.format(s),
-                idx             = i,
                 source          = 'rcf-core/src/RCF/RCF.cpp',
                 install_path    = '${PREFIX}/lib',
                 **objects_flags
@@ -120,10 +122,8 @@ def build(bld):
         bld(
                 features        = 'cxx cxxshlib',
                 target          = s,
-                idx             = i,
-                source          = 'rcf-core/src/RCF/RCF.cpp',
                 install_path    = '${PREFIX}/lib',
-                **flags
+                **programme_flags
         )
     bld(
         target = "rcf_extensions",
