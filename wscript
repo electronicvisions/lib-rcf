@@ -108,7 +108,7 @@ def build(bld):
                 ])
 
         objects_flags = copy.deepcopy(flags)
-        objects_flags['cxxflags'] = '-fPIC'
+        objects_flags['cxxflags'].append('-fPIC')
         programme_flags = copy.deepcopy(flags)
         programme_flags['use'].extend(['{}_objects'.format(s)])
         bld.objects(
