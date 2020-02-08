@@ -22,8 +22,8 @@
  * ```
  * class MyWorker
  * {
- *  // Function exectuted when the server is about to begin execution
- *  // (should acuqire all needed resources).
+ *  // Function executed when the server is about to begin execution
+ *  // (should acquire all needed resources).
  *  void setup();
  *
  *  // Verify that the given string authorizes a given user (e.g. by treating
@@ -78,6 +78,8 @@
  * A fully working example can be found under `playground/round-robin-scheduler`.
  */
 
+using namespace std::literals::chrono_literals;
+
 namespace rcf_extensions {
 
 class UserNotAuthorized : public std::exception
@@ -107,7 +109,7 @@ public:
 	~RoundRobinScheduler();
 
 	// start server and shut down server after a given timeout of being idle
-	void start_server(std::chrono::seconds const& timeout = 0);
+	void start_server(std::chrono::seconds const& timeout = 0s);
 
 	// stop the server gracefully by letting the last work unit complete
 	// (this should be done as to not brick the FPGAs)
