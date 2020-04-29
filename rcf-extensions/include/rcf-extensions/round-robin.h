@@ -184,7 +184,7 @@ private:
 	void push_to_output_queue(work_context_t&&);
 };
 
-#include "round-robin-impl.h"
+#include "round-robin.tcc"
 }
 
 // The only symbol that should be used externally:
