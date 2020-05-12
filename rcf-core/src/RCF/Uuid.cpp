@@ -43,6 +43,8 @@ namespace RCF
 
 #else
 
+#if __has_include(<uuid/uuid.h>)
+
 #include <uuid/uuid.h>
 namespace RCF
 {
@@ -55,5 +57,7 @@ namespace RCF
         return std::string(s);
     }
 } // namespace RCF
+
+#endif
 
 #endif

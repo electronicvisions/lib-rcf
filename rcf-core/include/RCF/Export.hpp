@@ -21,9 +21,9 @@
 
 #if defined(__GNUC__) && __GNUC__ >= 4 
     #ifdef RCF_BUILD_DLL
-        #define RCF_EXPORT __attribute__((visibility("default")))
+        #define RCF_EXPORT __attribute__((__visibility__("default")))
     #else
-        #define RCF_EXPORT __attribute__((visibility("default")))
+        #define RCF_EXPORT __attribute__((__visibility__("default")))
     #endif
 #elif defined(__GNUC__)
     #ifdef RCF_BUILD_DLL

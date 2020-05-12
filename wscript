@@ -43,6 +43,7 @@ def configure(cfg):
                                       'BOOST_FILESYSTEM_DEPRECATED']
 
     cfg.check_cxx(lib="dl", uselib_store="DL4RCF", mandatory=True)
+    cfg.check_cxx(lib="uuid", uselib_store="UUID4RCF", mandatory=True)
 
     inc = cfg.path.find_dir('rcf-core/include').abspath()
     if getattr(cfg.options, "rcf_enable_warnings", False):
@@ -77,6 +78,7 @@ def build(bld):
                   'PTHREAD',
                   'ZLIB',
                   'DL4RCF',
+                  'UUID4RCF',
                   ],
     }
 
