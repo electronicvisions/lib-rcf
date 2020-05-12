@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -21,8 +21,7 @@
 
 #include <RCF/Certificate.hpp>
 
-#include <RCF/ByteBuffer.hpp>
-#include <RCF/util/Tchar.hpp>
+#include <RCF/Tchar.hpp>
 
 #include <windows.h>
 #include <schnlsp.h>
@@ -30,7 +29,12 @@
 
 namespace RCF {
 
-    /// Represents an in-memory certificate, usually from a remote peer. Only applicable to Schannel.
+    class ByteBuffer;
+
+    enum Win32CertificateLocation;
+    enum Win32CertificateStore;
+
+    /// Represents an in-memory certificate, either from a remote peer or loaded from a local certificate store. Only applicable to Schannel.
     class RCF_EXPORT Win32Certificate : public Certificate
     {
     public:
@@ -40,10 +44,7 @@ namespace RCF {
 
         // *** SWIG BEGIN ***
 
-        virtual CertificateImplementationType _getType()
-        {
-            return Cit_Win32;
-        }
+        virtual CertificateImplementationType _getType();
 
         /// Gets the name of the certificate.
         tstring getCertificateName();

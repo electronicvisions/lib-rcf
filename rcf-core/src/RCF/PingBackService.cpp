@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -36,9 +36,11 @@ namespace RCF {
 
         mTaskEntries.clear();
 
+        using std::placeholders::_1;
+
         mTaskEntries.push_back( TaskEntry(
-            boost::bind(&PingBackService::cycle, this, _1),
-            boost::bind(&PingBackService::stop, this),
+            std::bind(&PingBackService::cycle, this, _1),
+            std::bind(&PingBackService::stop, this),
             "RCF Pingback",
             false));
     }
@@ -74,10 +76,10 @@ namespace RCF {
                 if (mTimerHeap.compareTop(entry))
                 {
                     // Calculate the next ping back time.
-                    boost::uint32_t pingBackIntervalMs = rcfSessionPtr->getPingBackIntervalMs();
-                    pingBackIntervalMs = RCF_MAX(pingBackIntervalMs, boost::uint32_t(1000));
+                    std::uint32_t pingBackIntervalMs = rcfSessionPtr->getPingBackIntervalMs();
+                    pingBackIntervalMs = RCF_MAX(pingBackIntervalMs, std::uint32_t(1000));
 
-                    boost::uint32_t nextFireMs = 
+                    std::uint32_t nextFireMs = 
                         RCF::getCurrentTimeMs() + pingBackIntervalMs;
 
                     PingBackTimerEntry nextEntry(nextFireMs, rcfSessionPtr);
@@ -97,26 +99,27 @@ namespace RCF {
             }
         } 
 
-        boost::uint32_t queueTimeoutMs = RCF_MIN(
-            static_cast<boost::uint32_t>(timeoutMs),
+        std::uint32_t queueTimeoutMs = RCF_MIN(
+            static_cast<std::uint32_t>(timeoutMs),
             mTimerHeap.getNextEntryTimeoutMs());
 
         if (!threadPool.shouldStop())
         {
+            using namespace std::chrono_literals;
             Lock lock(mMutex);
-            mCondition.timed_wait(lock, queueTimeoutMs);
+            mCondition.wait_for(lock, queueTimeoutMs*1ms);
         }            
     }
 
     PingBackService::Entry PingBackService::registerSession(RcfSessionPtr rcfSessionPtr)
     {
-        boost::uint32_t pingBackIntervalMs = rcfSessionPtr->getPingBackIntervalMs();
+        std::uint32_t pingBackIntervalMs = rcfSessionPtr->getPingBackIntervalMs();
 
         RCF_ASSERT( pingBackIntervalMs );
 
         if (pingBackIntervalMs < 1000)
         {
-            RCF_THROW( Exception(_RcfError_PingBackInterval(pingBackIntervalMs, 1000) ) );
+            RCF_THROW(Exception(RcfError_PingBackInterval, pingBackIntervalMs, 1000));
         }
 
         {
@@ -134,10 +137,10 @@ namespace RCF {
 
         // Schedule next pingback.
         Lock lock(mMutex);
-        boost::uint32_t nextFireMs = RCF::getCurrentTimeMs() + pingBackIntervalMs;
+        std::uint32_t nextFireMs = RCF::getCurrentTimeMs() + pingBackIntervalMs;
         Entry entry(nextFireMs, rcfSessionPtr);
         mTimerHeap.add(entry);
-        mCondition.notify_all(lock);
+        mCondition.notify_all();
         return entry;
     }
 

@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,52 +11,52 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
-#ifndef INCLUDE_SF_TUPLE_HPP
-#define INCLUDE_SF_TUPLE_HPP
+#ifndef INCLUDE_SF_TUPLE_STD_HPP
+#define INCLUDE_SF_TUPLE_STD_HPP
 
 #include <RCF/Config.hpp>
 
-#include <boost/tuple/tuple.hpp>
+#include <tuple>
 
 namespace SF {
 
     class Archive;
 
-    // boost::tuple
+    // std::tuple
 
     template<
         typename T0>
-    void serialize(SF::Archive &ar, boost::tuples::tuple<T0> &t)
+        void serialize(SF::Archive &ar, std::tuple<T0> &t)
     {
         ar 
-            & t.template get<0>();
+            & std::get<0>(t);
     }
 
     template<
         typename T0, 
         typename T1>
-    void serialize(SF::Archive &ar, boost::tuples::tuple<T0,T1> &t)
+    void serialize(SF::Archive &ar, std::tuple<T0,T1> &t)
     {
         ar 
-            & t.template get<0>() 
-            & t.template get<1>();
+            & std::get<0>(t) 
+            & std::get<1>(t);
     }
 
     template<
         typename T0, 
         typename T1, 
         typename T2>
-    void serialize(SF::Archive &ar, boost::tuples::tuple<T0,T1,T2> &t)
+    void serialize(SF::Archive &ar, std::tuple<T0,T1,T2> &t)
     {
         ar 
-            & t.template get<0>() 
-            & t.template get<1>() 
-            & t.template get<2>();
+            & std::get<0>(t) 
+            & std::get<1>(t) 
+            & std::get<2>(t);
     }
 
     template<
@@ -64,13 +64,13 @@ namespace SF {
         typename T1, 
         typename T2, 
         typename T3>
-    void serialize(SF::Archive &ar, boost::tuples::tuple<T0,T1,T2,T3> &t)
+    void serialize(SF::Archive &ar, std::tuple<T0,T1,T2,T3> &t)
     {
         ar 
-            & t.template get<0>() 
-            & t.template get<1>() 
-            & t.template get<2>() 
-            & t.template get<3>();
+            & std::get<0>(t) 
+            & std::get<1>(t) 
+            & std::get<2>(t) 
+            & std::get<3>(t);
     }
 
     template<
@@ -79,14 +79,14 @@ namespace SF {
         typename T2, 
         typename T3, 
         typename T4>
-    void serialize(SF::Archive &ar, boost::tuples::tuple<T0,T1,T2,T3,T4> &t)
+    void serialize(SF::Archive &ar, std::tuple<T0,T1,T2,T3,T4> &t)
     {
         ar 
-            & t.template get<0>() 
-            & t.template get<1>() 
-            & t.template get<2>() 
-            & t.template get<3>() 
-            & t.template get<4>();
+            & std::get<0>(t) 
+            & std::get<1>(t) 
+            & std::get<2>(t) 
+            & std::get<3>(t) 
+            & std::get<4>(t);
     }
 
     template<
@@ -96,15 +96,15 @@ namespace SF {
         typename T3, 
         typename T4, 
         typename T5>
-    void serialize(SF::Archive &ar, boost::tuples::tuple<T0,T1,T2,T3,T4,T5> &t)
+    void serialize(SF::Archive &ar, std::tuple<T0,T1,T2,T3,T4,T5> &t)
     {
         ar 
-            & t.template get<0>() 
-            & t.template get<1>() 
-            & t.template get<2>() 
-            & t.template get<3>() 
-            & t.template get<4>() 
-            & t.template get<5>();
+            & std::get<0>(t) 
+            & std::get<1>(t) 
+            & std::get<2>(t) 
+            & std::get<3>(t) 
+            & std::get<4>(t) 
+            & std::get<5>(t);
     }
 
     template<
@@ -115,16 +115,16 @@ namespace SF {
         typename T4, 
         typename T5, 
         typename T6>
-    void serialize(SF::Archive &ar, boost::tuples::tuple<T0,T1,T2,T3,T4,T5,T6> &t)
+    void serialize(SF::Archive &ar, std::tuple<T0,T1,T2,T3,T4,T5,T6> &t)
     {
         ar 
-            & t.template get<0>() 
-            & t.template get<1>() 
-            & t.template get<2>() 
-            & t.template get<3>() 
-            & t.template get<4>() 
-            & t.template get<5>() 
-            & t.template get<6>();
+            & std::get<0>(t) 
+            & std::get<1>(t) 
+            & std::get<2>(t) 
+            & std::get<3>(t) 
+            & std::get<4>(t) 
+            & std::get<5>(t) 
+            & std::get<6>(t);
     }
 
     template<
@@ -136,19 +136,22 @@ namespace SF {
         typename T5, 
         typename T6, 
         typename T7>
-    void serialize(SF::Archive &ar, boost::tuples::tuple<T0,T1,T2,T3,T4,T5,T6,T7> &t)
+    void serialize(SF::Archive &ar, std::tuple<T0,T1,T2,T3,T4,T5,T6,T7> &t)
     {
         ar 
-            & t.template get<0>() 
-            & t.template get<1>() 
-            & t.template get<2>() 
-            & t.template get<3>() 
-            & t.template get<4>() 
-            & t.template get<5>() 
-            & t.template get<6>() 
-            & t.template get<7>();
+            & std::get<0>(t) 
+            & std::get<1>(t) 
+            & std::get<2>(t) 
+            & std::get<3>(t) 
+            & std::get<4>(t) 
+            & std::get<5>(t) 
+            & std::get<6>(t) 
+            & std::get<7>(t);
     }
 
+    // Visual C++ 11 doesn't support any more args to std::tuple<>.
+
+    /*
     template<
         typename T0, 
         typename T1, 
@@ -159,18 +162,18 @@ namespace SF {
         typename T6, 
         typename T7, 
         typename T8>
-    void serialize(SF::Archive &ar, boost::tuples::tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8> &t)
+    void serialize(SF::Archive &ar, std::tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8> &t)
     {
         ar 
-            & t.template get<0>() 
-            & t.template get<1>() 
-            & t.template get<2>() 
-            & t.template get<3>() 
-            & t.template get<4>() 
-            & t.template get<5>() 
-            & t.template get<6>() 
-            & t.template get<7>() 
-            & t.template get<8>();
+            & std::get<0>(t) 
+            & std::get<1>(t) 
+            & std::get<2>(t) 
+            & std::get<3>(t) 
+            & std::get<4>(t) 
+            & std::get<5>(t) 
+            & std::get<6>(t) 
+            & std::get<7>(t) 
+            & std::get<8>(t);
     }
 
     template<
@@ -184,20 +187,22 @@ namespace SF {
         typename T7, 
         typename T8, 
         typename T9>
-    void serialize(SF::Archive &ar, boost::tuples::tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9> &t)
+    void serialize(SF::Archive &ar, std::tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9> &t)
     {
         ar 
-            & t.template get<0>() 
-            & t.template get<1>() 
-            & t.template get<2>() 
-            & t.template get<3>() 
-            & t.template get<4>() 
-            & t.template get<5>() 
-            & t.template get<6>() 
-            & t.template get<7>() 
-            & t.template get<8>() 
-            & t.template get<9>();
+            & std::get<0>(t) 
+            & std::get<1>(t) 
+            & std::get<2>(t) 
+            & std::get<3>(t) 
+            & std::get<4>(t) 
+            & std::get<5>(t) 
+            & std::get<6>(t) 
+            & std::get<7>(t) 
+            & std::get<8>(t) 
+            & std::get<9>(t);
     }
+    */
+
 }
 
-#endif // ! INCLUDE_SF_TUPLE_HPP
+#endif // ! INCLUDE_SF_TUPLE_STD_HPP

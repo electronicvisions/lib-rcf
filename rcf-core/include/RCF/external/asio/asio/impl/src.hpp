@@ -2,7 +2,7 @@
 // impl/src.hpp
 // ~~~~~~~~~~~~
 //
-// Copyright (c) 2003-2011 Christopher M. Kohlhoff (chris at kohlhoff dot com)
+// Copyright (c) 2003-2015 Christopher M. Kohlhoff (chris at kohlhoff dot com)
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -21,12 +21,15 @@
 
 #include "RCF/external/asio/asio/impl/error.ipp"
 #include "RCF/external/asio/asio/impl/error_code.ipp"
+#include "RCF/external/asio/asio/impl/handler_alloc_hook.ipp"
 #include "RCF/external/asio/asio/impl/io_service.ipp"
 #include "RCF/external/asio/asio/impl/serial_port_base.ipp"
+#include "RCF/external/asio/asio/detail/impl/buffer_sequence_adapter.ipp"
 #include "RCF/external/asio/asio/detail/impl/descriptor_ops.ipp"
 #include "RCF/external/asio/asio/detail/impl/dev_poll_reactor.ipp"
 #include "RCF/external/asio/asio/detail/impl/epoll_reactor.ipp"
 #include "RCF/external/asio/asio/detail/impl/eventfd_select_interrupter.ipp"
+#include "RCF/external/asio/asio/detail/impl/handler_tracking.ipp"
 #include "RCF/external/asio/asio/detail/impl/kqueue_reactor.ipp"
 #include "RCF/external/asio/asio/detail/impl/pipe_select_interrupter.ipp"
 #include "RCF/external/asio/asio/detail/impl/posix_event.ipp"
@@ -39,12 +42,13 @@
 #include "RCF/external/asio/asio/detail/impl/resolver_service_base.ipp"
 #include "RCF/external/asio/asio/detail/impl/select_reactor.ipp"
 #include "RCF/external/asio/asio/detail/impl/service_registry.ipp"
+#include "RCF/external/asio/asio/detail/impl/signal_set_service.ipp"
 #include "RCF/external/asio/asio/detail/impl/socket_ops.ipp"
 #include "RCF/external/asio/asio/detail/impl/socket_select_interrupter.ipp"
 #include "RCF/external/asio/asio/detail/impl/strand_service.ipp"
 #include "RCF/external/asio/asio/detail/impl/task_io_service.ipp"
 #include "RCF/external/asio/asio/detail/impl/throw_error.ipp"
-#include "RCF/external/asio/asio/detail/impl/timer_queue.ipp"
+#include "RCF/external/asio/asio/detail/impl/timer_queue_ptime.ipp"
 #include "RCF/external/asio/asio/detail/impl/timer_queue_set.ipp"
 #include "RCF/external/asio/asio/detail/impl/win_iocp_handle_service.ipp"
 #include "RCF/external/asio/asio/detail/impl/win_iocp_io_service.ipp"
@@ -52,9 +56,14 @@
 #include "RCF/external/asio/asio/detail/impl/win_iocp_socket_service_base.ipp"
 #include "RCF/external/asio/asio/detail/impl/win_event.ipp"
 #include "RCF/external/asio/asio/detail/impl/win_mutex.ipp"
+#include "RCF/external/asio/asio/detail/impl/win_object_handle_service.ipp"
+#include "RCF/external/asio/asio/detail/impl/win_static_mutex.ipp"
 #include "RCF/external/asio/asio/detail/impl/win_thread.ipp"
 #include "RCF/external/asio/asio/detail/impl/win_tss_ptr.ipp"
+#include "RCF/external/asio/asio/detail/impl/winrt_ssocket_service_base.ipp"
+#include "RCF/external/asio/asio/detail/impl/winrt_timer_scheduler.ipp"
 #include "RCF/external/asio/asio/detail/impl/winsock_init.ipp"
+#include "RCF/external/asio/asio/generic/detail/impl/endpoint.ipp"
 #include "RCF/external/asio/asio/ip/impl/address.ipp"
 #include "RCF/external/asio/asio/ip/impl/address_v4.ipp"
 #include "RCF/external/asio/asio/ip/impl/address_v6.ipp"

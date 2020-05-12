@@ -2,7 +2,7 @@
 // deadline_timer.hpp
 // ~~~~~~~~~~~~~~~~~~
 //
-// Copyright (c) 2003-2011 Christopher M. Kohlhoff (chris at kohlhoff dot com)
+// Copyright (c) 2003-2015 Christopher M. Kohlhoff (chris at kohlhoff dot com)
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -16,12 +16,14 @@
 #endif // defined(_MSC_VER) && (_MSC_VER >= 1200)
 
 #include "RCF/external/asio/asio/detail/config.hpp"
+
+#if defined(ASIO_HAS_BOOST_DATE_TIME) \
+  || defined(GENERATING_DOCUMENTATION)
+
 #include "RCF/external/asio/asio/detail/socket_types.hpp" // Must come before posix_time.
 #include "RCF/external/asio/asio/basic_deadline_timer.hpp"
 
-#include "RCF/external/asio/asio/detail/push_options.hpp"
 #include <boost/date_time/posix_time/posix_time_types.hpp>
-#include "RCF/external/asio/asio/detail/pop_options.hpp"
 
 namespace asio {
 
@@ -29,5 +31,8 @@ namespace asio {
 typedef basic_deadline_timer<boost::posix_time::ptime> deadline_timer;
 
 } // namespace asio
+
+#endif // defined(ASIO_HAS_BOOST_DATE_TIME)
+       // || defined(GENERATING_DOCUMENTATION)
 
 #endif // ASIO_DEADLINE_TIMER_HPP

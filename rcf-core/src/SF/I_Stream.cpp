@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -25,6 +25,8 @@
 #include <RCF/ByteOrdering.hpp>
 #include <RCF/Exception.hpp>
 #include <RCF/MemStream.hpp>
+
+#include <string.h> // memcpy
 
 namespace SF {
 
@@ -92,7 +94,7 @@ namespace SF {
     {
         if (data.length() == 0)
         {
-            RCF::Exception e(RCF::_SfError_DataFormat());
+            RCF::Exception e(RCF::RcfError_SfDataFormat);
             RCF_THROW(e);
         }
         RCF::MemIstream istr(data.get(), data.length());
@@ -101,7 +103,7 @@ namespace SF {
         {
             char ch;
             istr.get(ch);
-            RCF_ASSERT_EQ( ch , chSeparator );
+            RCF_ASSERT( ch == chSeparator );
             istr >> t[i];
         }
     }
@@ -217,7 +219,7 @@ namespace SF {
         T *             t, 
         int             nCount)
     {
-        RCF_ASSERT_EQ( data.length() , sizeof(T)*nCount);
+        RCF_ASSERT( data.length() == sizeof(T)*nCount);
         memcpy(t, data.get(), sizeof(T)*nCount);
     }
 
@@ -271,7 +273,7 @@ namespace SF {
     {
         UInt32 nBufferSize = sizeof(T) * nCount;
         UInt32 nAlloc = data.allocate(nBufferSize);
-        RCF_ASSERT_EQ(nAlloc , nBufferSize);
+        RCF_ASSERT(nAlloc == nBufferSize);
         RCF_UNUSED_VARIABLE(nAlloc);
         T *buffer = reinterpret_cast<T *>(data.get());
         memcpy(buffer, t, nBufferSize);
@@ -287,8 +289,8 @@ namespace SF {
     {
         if (data.length() != sizeof(T)*nCount)
         {
-            RCF::Exception e(RCF::_SfError_DataFormat());
-            RCF_THROW(e)(data.length())(nCount)(typeid(T).name());
+            RCF::Exception e(RCF::RcfError_SfDataFormat);
+            RCF_THROW(e);
         }
         T *buffer = reinterpret_cast<T *>(data.get());
         RCF::networkToMachineOrder(buffer, sizeof(T), nCount);

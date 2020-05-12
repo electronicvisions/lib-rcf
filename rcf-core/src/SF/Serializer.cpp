@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,6 +19,10 @@
 #include <SF/Serializer.hpp>
 
 #include <SF/Node.hpp>
+
+#include <RCF/ClientStub.hpp>
+#include <RCF/RcfSession.hpp>
+#include <RCF/ThreadLocalData.hpp>
 
 namespace SF {
 
@@ -96,12 +100,12 @@ namespace SF {
         }
         else if (!bId && !bNode && !bPointer)
         {
-            RCF::Exception e(RCF::_RcfError_DeserializationNullPointer());
+            RCF::Exception e(RCF::RcfError_DeserializationNullPointer);
             RCF_THROW(e);
         }
         else if (bId && !bNode && !bPointer)
         {
-            RCF::Exception e(RCF::_SfError_RefMismatch());
+            RCF::Exception e(RCF::RcfError_SfRefMismatch);
             RCF_THROW(e);
         }
 
@@ -192,6 +196,24 @@ namespace SF {
                 invokeWrite(ar);
             }
         }
+    }
+
+    // Used when serializing std::wstring.
+    bool getCurrentNativeWstringSerialization()
+    {
+        bool useNativeWstringSerialization = false;
+        RCF::ClientStub * pClientStub = RCF::getTlsClientStubPtr();
+        RCF::RcfSession * pRcfSession = RCF::getTlsRcfSessionPtr();
+
+        if ( pClientStub )
+        {
+            useNativeWstringSerialization = pClientStub->getEnableNativeWstringSerialization();
+        }
+        else if ( pRcfSession )
+        {
+            useNativeWstringSerialization = pRcfSession->getEnableNativeWstringSerialization();
+        }
+        return useNativeWstringSerialization;
     }
 
 } // namespace SF

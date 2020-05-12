@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,10 +19,12 @@
 #include <RCF/UnixLocalServerTransport.hpp>
 
 #include <RCF/Asio.hpp>
+#include <RCF/Log.hpp>
+#include <RCF/TimedBsdSockets.hpp>
 #include <RCF/UnixLocalClientTransport.hpp>
 #include <RCF/UnixLocalEndpoint.hpp>
 
-#include <RCF/util/Platform/OS/BsdSockets.hpp>
+#include <RCF/BsdSockets.hpp>
 
 // std::remove
 #include <cstdio>
@@ -61,7 +63,7 @@ namespace RCF {
     };
 
     typedef stream_protocol::socket                 UnixLocalSocket;
-    typedef boost::shared_ptr<UnixLocalSocket>      UnixLocalSocketPtr;
+    typedef std::shared_ptr<UnixLocalSocket>      UnixLocalSocketPtr;
 
     // UnixLocalNetworkSession
 
@@ -71,6 +73,11 @@ namespace RCF {
             AsioNetworkSession(transport, ioService),
             mSocketPtr(new UnixLocalSocket(ioService))
     {}
+
+    UnixLocalNetworkSession::~UnixLocalNetworkSession()
+    {
+        runOnDestroyCallbacks();
+    }
 
     const RemoteAddress & UnixLocalNetworkSession::implGetRemoteAddress()
     {
@@ -125,12 +132,14 @@ namespace RCF {
         UnixLocalAcceptor & unixLocalAcceptor = 
             static_cast<UnixLocalAcceptor &>(mTransport.getAcceptor());
 
+        using std::placeholders::_1;
+
         unixLocalAcceptor.mAcceptor.async_accept(
             *mSocketPtr,
-            boost::bind(
+            std::bind(
                 &AsioNetworkSession::onAcceptCompleted,
                 sharedFromThis(),
-                ASIO_NS::placeholders::error));
+                _1));
     }
 
     bool UnixLocalNetworkSession::implOnAccept()
@@ -155,7 +164,7 @@ namespace RCF {
         const int BufferSize = 8*1024;
         char buffer[BufferSize];
         while (recv(fd, buffer, BufferSize, 0) > 0);
-#ifdef BOOST_WINDOWS
+#ifdef RCF_WINDOWS
         int ret = shutdown(fd, SD_BOTH);
 #else
         int ret = shutdown(fd, SHUT_RDWR);
@@ -165,12 +174,12 @@ namespace RCF {
         postRead();
     }
 
-    ClientTransportAutoPtr UnixLocalNetworkSession::implCreateClientTransport()
+    ClientTransportUniquePtr UnixLocalNetworkSession::implCreateClientTransport()
     {
-        std::auto_ptr<UnixLocalClientTransport> unixLocalClientTransport(
+        std::unique_ptr<UnixLocalClientTransport> unixLocalClientTransport(
             new UnixLocalClientTransport(mSocketPtr, mRemoteFileName));
 
-        return ClientTransportAutoPtr(unixLocalClientTransport.release());
+        return ClientTransportUniquePtr(unixLocalClientTransport.release());
     }
 
     void UnixLocalNetworkSession::implTransferNativeFrom(ClientTransport & clientTransport)
@@ -181,7 +190,7 @@ namespace RCF {
         if (pUnixLocalClientTransport == NULL)
         {
             Exception e("incompatible client transport");
-            RCF_THROW(e)(typeid(clientTransport));
+            RCF_THROW(e);
         }
 
         UnixLocalClientTransport & unixLocalClientTransport = *pUnixLocalClientTransport;
@@ -226,16 +235,16 @@ namespace RCF {
     {
     }
 
-    ClientTransportAutoPtr UnixLocalServerTransport::implCreateClientTransport(
+    ClientTransportUniquePtr UnixLocalServerTransport::implCreateClientTransport(
         const Endpoint &endpoint)
     {
         const UnixLocalEndpoint & unixLocalEndpoint = 
             dynamic_cast<const UnixLocalEndpoint &>(endpoint);
 
-        ClientTransportAutoPtr clientTransportAutoPtr(
+        ClientTransportUniquePtr clientTransportUniquePtr(
             new UnixLocalClientTransport(unixLocalEndpoint.getPipeName()));
 
-        return clientTransportAutoPtr;
+        return clientTransportUniquePtr;
     }
 
     void UnixLocalServerTransport::onServerStart(RcfServer & server)

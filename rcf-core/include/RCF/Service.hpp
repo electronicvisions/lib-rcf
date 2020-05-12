@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,20 +19,19 @@
 #ifndef INCLUDE_RCF_SERVICE_HPP
 #define INCLUDE_RCF_SERVICE_HPP
 
-#include <boost/shared_ptr.hpp>
+#include <memory>
 
 #include <RCF/Export.hpp>
 #include <RCF/ServerTask.hpp>
-#include <RCF/ThreadLibrary.hpp>
 
 namespace RCF {
 
     class                                   I_Service;
     class                                   RcfServer;
-    class                                   StubEntry;
-    class                                   Token;
-    typedef boost::shared_ptr<I_Service>    ServicePtr;
-    typedef boost::shared_ptr<StubEntry>    StubEntryPtr;
+    typedef std::shared_ptr<I_Service>    ServicePtr;
+
+    class ThreadPool;
+    typedef std::shared_ptr<ThreadPool> ThreadPoolPtr;
 
     class RCF_EXPORT I_Service
     {

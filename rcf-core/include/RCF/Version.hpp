@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,10 +11,12 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
+
+/// @file
 
 #ifndef INCLUDE_RCF_VERSION_HPP
 #define INCLUDE_RCF_VERSION_HPP
@@ -22,7 +24,7 @@
 #include <RCF/BuildVersion.hpp>
 #include <RCF/Export.hpp>
 
-#include <boost/cstdint.hpp>
+#include <cstdint>
 
 namespace RCF {
 
@@ -80,18 +82,26 @@ namespace RCF {
     // 2013-09-01   - version number 12
     //      - Request and response headers include out of band request and response.
     //      - Request of transport filters done through out of band message.
+
+    // 2017-09-04   - version number 13
+    //      - Serialization of fs::path changed to use wstring instead of string.
+    //      - Serialization of RemoteException changed.
  
 
-    // Inherent runtime version - can't be changed.
-    RCF_EXPORT boost::uint32_t  getLibraryVersion();
+    /// Gets the maximum RCF runtime version number this RCF build supports.
+    RCF_EXPORT std::uint32_t    getMaxSupportedRuntimeVersion();
 
-    // Default runtime version.
-    RCF_EXPORT boost::uint32_t  getDefaultRuntimeVersion();
-    RCF_EXPORT void             setDefaultRuntimeVersion(boost::uint32_t version);
+    /// Gets the RCF runtime version number.
+    RCF_EXPORT std::uint32_t    getRuntimeVersion();
 
-    // Default archive version.
-    RCF_EXPORT boost::uint32_t  getDefaultArchiveVersion();
-    RCF_EXPORT void             setDefaultArchiveVersion(boost::uint32_t version);
+    /// Sets the RCF runtime version number. Applies to all RCF clients and servers within the current process.
+    RCF_EXPORT void             setRuntimeVersion(std::uint32_t version);
+
+    /// Gets the RCF archive version number.
+    RCF_EXPORT std::uint32_t    getArchiveVersion();
+
+    /// Sets the RCF archive version number. Applies to all RCF clients and servers within the current process.
+    RCF_EXPORT void             setArchiveVersion(std::uint32_t version);
 
 } // namespace RCF
 

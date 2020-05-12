@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -23,9 +23,8 @@
 #include <RCF/Exception.hpp>
 #include <RCF/InitDeinit.hpp>
 #include <RCF/OverlappedAmi.hpp>
-#include <RCF/util/Log.hpp>
-
-#include <boost/enable_shared_from_this.hpp>
+#include <RCF/RecursionLimiter.hpp>
+#include <RCF/Log.hpp>
 
 #if RCF_FEATURE_FILETRANSFER==1
 #include <RCF/FileUpload.hpp>
@@ -34,9 +33,7 @@
 namespace RCF {
 
     class ThreadLocalData;
-    ThreadSpecificPtr<ThreadLocalData> *    gpTldPtr = NULL;
-    Mutex *                                 gpTldInstancesMutex = NULL;
-    std::vector<ThreadLocalData *>*         gpTldInstances;
+    thread_local std::unique_ptr<ThreadLocalData> gTldPtr;
 
     class ThreadLocalData
     {
@@ -44,7 +41,6 @@ namespace RCF {
     public:
         
         ThreadLocalData() : 
-            mpAllTldInstances(gpTldInstances),
             mpCurrentRcfSession(NULL)
         {
         }
@@ -91,25 +87,18 @@ namespace RCF {
                 }
 #endif
 
-                for (std::size_t i=0; i<mExitHandlers.size(); ++i)
-                {
-                    mExitHandlers[i]();
-                }
-                mExitHandlers.clear();
             RCF_DTOR_END
         }
-
-        std::vector<ThreadLocalData *> *    mpAllTldInstances;
 
         std::vector<ClientStub *>       mCurrentClientStubs;
         RcfSession *                    mpCurrentRcfSession;
         ThreadInfoPtr                   mThreadInfoPtr;
-        UdpNetworkSessionPtr              mUdpNetworkSessionPtr;
+        UdpNetworkSessionPtr            mUdpNetworkSessionPtr;
         RecursionState<int, int>        mRcfSessionRecursionState;
         AmiNotification                 mAmiNotification;
         OverlappedAmiPtr                mOverlappedPtr;
         LogBuffers                      mLogBuffers;
-        std::vector<boost::function<void()> > mExitHandlers;
+        std::wstring_convert<std::codecvt_utf8<wchar_t> > mUtf8Converter;
 
         // For ThreadLocalCached<>.
         std::vector< std::vector<ByteBuffer> * >            mByteBufferVecCache;
@@ -125,64 +114,22 @@ namespace RCF {
 
     void initThreadLocalData()
     {
-        gpTldPtr = new ThreadSpecificPtr<ThreadLocalData>();
-        gpTldInstancesMutex = new Mutex;
-        gpTldInstances = new std::vector<ThreadLocalData *>();
     }
-
-    void clearThreadLocalDataForAllThreads();
 
     void deinitThreadLocalData()
     {
-        clearThreadLocalDataForAllThreads();
-
-        delete gpTldInstances;
-        gpTldInstances = NULL;
-
-        delete gpTldInstancesMutex;
-        gpTldInstancesMutex = NULL;
-
-        delete gpTldPtr; 
-        gpTldPtr = NULL;
+        // Only deletes TLD data for the current thread.
+        gTldPtr.reset();
     }
+
 
     ThreadLocalData &getThreadLocalData()
     {       
-        if (!gpTldPtr)
-        {
-            throw Exception(_RcfError_RcfNotInitialized());
+        if ( !gTldPtr )
+        { 
+            gTldPtr.reset(new ThreadLocalData());
         }
-
-        if (NULL == gpTldPtr->get())
-        {
-            ThreadLocalData * pTld = new ThreadLocalData();
-            gpTldPtr->reset(pTld);
-            Lock lock(*gpTldInstancesMutex);
-            gpTldInstances->push_back(pTld);
-        }
-        return *gpTldPtr->get();
-    }
-
-    void clearThreadLocalDataForThisThread()
-    {
-        
-        ThreadLocalData * pTld = gpTldPtr->get();
-        gpTldPtr->reset(NULL);
-        {
-            Lock lock(*gpTldInstancesMutex);
-            eraseRemove(*gpTldInstances, pTld);
-        }
-        delete pTld;
-    }
-
-    void clearThreadLocalDataForAllThreads()
-    {
-        Lock lock(*gpTldInstancesMutex);
-        for (std::size_t i=0; i<gpTldInstances->size(); ++i)
-        {
-            delete (*gpTldInstances)[i];
-        }
-        gpTldInstances->clear();
+        return *gTldPtr;
     }
 
     // access to the various thread local entities
@@ -284,6 +231,12 @@ namespace RCF {
         return tld.mLogBuffers;
     }
 
+    std::wstring_convert<std::codecvt_utf8<wchar_t> > & getTlsUtf8Converter()
+    {
+        ThreadLocalData & tld = getThreadLocalData();
+        return tld.mUtf8Converter;
+    }
+
     std::vector< std::vector<ByteBuffer> * > &      
         getTlsCache(std::vector<ByteBuffer> *)
     {
@@ -324,12 +277,6 @@ namespace RCF {
     {
         ThreadLocalData & tld = getThreadLocalData();
         return tld.mFileUploadVecCache;
-    }
-
-    void addThreadExitHandler(boost::function<void()> func)
-    {
-        ThreadLocalData & tld = getThreadLocalData();
-        tld.mExitHandlers.push_back(func);
     }
 
 } // namespace RCF

@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -20,6 +20,7 @@
 
 #include <RCF/RcfServer.hpp>
 #include <RCF/RcfSession.hpp>
+#include <RCF/ServerTransport.hpp>
 
 namespace RCF {
 
@@ -44,8 +45,8 @@ namespace RCF {
     {
         mpRcfServer = & server;
         
-        mSessionTimeoutMs = mpRcfServer->getSessionTimeoutMs();
-        mReapingIntervalMs = mpRcfServer->getSessionHarvestingIntervalMs();
+        mSessionTimeoutMs = mpRcfServer->getConnectionIdleTimeoutMs();
+        mReapingIntervalMs = mpRcfServer->getConnectionIdleScanIntervalMs();
 
         if (mSessionTimeoutMs)
         {
@@ -75,7 +76,7 @@ namespace RCF {
                 RcfSessionPtr rcfSessionPtr = networkSessionPtr->getSessionPtr();
                 if (rcfSessionPtr)
                 {
-                    boost::uint32_t lastTouched = rcfSessionPtr->getTouchTimestamp();
+                    std::uint32_t lastTouched = rcfSessionPtr->getTouchTimestamp();
                     if (lastTouched)
                     {
                         RCF::Timer lastTouchedTimer( lastTouched );
@@ -88,7 +89,7 @@ namespace RCF {
                 else
                 {
                     // Network session without a RCF session. Typically related to a HTTP connection.
-                    boost::uint32_t lastTouched = networkSessionPtr->getLastActivityTimestamp();
+                    std::uint32_t lastTouched = networkSessionPtr->getLastActivityTimestamp();
                     if ( lastTouched )
                     {
                         RCF::Timer lastTouchedTimer(lastTouched);

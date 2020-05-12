@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -21,37 +21,29 @@
 
 #include <vector>
 
-#include <boost/bind.hpp>
-#include <boost/cstdint.hpp>
-#include <boost/enable_shared_from_this.hpp>
-#include <boost/function.hpp>
-#include <boost/shared_ptr.hpp>
+#include <cstdint>
+#include <functional>
+#include <map>
+#include <memory>
 
 #include <RCF/AsioFwd.hpp>
 #include <RCF/Export.hpp>
 #include <RCF/ThreadLibrary.hpp>
 #include <RCF/Timer.hpp>
-#include <RCF/Tools.hpp>
-
-namespace boost {
-    namespace asio {
-        class io_service;
-    }
-}
 
 namespace RCF {
 
     class                                               RcfServer;
-    typedef boost::function1<void, int>                 Task;
+    typedef std::function<void(int)>                    Task;
     class                                               TaskEntry;
-    typedef boost::function0<void>                      StopFunctor;
+    typedef std::function<void()>                       StopFunctor;
 
     class                                               ThreadPool;
-    typedef boost::shared_ptr<ThreadPool>               ThreadPoolPtr;
+    typedef std::shared_ptr<ThreadPool>                 ThreadPoolPtr;
 
     class                                               AsioMuxer;
 
-    typedef boost::shared_ptr<ThreadPool>               ThreadPoolPtr;
+    typedef std::shared_ptr<ThreadPool>                 ThreadPoolPtr;
     class                                               ShouldStop;
 
     class RCF_EXPORT ThreadInfo
@@ -67,12 +59,13 @@ namespace RCF {
         friend class ShouldStop;
 
         ThreadPool &    mThreadPool;
-        bool            mBusy;
-        bool            mStopFlag;
+        bool            mBusy = false;
+        bool            mStopFlag = false;
+        bool            mAlreadyRemovedFromThreadPool = false;
         RCF::Timer      mTouchTimer;
     };
 
-    typedef boost::shared_ptr<ThreadInfo> ThreadInfoPtr;
+    typedef std::shared_ptr<ThreadInfo> ThreadInfoPtr;
 
     enum MuxerType
     {
@@ -84,12 +77,12 @@ namespace RCF {
 
     /// Represents a server-side thread pool.
     class RCF_EXPORT ThreadPool : 
-        public boost::enable_shared_from_this<ThreadPool>
+        public std::enable_shared_from_this<ThreadPool>
     {
     public:
 
-        typedef boost::function0<void> ThreadInitFunctor;
-        typedef boost::function0<void> ThreadDeinitFunctor;
+        typedef std::function<void()> ThreadInitFunctor;
+        typedef std::function<void()> ThreadDeinitFunctor;
 
         // *** SWIG BEGIN ***
 
@@ -111,10 +104,10 @@ namespace RCF {
         /// Sets the thread idle timeout value, in milliseconds. After a thread has
         /// been idle for this time, it will be shut down, unless the thread count
         /// is already at the minimum value for the thread pool.
-        void            setThreadIdleTimeoutMs(boost::uint32_t threadIdleTimeoutMs);
+        void            setThreadIdleTimeoutMs(std::uint32_t threadIdleTimeoutMs);
 
         /// Returns the thread idle timeout value, in milliseconds.
-        boost::uint32_t getThreadIdleTimeoutMs() const;
+        std::uint32_t   getThreadIdleTimeoutMs() const;
 
         /// If this setting is true, clients will receive an error message right
         /// away, if all threads in the thread pool are busy. Otherwise, the client
@@ -181,13 +174,13 @@ namespace RCF {
         std::vector<ThreadInitFunctor>      mThreadInitFunctors;
         std::vector<ThreadDeinitFunctor>    mThreadDeinitFunctors;
         std::string                         mThreadName;
-        boost::shared_ptr<AsioMuxer>        mAsioIoServicePtr;
+        std::shared_ptr<AsioMuxer>          mAsioIoServicePtr;
 
         bool                                mStarted;
         std::size_t                         mThreadMinCount;
         std::size_t                         mThreadMaxCount;
         bool                                mReserveLastThread;
-        boost::uint32_t                     mThreadIdleTimeoutMs;
+        std::uint32_t                       mThreadIdleTimeoutMs;
 
         Task                                mTask;
         StopFunctor                         mStopFunctor;
@@ -199,6 +192,7 @@ namespace RCF {
         Mutex                               mThreadsMutex;
         ThreadMap                           mThreads;
         std::size_t                         mBusyCount;
+        Condition                           mAllThreadsStopped;
     };    
 
     class ThreadTouchGuard

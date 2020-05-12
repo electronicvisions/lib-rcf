@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -34,18 +34,22 @@ namespace RCF {
 
         while (true)
         {
-
             fd_set fdSet;
             FD_ZERO(&fdSet);
             FD_SET( static_cast<SOCKET>(fd), &fdSet);
             
             unsigned int timeoutMs = generateTimeoutMs(endTimeMs);
             timeoutMs = clientStub.generatePollingTimeout(timeoutMs);
+            if (timeoutMs == 0)
+            {
+                clientStub.onPollingTimeout();
+                timeoutMs = clientStub.generatePollingTimeout(timeoutMs);
+            }
             
             timeval timeout = {0};
             timeout.tv_sec = timeoutMs/1000;
             timeout.tv_usec = 1000*(timeoutMs%1000);
-            RCF_ASSERT_GTEQ(timeout.tv_usec , 0);
+            RCF_ASSERT(timeout.tv_usec >= 0);
             
             int selectRet = bRead ?
                 Platform::OS::BsdSockets::select(fd+1, &fdSet, NULL, NULL, &timeout) :
@@ -75,7 +79,7 @@ namespace RCF {
 
                 RCF_VERIFY(
                     ret == 0, 
-                    Exception(_RcfError_Socket("getsockopt()"), err, RcfSubsystem_Os));
+                    Exception(RcfError_Socket, "getsockopt()", osError(err)));
 
                 if (errorOpt == 0)
                 {
@@ -133,7 +137,7 @@ namespace RCF {
         }
     }
 
-#ifdef BOOST_WINDOWS
+#ifdef RCF_WINDOWS
 
     void appendWsabuf(std::vector<WSABUF> &wsabufs, const ByteBuffer &byteBuffer)
     {
@@ -175,7 +179,7 @@ namespace RCF {
             std::vector<WSABUF> &wsabufs = tlcWsabufs.get();
 
             forEachByteBuffer(
-                boost::bind(&appendWsabuf, boost::ref(wsabufs), _1),
+                [&](const ByteBuffer & buffer) { appendWsabuf(wsabufs, buffer); },
                 byteBuffers,
                 bytesSent,
                 bytesToSend);
@@ -183,7 +187,7 @@ namespace RCF {
             int count = 0;
             int myErr = 0;
 
-#ifdef BOOST_WINDOWS
+#ifdef RCF_WINDOWS
             {
                 DWORD cbSent = 0;
                 int ret = WSASend(
@@ -210,7 +214,7 @@ namespace RCF {
 
             if (count >= 0)
             {
-                RCF_ASSERT_LTEQ(count , static_cast<int>(bytesRemaining));
+                RCF_ASSERT(count <= static_cast<int>(bytesRemaining));
 
                 bytesRemaining -= count;
                 bytesSent += count;
@@ -343,6 +347,11 @@ namespace RCF {
         return connected;
     }
 
+#ifdef _MSC_VER
+#pragma warning( push )
+#pragma warning( disable : 4996 )  // warning C4996: 'ctime' was declared deprecated
+#endif
+
     std::pair<std::string, std::vector<std::string> > getLocalIps()
     {
         std::vector<char> hostname(80);
@@ -351,14 +360,14 @@ namespace RCF {
 
         RCF_VERIFY(
             ret != -1, 
-            RCF::Exception( _RcfError_Socket("gethostname()"), err, RcfSubsystem_Os))(ret);
+            RCF::Exception(RcfError_Socket, "gethostname()", osError(err)));
 
         hostent *phe = gethostbyname(&hostname[0]);
         err = Platform::OS::BsdSockets::GetLastError();
 
         RCF_VERIFY(
             phe, 
-            RCF::Exception( _RcfError_Socket("gethostbyname()"), err, RCF::RcfSubsystem_Os));
+            RCF::Exception(RcfError_Socket, "gethostbyname()", osError(err)));
 
         std::vector<std::string> ips;
         for (int i = 0; phe->h_addr_list[i] != 0; ++i) {
@@ -369,5 +378,9 @@ namespace RCF {
 
         return std::make_pair( std::string(&hostname[0]), ips);
     }
+
+#ifdef _MSC_VER
+#pragma warning( pop )
+#endif
 
 } // namespace RCF

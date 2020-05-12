@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,23 +19,14 @@
 #ifndef INCLUDE_RCF_CERTIFICATE_HPP
 #define INCLUDE_RCF_CERTIFICATE_HPP
 
-#include <RCF/Enums.hpp>
 #include <RCF/Export.hpp>
+#include <RCF/RcfFwd.hpp>
 
-#include <boost/shared_ptr.hpp>
+#include <memory>
 
 namespace RCF {
 
-    class Certificate;
-    typedef boost::shared_ptr<Certificate> CertificatePtr;
-
-    class Win32Certificate;
-    typedef boost::shared_ptr<Win32Certificate> Win32CertificatePtr;
-
-    class X509Certificate;
-    typedef boost::shared_ptr<X509Certificate> X509CertificatePtr;
-
-    /// Base class of all certificate classes.
+    /// Base class for all RCF certificate classes.
     class RCF_EXPORT Certificate
     {
     public:

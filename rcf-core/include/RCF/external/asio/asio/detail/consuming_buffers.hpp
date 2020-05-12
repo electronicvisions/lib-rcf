@@ -2,7 +2,7 @@
 // detail/consuming_buffers.hpp
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //
-// Copyright (c) 2003-2011 Christopher M. Kohlhoff (chris at kohlhoff dot com)
+// Copyright (c) 2003-2015 Christopher M. Kohlhoff (chris at kohlhoff dot com)
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -17,9 +17,9 @@
 
 #include "RCF/external/asio/asio/detail/config.hpp"
 #include <cstddef>
-#include <boost/iterator.hpp>
-#include <boost/limits.hpp>
+#include <iterator>
 #include "RCF/external/asio/asio/buffer.hpp"
+#include "RCF/external/asio/asio/detail/limits.hpp"
 
 #include "RCF/external/asio/asio/detail/push_options.hpp"
 
@@ -29,9 +29,23 @@ namespace detail {
 // A proxy iterator for a sub-range in a list of buffers.
 template <typename Buffer, typename Buffer_Iterator>
 class consuming_buffers_iterator
-  : public boost::iterator<std::forward_iterator_tag, const Buffer>
 {
 public:
+  /// The type used for the distance between two iterators.
+  typedef std::ptrdiff_t difference_type;
+
+  /// The type of the value pointed to by the iterator.
+  typedef Buffer value_type;
+
+  /// The type of the result of applying operator->() to the iterator.
+  typedef const Buffer* pointer;
+
+  /// The type of the result of applying operator*() to the iterator.
+  typedef const Buffer& reference;
+
+  /// The iterator category.
+  typedef std::forward_iterator_tag iterator_category;
+
   // Default constructor creates an end iterator.
   consuming_buffers_iterator()
     : at_end_(true)
@@ -132,8 +146,8 @@ private:
   Buffer first_;
   Buffer_Iterator begin_remainder_;
   Buffer_Iterator end_remainder_;
-  std::size_t offset_;
-  std::size_t max_size_;
+  std::size_t offset_ = 0;
+  std::size_t max_size_ = 0;
 };
 
 // A proxy for a sub-range in a list of buffers.

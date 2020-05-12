@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -25,7 +25,7 @@
 #include <RCF/Config.hpp>
 #include <RCF/ServerTransport.hpp>
 
-#include <RCF/util/Platform/OS/BsdSockets.hpp>
+#include <RCF/BsdSockets.hpp>
 
 namespace RCF {
 
@@ -61,7 +61,7 @@ namespace RCF {
 #endif
 
     class Exception;
-    typedef boost::shared_ptr<Exception> ExceptionPtr;
+    typedef std::shared_ptr<Exception> ExceptionPtr;
 
     /// Represents an IP address (IPv4 or IPv6).
     class RCF_EXPORT IpAddress : public RemoteAddress
@@ -128,38 +128,24 @@ namespace RCF {
         int                     mPort;
     };
 
+    /// Represents an IPv4 IP address.
     class RCF_EXPORT IpAddressV4 : public IpAddress
     {
     public:
-
-        IpAddressV4() : IpAddress(V4) 
-        {}
-
-        IpAddressV4(const std::string & ip) : IpAddress(ip, 0, V4) 
-        {}
-        
-        IpAddressV4(const std::string & ip, int port) : IpAddress(ip, port, V4) 
-        {}
-
-        IpAddressV4(const sockaddr_in & addr) : IpAddress(addr) 
-        {}
+        IpAddressV4();
+        IpAddressV4(const std::string & ip);
+        IpAddressV4(const std::string & ip, int port);
+        IpAddressV4(const sockaddr_in & addr);
     };
 
+    /// Represents an IPv6 IP address.
     class RCF_EXPORT IpAddressV6 : public IpAddress
     {
     public:
-
-        IpAddressV6() : IpAddress(V6) 
-        {}
-
-        IpAddressV6(const std::string & ip) : IpAddress(ip, 0, V6) 
-        {}
-
-        IpAddressV6(const std::string & ip, int port) : IpAddress(ip, port, V6) 
-        {}
-
-        IpAddressV6(const SockAddrIn6 & addr) : IpAddress(addr) 
-        {}
+        IpAddressV6();
+        IpAddressV6(const std::string & ip);
+        IpAddressV6(const std::string & ip, int port);
+        IpAddressV6(const SockAddrIn6 & addr);
     };
 
 } // namespace RCF

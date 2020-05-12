@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -20,19 +20,26 @@
 
 #include <iterator>
 
+#include <RCF/Exception.hpp>
 #include <RCF/RcfClient.hpp>
+#include <RCF/Tools.hpp>
+#include <RCF/Log.hpp>
 
 namespace RCF {
 
-    void ServerBinding::setAccessControl(CbAccessControl cbAccessControl)
+    void StubAccess::logBeginRemoteCall(const std::string& callDesc)
+    {
+        RCF_LOG_2() << "RcfServer - begin remote call. " << callDesc;
+    }
+
+    void ServerBinding::setAccessControl(AccessControlCallback cbAccessControl)
     {
         Lock lock(mMutex);
         mCbAccessControl = cbAccessControl;
     }
 
 
-    void ServerBinding::invoke(
-        const std::string &         subInterface,
+    void ServerBinding::callMethod(
         int                         fnId,
         RcfSession &                session)
     {
@@ -45,18 +52,14 @@ namespace RCF {
                 bool ok = mCbAccessControl(fnId);
                 if (!ok)
                 {
-                    RCF_THROW( RCF::Exception(_RcfError_ServerStubAccessDenied()));
+                    RCF_THROW( RCF::Exception(RcfError_ServerStubAccessDenied));
                 }
             }
         }
 
-        // No mutex here, since there is never anyone writing to mInvokeFunctorMap.
+        // No mutex here, since there is never anyone writing to mServerMethodMap.
 
-        RCF_VERIFY(
-            mInvokeFunctorMap.find(subInterface) != mInvokeFunctorMap.end(),
-            Exception(_RcfError_UnknownInterface(subInterface)));
-
-        mInvokeFunctorMap[subInterface](fnId, session);
+        mServerMethodPtr->callMethod(fnId, session);
     }
 
 } // namespace RCF

@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -21,23 +21,22 @@
 
 #include <istream>
 #include <streambuf>
-
-// std::size_t for vc6
-#include <boost/cstdint.hpp> 
-
-#include <boost/noncopyable.hpp>
+#include <cstdint> 
 
 #include <RCF/Config.hpp>
 #include <RCF/ByteBuffer.hpp>
 #include <RCF/ReallocBuffer.hpp>
+#include <RCF/Tools.hpp>
 
 namespace RCF {
+
+    class ByteBuffer;
 
     // MemIstreamBuf
 
     class MemIstreamBuf :
-        public std::streambuf, 
-        boost::noncopyable   
+        public std::streambuf,
+        Noncopyable   
     {   
       public:   
         MemIstreamBuf(char * buffer = NULL, std::size_t bufferLen = 0);
@@ -110,7 +109,7 @@ namespace RCF {
 
     class MemOstreamBuf :
         public std::streambuf, 
-        boost::noncopyable   
+        Noncopyable   
     {   
     public:   
         MemOstreamBuf();
@@ -181,7 +180,7 @@ namespace RCF {
 
     };   
 
-    typedef boost::shared_ptr<MemOstream> MemOstreamPtr;
+    typedef std::shared_ptr<MemOstream> MemOstreamPtr;
 
     // iostream impl
 
@@ -193,7 +192,7 @@ namespace RCF {
     }
 
     template<typename T>
-    inline MemOstream & operator<<(MemOstream & os, const boost::shared_ptr<T> & pt)
+    inline MemOstream & operator<<(MemOstream & os, const std::shared_ptr<T> & pt)
     {
         static_cast<std::ostream&>(os) << pt.get();
         return os;

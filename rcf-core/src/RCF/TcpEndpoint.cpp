@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,18 +11,15 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
 #include <RCF/TcpEndpoint.hpp>
 
-#include <boost/config.hpp>
-
 #include <RCF/InitDeinit.hpp>
 #include <RCF/SerializationProtocol.hpp>
-
 #include <RCF/TcpServerTransport.hpp>
 #include <RCF/TcpClientTransport.hpp>
 
@@ -79,16 +76,26 @@ namespace RCF {
         return mIpAddress;
     }
 
-    std::auto_ptr<ServerTransport> TcpEndpoint::createServerTransport() const
+    std::unique_ptr<ServerTransport> TcpEndpoint::createServerTransport() const
     {
-        return std::auto_ptr<ServerTransport>(
+        return std::unique_ptr<ServerTransport>(
             new RCF::TcpServerTransport(mIpAddress));
     }
 
-    std::auto_ptr<ClientTransport> TcpEndpoint::createClientTransport() const
+    std::unique_ptr<ClientTransport> TcpEndpoint::createClientTransport() const
     {
-        return std::auto_ptr<ClientTransport>(
+        return std::unique_ptr<ClientTransport>(
             new RCF::TcpClientTransport(mIpAddress));
+    }
+
+    TcpEndpointV4::TcpEndpointV4(const std::string & ip, int port) :
+        TcpEndpoint(IpAddressV4(ip, port))
+    {
+    }
+
+    TcpEndpointV6::TcpEndpointV6(const std::string & ip, int port) :
+        TcpEndpoint(IpAddressV6(ip, port))
+    {
     }
 
 } // namespace RCF

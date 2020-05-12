@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -38,11 +38,11 @@ namespace SF {
             unsigned int count = 0;
             ar & count;
 
-            RCF_VERIFY(
-                static_cast<std::size_t>(count) == a.size(), 
-                RCF::Exception(RCF::_RcfError_RcfError_ArraySizeMismatch( 
-                    static_cast<unsigned int>(a.size()), 
-                    count)));
+            if ( static_cast<std::size_t>(count) != a.size() )
+            {
+                RCF::Exception e(RCF::RcfError_ArraySizeMismatch, a.size(), count);
+                RCF_THROW(e);
+            }
 
             for (std::size_t i=0; i<a.size(); ++i)
             {

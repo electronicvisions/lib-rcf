@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,7 +19,8 @@
 #include <RCF/Win32NamedPipeEndpoint.hpp>
 
 #include <RCF/InitDeinit.hpp>
-#include <RCF/util/Tchar.hpp>
+#include <RCF/MemStream.hpp>
+#include <RCF/Tchar.hpp>
 #include <RCF/Win32NamedPipeClientTransport.hpp>
 #include <RCF/Win32NamedPipeServerTransport.hpp>
 
@@ -33,15 +34,15 @@ namespace RCF {
             mPipeName(pipeName)
     {}
 
-    ServerTransportAutoPtr Win32NamedPipeEndpoint::createServerTransport() const
+    ServerTransportUniquePtr Win32NamedPipeEndpoint::createServerTransport() const
     {
-        return ServerTransportAutoPtr(
+        return ServerTransportUniquePtr(
             new Win32NamedPipeServerTransport(mPipeName));
     }
 
-    ClientTransportAutoPtr Win32NamedPipeEndpoint::createClientTransport() const
+    ClientTransportUniquePtr Win32NamedPipeEndpoint::createClientTransport() const
     {            
-        return ClientTransportAutoPtr(
+        return ClientTransportUniquePtr(
             new Win32NamedPipeClientTransport(mPipeName));
     }
 

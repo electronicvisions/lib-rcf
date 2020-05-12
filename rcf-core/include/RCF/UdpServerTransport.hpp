@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,28 +19,29 @@
 #ifndef INCLUDE_RCF_UDPSERVERTRANSPORT_HPP
 #define INCLUDE_RCF_UDPSERVERTRANSPORT_HPP
 
+#include <memory>
 #include <string>
 #include <vector>
-
-#include <boost/noncopyable.hpp>
-#include <boost/shared_ptr.hpp>
 
 #include <RCF/Export.hpp>
 #include <RCF/IpAddress.hpp>
 #include <RCF/Service.hpp>
 #include <RCF/ServerTransport.hpp>
 #include <RCF/IpServerTransport.hpp>
-#include <RCF/ThreadLibrary.hpp>
+#include <RCF/Tools.hpp>
 
 namespace RCF {
    
     class UdpServerTransport;
     class UdpNetworkSession;
 
-    typedef boost::shared_ptr<UdpServerTransport>   UdpServerTransportPtr;
-    typedef boost::shared_ptr<UdpNetworkSession>      UdpNetworkSessionPtr;
+    typedef std::shared_ptr<UdpServerTransport>   UdpServerTransportPtr;
+    typedef std::shared_ptr<UdpNetworkSession>      UdpNetworkSessionPtr;
 
-    class UdpNetworkSession : public NetworkSession
+    class ReallocBuffer;
+    typedef std::shared_ptr<ReallocBuffer> ReallocBufferPtr;
+
+    class RCF_EXPORT UdpNetworkSession : public NetworkSession
     {
     public:
 
@@ -88,7 +89,7 @@ namespace RCF {
         public ServerTransport,
         public IpServerTransport,
         public I_Service,
-        boost::noncopyable
+        Noncopyable
     {
     private:
 

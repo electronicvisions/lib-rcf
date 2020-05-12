@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,14 +19,36 @@
 #include <RCF/Future.hpp>
 
 #include <RCF/OverlappedAmi.hpp>
+#include <RCF/Log.hpp>
 
 namespace RCF {
 
-    FutureImplBase::FutureImplBase(
+    LogEntryExit::LogEntryExit(ClientStub & clientStub) :
+        mClientStub(clientStub),
+        mMsg(clientStub.mCurrentCallDesc)
+    {
+        if (mClientStub.mCallInProgress)
+        {
+            RCF_THROW(RcfError_ConcurrentCalls);
+        }
+
+        mClientStub.mCallInProgress = true;
+        RCF_LOG_2() << "RcfClient - begin remote call. " << mMsg;
+    }
+
+    LogEntryExit::~LogEntryExit()
+    {
+        if (!mClientStub.getAsync())
+        {
+            RCF_LOG_2() << "RcfClient - end remote call. " << mMsg;
+            mClientStub.mCallInProgress = false;
+        }
+    }
+
+    FutureConverterBase::FutureConverterBase(
         ClientStub &clientStub, 
-        const std::string & interfaceName,
         int fnId,
-        RemoteCallSemantics rcs,
+        RemoteCallMode rcs,
         const char * szFunc,
         const char * szArity) :
             mpClientStub(&clientStub),
@@ -37,10 +59,10 @@ namespace RCF {
             mOwn(true)
     {
         // TODO: put this in the initializer list instead?
-        clientStub.init(interfaceName, fnId, rcs);
+        clientStub.init(fnId, rcs);
     }
 
-    FutureImplBase::FutureImplBase(const FutureImplBase& rhs) :
+    FutureConverterBase::FutureConverterBase(const FutureConverterBase& rhs) :
         mpClientStub(rhs.mpClientStub),
         mFnId(rhs.mFnId),
         mRcs(rhs.mRcs),
@@ -51,7 +73,7 @@ namespace RCF {
         rhs.mOwn = false;
     }
 
-    FutureImplBase & FutureImplBase::operator=(const FutureImplBase &rhs)
+    FutureConverterBase & FutureConverterBase::operator=(const FutureConverterBase &rhs)
     {
         mpClientStub = rhs.mpClientStub;
         mFnId = rhs.mFnId;
@@ -64,7 +86,7 @@ namespace RCF {
         return *this;
     }
 
-    void FutureImplBase::call() const
+    void FutureConverterBase::call() const
     {
 
 #if RCF_FEATURE_FILETRANSFER==1
@@ -80,6 +102,7 @@ namespace RCF {
         mpClientStub->setTries(0);
 
         setCurrentCallDesc(mpClientStub->mCurrentCallDesc, mpClientStub->mRequest, mSzFunc, mSzArity);
+        mpClientStub->mCurrentCallMethodName = mSzFunc;
 
         if (async)
         {
@@ -91,7 +114,7 @@ namespace RCF {
         }
     }
 
-    void FutureImplBase::callSync() const
+    void FutureConverterBase::callSync() const
     {
         // ClientStub::onConnectCompleted() uses the contents of mEncodedByteBuffers
         // to determine what stage the current call is in. So mEncodedByteBuffers
@@ -116,7 +139,7 @@ namespace RCF {
             catch ( const RCF::RemoteException & e )
             {
                 mpClientStub->mEncodedByteBuffers.resize(0);
-                if ( shouldDisconnectOnRemoteError(e.getError()) )
+                if ( shouldDisconnectOnRemoteError(e.getErrorId()) )
                 {
                     mpClientStub->disconnect();
                 }
@@ -145,14 +168,14 @@ namespace RCF {
         }
     }
 
-    void FutureImplBase::callAsync() const
+    void FutureConverterBase::callAsync() const
     {
         LogEntryExit logEntryExit(*mpClientStub);
 
         RCF_LOG_3()(mpClientStub)(mpClientStub->mRequest) 
             << "RcfClient - sending asynchronous request.";
 
-        std::auto_ptr<RCF::Exception> ape;
+        std::unique_ptr<RCF::Exception> ape;
 
         try
         {
@@ -164,7 +187,7 @@ namespace RCF {
         }
         catch(...)
         {
-            ape.reset( new Exception(_RcfError_NonStdException()) );
+            ape.reset( new Exception(RcfError_NonStdException) );
         }
 
         if (ape.get())

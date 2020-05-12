@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,7 +19,7 @@
 #ifndef INCLUDE_RCF_UNIXLOCALCLIENTTRANSPORT_HPP
 #define INCLUDE_RCF_UNIXLOCALCLIENTTRANSPORT_HPP
 
-#if defined(BOOST_WINDOWS)
+#if defined(RCF_WINDOWS)
 #error Unix domain sockets not supported on Windows.
 #endif
 
@@ -33,7 +33,7 @@ namespace RCF {
 
     using ASIO_NS::local::stream_protocol;
     typedef stream_protocol::socket                 UnixLocalSocket;
-    typedef boost::shared_ptr<UnixLocalSocket>      UnixLocalSocketPtr;
+    typedef std::shared_ptr<UnixLocalSocket>      UnixLocalSocketPtr;
 
     class RCF_EXPORT UnixLocalClientTransport : 
         public BsdClientTransport
@@ -48,7 +48,7 @@ namespace RCF {
 
         TransportType getTransportType();
 
-        ClientTransportAutoPtr clone() const;
+        ClientTransportUniquePtr clone() const;
 
         void                    implConnect(unsigned int timeoutMs);
 

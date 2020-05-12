@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -28,6 +28,7 @@
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 
+#include <RCF/ClientStub.hpp>
 #include <RCF/DynamicLib.hpp>
 #include <RCF/Exception.hpp>
 #include <RCF/Globals.hpp>
@@ -155,7 +156,7 @@ namespace RCF {
     {
 
 #ifndef RCF_OPENSSL_STATIC
-        mDynamicLibPtr.reset( new DynamicLib( getGlobals().getOpenSslDllName() ) );
+        mDynamicLibPtr.reset( new DynamicLib( globals().getOpenSslDllName() ) );
 #endif
 
         loadFunctionPtrs();
@@ -213,7 +214,7 @@ namespace RCF {
     {
 
 #ifndef RCF_OPENSSL_STATIC
-        mDynamicLibPtr.reset( new DynamicLib( getGlobals().getOpenSslCryptoDllName() ) );
+        mDynamicLibPtr.reset( new DynamicLib( globals().getOpenSslCryptoDllName() ) );
 #endif
 
         loadFunctionPtrs();
@@ -284,7 +285,7 @@ namespace RCF {
 
 #if RCF_FEATURE_OPENSSL==1
 
-    void Globals::deleteOpenSslDll()
+    void Globals::releaseOpenSslDll()
     {
         if (mpOpenSslDll)
         {
@@ -293,7 +294,7 @@ namespace RCF {
         }
     }
 
-    void Globals::deleteOpenSslCryptoDll()
+    void Globals::releaseOpenSslCryptoDll()
     {
         if (mpOpenSslCryptoDll)
         {
@@ -389,16 +390,16 @@ namespace RCF {
 
     std::string getOpenSslErrors()
     {
-        OpenSslCryptoDll & cryptoDll = getGlobals().getOpenSslCryptoDll();
+        OpenSslCryptoDll & cryptoDll = globals().getOpenSslCryptoDll();
 
-        boost::shared_ptr<BIO> bio( cryptoDll.pfn_BIO_new( cryptoDll.pfn_BIO_s_mem() ), cryptoDll.pfn_BIO_free );
+        std::shared_ptr<BIO> bio( cryptoDll.pfn_BIO_new( cryptoDll.pfn_BIO_s_mem() ), cryptoDll.pfn_BIO_free );
         cryptoDll.pfn_ERR_print_errors(bio.get());
         std::vector<char> buffer(256);
         unsigned int startPos = 0;
         unsigned int bytesRead = 0;
         while (true)
         {
-            RCF_ASSERT_GT(buffer.size() , startPos);
+            RCF_ASSERT(buffer.size() > startPos);
 
             int ret = cryptoDll.pfn_BIO_read(
                 bio.get(),
@@ -503,8 +504,8 @@ namespace RCF {
     }
 
     X509Certificate::X509Certificate(X509 * pX509) : 
-        mSslDll(getGlobals().getOpenSslDll()),
-        mCryptoDll(getGlobals().getOpenSslCryptoDll()),
+        mSslDll(globals().getOpenSslDll()),
+        mCryptoDll(globals().getOpenSslCryptoDll()),
         mpX509(pX509)
     {
     }
@@ -550,14 +551,14 @@ namespace RCF {
     {
     public:
         OpenSslEncryptionFilterImpl(
-            OpenSslEncryptionFilter &   openSslEncryptionFilter,
-            SslRole                     sslRole,
-            const std::string &         certificateFile,
-            const std::string &         certificateFilePassword,
-            const std::string &         caCertificate,
-            const std::string &         ciphers,
-            CertificateValidationCb     verifyFunctor,
-            unsigned int                bioBufferSize);
+            OpenSslEncryptionFilter &       openSslEncryptionFilter,
+            SslRole                         sslRole,
+            const std::string &             certificateFile,
+            const std::string &             certificateFilePassword,
+            const std::string &             caCertificate,
+            const std::string &             ciphers,
+            CertificateValidationCallback   verifyFunctor,
+            unsigned int                    bioBufferSize);
 
         void reset();
 
@@ -579,12 +580,12 @@ namespace RCF {
         void init();
 
         bool loadCertificate(
-            boost::shared_ptr<SSL_CTX>  ctx,
+            std::shared_ptr<SSL_CTX>  ctx,
             const std::string &         file,
             const std::string &         password);
 
         bool loadCaCertificate(
-            boost::shared_ptr<SSL_CTX>  ctx,
+            std::shared_ptr<SSL_CTX>  ctx,
             const std::string &         file);
 
         void readWrite();
@@ -623,16 +624,16 @@ namespace RCF {
         char *                          mPostBuffer;
         std::size_t                     mPostBufferLen;
         std::size_t                     mPostBufferRequested;
-        CertificateValidationCb         mVerifyFunctor;
+        CertificateValidationCallback   mVerifyFunctor;
         int                             mErr;
 
         // OpenSSL members
         // NB: using shared_ptr instead of auto_ptr, since we need custom deleters
-        boost::shared_ptr<SSL_CTX>      mSslCtx;
-        boost::shared_ptr<SSL>          mSsl;
-        boost::shared_ptr<BIO>          mBio;
-        boost::shared_ptr<BIO>          mIoBio;
-        boost::shared_ptr<BIO>          mSslBio;
+        std::shared_ptr<SSL_CTX>      mSslCtx;
+        std::shared_ptr<SSL>          mSsl;
+        std::shared_ptr<BIO>          mBio;
+        std::shared_ptr<BIO>          mIoBio;
+        std::shared_ptr<BIO>          mSslBio;
 
         unsigned int                    mBioBufferSize;
 
@@ -641,7 +642,7 @@ namespace RCF {
         RecursionState<int, int>        mRecursionState;
         bool                            mUseRecursionLimiter;
 
-        boost::shared_ptr<X509>         mPeerCertPtr;
+        std::shared_ptr<X509>         mPeerCertPtr;
     };
 
 #ifdef _MSC_VER
@@ -655,7 +656,7 @@ namespace RCF {
         const std::string &certificateFilePassword,
         const std::string &caCertificate,
         const std::string &ciphers,
-        CertificateValidationCb verifyFunctor,
+        CertificateValidationCallback verifyFunctor,
         SslRole sslRole,
         unsigned int bioBufferSize) :
             mImplPtr( new OpenSslEncryptionFilterImpl(
@@ -694,7 +695,7 @@ namespace RCF {
         }
 
         std::string ciphers = pClientStub->getOpenSslCipherSuite();
-        CertificateValidationCb certValidationCb = pClientStub->getCertificateValidationCallback();
+        CertificateValidationCallback certValidationCb = pClientStub->getCertificateValidationCallback();
 
         mImplPtr.reset( new OpenSslEncryptionFilterImpl(
             *this,
@@ -764,7 +765,12 @@ namespace RCF {
 
     CertificatePtr OpenSslEncryptionFilter::getPeerCertificate()
     {
-        CertificatePtr peerCertPtr( new X509Certificate(mImplPtr->getPeerCertificate()) );
+        CertificatePtr peerCertPtr;
+        X509 * pX509Cert = mImplPtr->getPeerCertificate();
+        if ( pX509Cert )
+        {
+            peerCertPtr.reset(new X509Certificate(pX509Cert));
+        }
         return peerCertPtr;
     }
 
@@ -780,10 +786,10 @@ namespace RCF {
         const std::string &certificateFilePassword,
         const std::string &caCertificate,
         const std::string &ciphers,
-        CertificateValidationCb verifyFunctor,
+        CertificateValidationCallback verifyFunctor,
         unsigned int bioBufferSize) :
-            mSslDll(getGlobals().getOpenSslDll()),
-            mCryptoDll(getGlobals().getOpenSslCryptoDll()),
+            mSslDll(globals().getOpenSslDll()),
+            mCryptoDll(globals().getOpenSslCryptoDll()),
             mSslRole(sslRole),
             mCertificateFile(certificateFile),
             mCertificateFilePassword(certificateFilePassword),
@@ -818,7 +824,7 @@ namespace RCF {
 
             if (BIO_ctrl_pending(mIoBio.get()) == 0)
             {
-                RCF_ASSERT_EQ(mPreState , Ready);
+                RCF_ASSERT(mPreState == Ready);
                 mPreState = Reading;
                 mReadRequested = bytesRequested;
                 mOpenSslEncryptionFilter.mpPostFilter->read(ByteBuffer(), 0);
@@ -830,7 +836,7 @@ namespace RCF {
         }
         else
         {
-            RCF_ASSERT(mPreState == Ready || mPreState == Reading)(mPreState);            
+            RCF_ASSERT(mPreState == Ready || mPreState == Reading);
             mPreState = Reading;
             if (byteBuffer.getLength() == 0)
             {
@@ -853,7 +859,7 @@ namespace RCF {
     void OpenSslEncryptionFilterImpl::write(
         const std::vector<ByteBuffer> &byteBuffers)
     {
-        RCF_ASSERT_EQ(mPreState , Ready);
+        RCF_ASSERT(mPreState == Ready);
         mPreState = Writing;
         mPreByteBuffer = byteBuffers.front();
         readWrite();
@@ -930,7 +936,7 @@ namespace RCF {
 
     void OpenSslEncryptionFilterImpl::retryReadWrite()
     {
-        RCF_ASSERT(mPreState == Reading || mPreState == Writing)(mPreState);
+        RCF_ASSERT(mPreState == Reading || mPreState == Writing);
 
         int sslState = SSL_get_state(mSsl.get());
         if (!mHandshakeOk && sslState == SSL_ST_OK)
@@ -950,12 +956,7 @@ namespace RCF {
                 if (!verifyOk)
                 {
                     std::string openSslErr = SSL_get_verify_result_string(ret);
-
-                    Exception e(
-                        _RcfError_SslCertVerification(openSslErr), 
-                        ret, 
-                        RcfSubsystem_OpenSsl);
-
+                    Exception e(RcfError_SslCertVerification, openSslErr);
                     RCF_THROW(e);
                 }
             }
@@ -974,9 +975,7 @@ namespace RCF {
                 
                 if (!verifyOk)
                 {
-                    Exception e(
-                        _RcfError_SslCertVerificationCustom());
-
+                    Exception e(RcfError_SslCertVerificationCustom);
                     RCF_THROW(e);
                 }
             }
@@ -992,9 +991,7 @@ namespace RCF {
             BIO_write(mSslBio.get(), mPreByteBuffer.getPtr(), static_cast<int>(mPreByteBuffer.getLength()));
 
 
-        RCF_ASSERT(
-            -1 <= bioRet && bioRet <= static_cast<int>(mPreByteBuffer.getLength()))
-            (bioRet)(mPreByteBuffer.getLength());
+        RCF_ASSERT(-1 <= bioRet && bioRet <= static_cast<int>(mPreByteBuffer.getLength()));
 
         if (bioRet == -1 && BIO_should_retry(mSslBio.get()))
         {
@@ -1020,7 +1017,7 @@ namespace RCF {
             if (mPreState == Writing)
             {
                 // TODO: maybe this is not always true
-                RCF_ASSERT_GT(BIO_ctrl_pending(mIoBio.get()) , 0);
+                RCF_ASSERT(BIO_ctrl_pending(mIoBio.get()) > 0);
                 
                 if (mUseRecursionLimiter)
                 {
@@ -1049,7 +1046,7 @@ namespace RCF {
             mErr = -1;
 
             std::string opensslErrors = getOpenSslErrors();
-            Exception e( _RcfError_OpenSslError(opensslErrors) );
+            Exception e( RcfError_OpenSslError, opensslErrors);
             RCF_THROW(e);
         }
     }
@@ -1065,7 +1062,7 @@ namespace RCF {
 
             mPostBufferLen = BIO_nwrite0(mIoBio.get(), &mPostBuffer);
            
-            RCF_ASSERT_LTEQ(mPostBufferRequested , mPostBufferLen);
+            RCF_ASSERT(mPostBufferRequested <= mPostBufferLen);
 
             // NB: completion routine will call BIO_nwrite(io_bio, len)
             mPostByteBuffer = ByteBuffer(mPostBuffer, mPostBufferLen);
@@ -1094,11 +1091,10 @@ namespace RCF {
         // TODO: assert that, on read, data was actually transferred into postBuffer
         // and not somewhere else
 
-        RCF_ASSERT_GT(bytesTransferred , 0);
+        RCF_ASSERT(bytesTransferred > 0);
         RCF_ASSERT(
             (mPostState == Reading && bytesTransferred <= mPostBufferRequested) ||
-            (mPostState == Writing && bytesTransferred <= mPostBufferLen))
-            (mPostState)(bytesTransferred)(mPostBufferRequested)(mPostBufferLen);
+            (mPostState == Writing && bytesTransferred <= mPostBufferLen));
 
         if (mPostState == Reading)
         {
@@ -1135,15 +1131,15 @@ namespace RCF {
     {
         // TODO: sort out any OpenSSL-dependent order of destruction issues
 
-        mSslBio = boost::shared_ptr<BIO>(
+        mSslBio = std::shared_ptr<BIO>(
             BIO_new(BIO_f_ssl()),
             BIO_free);
 
-        mSslCtx = boost::shared_ptr<SSL_CTX>(
+        mSslCtx = std::shared_ptr<SSL_CTX>(
             SSL_CTX_new(SSLv23_method()),
             SSL_CTX_free);
 
-        RCF_ASSERT(mSslRole == SslServer || mSslRole == SslClient)(mSslRole);
+        RCF_ASSERT(mSslRole == SslServer || mSslRole == SslClient);
         
         if (!mCertificateFile.empty())
         {
@@ -1155,11 +1151,12 @@ namespace RCF {
             loadCaCertificate(mSslCtx, mCaCertificate);
         }
 
-        mSsl = boost::shared_ptr<SSL>(
+        mSsl = std::shared_ptr<SSL>(
             SSL_new(mSslCtx.get()),
             SSL_free);
 
-        if (mSslRole == SslServer && !mCaCertificate.empty())
+        bool requestClientCertificate = (mCaCertificate.size() > 0 || mVerifyFunctor);
+        if (mSslRole == SslServer && requestClientCertificate)
         {
             SSL_set_verify(mSsl.get(), SSL_VERIFY_PEER, NULL);
         }
@@ -1167,14 +1164,14 @@ namespace RCF {
         BIO *bio_temp = NULL;
         BIO *io_bio_temp = NULL;
         BIO_new_bio_pair(&bio_temp, mBioBufferSize, &io_bio_temp, mBioBufferSize);
-        mBio = boost::shared_ptr<BIO>(
+        mBio = std::shared_ptr<BIO>(
             bio_temp,
             BIO_free);
-        mIoBio = boost::shared_ptr<BIO>(
+        mIoBio = std::shared_ptr<BIO>(
             io_bio_temp,
             BIO_free);
 
-        RCF_ASSERT(mSslRole == SslServer || mSslRole == SslClient)(mSslRole);
+        RCF_ASSERT(mSslRole == SslServer || mSslRole == SslClient);
         mSslRole == SslServer ?
             SSL_set_accept_state(mSsl.get()) :
             SSL_set_connect_state(mSsl.get());
@@ -1189,28 +1186,28 @@ namespace RCF {
             mIoBio.get() == NULL)
         {
             std::string opensslErrors = getOpenSslErrors();
-            Exception e( _RcfError_OpenSslFilterInit(opensslErrors) );
+            Exception e( RcfError_OpenSslFilterInit, opensslErrors );
             RCF_THROW(e);
         }
 
     }
 
     bool OpenSslEncryptionFilterImpl::loadCertificate(
-        boost::shared_ptr<SSL_CTX> ctx,
+        std::shared_ptr<SSL_CTX> ctx,
         const std::string &file,
         const std::string &password)
     {
         RCF_ASSERT(ctx.get());
         if (1 == SSL_CTX_use_certificate_chain_file(ctx.get(), file.c_str()))
         {
-            boost::shared_ptr<BIO> bio(
+            std::shared_ptr<BIO> bio(
                 BIO_new( BIO_s_file() ),
                 BIO_free );
             if (bio.get())
             {
                 if (1 == BIO_read_filename(bio.get(), file.c_str()))
                 {
-                    boost::shared_ptr<EVP_PKEY> evp(
+                    std::shared_ptr<EVP_PKEY> evp(
                         PEM_read_bio_PrivateKey(
                             bio.get(),
                             NULL,
@@ -1228,13 +1225,13 @@ namespace RCF {
             }
         }
         std::string opensslErrors = getOpenSslErrors();
-        Exception e(_RcfError_OpenSslLoadCert(file, opensslErrors));
-        RCF_THROW(e)(file)(password);
+        Exception e(RcfError_OpenSslLoadCert, file, opensslErrors);
+        RCF_THROW(e);
         return false;
     }
 
     bool OpenSslEncryptionFilterImpl::loadCaCertificate(
-        boost::shared_ptr<SSL_CTX> ctx,
+        std::shared_ptr<SSL_CTX> ctx,
         const std::string &file)
     {
         RCF_ASSERT(ctx.get());
@@ -1242,7 +1239,7 @@ namespace RCF {
         if (SSL_CTX_load_verify_locations(ctx.get(), file.c_str(), NULL) != 1)
         {
             std::string opensslErrors = getOpenSslErrors();
-            Exception e(_RcfError_OpenSslLoadCert(file, opensslErrors));
+            Exception e(RcfError_OpenSslLoadCert, file, opensslErrors);
             RCF_THROW(e);
         }
         return true;
@@ -1267,7 +1264,7 @@ namespace RCF {
         }
         else if (mCertPtr && server.getSslImplementation() == Si_OpenSsl)
         {
-            RCF_THROW( RCF::Exception( _RcfError_InvalidOpenSslCertificate() ));
+            RCF_THROW( RCF::Exception( RcfError_InvalidOpenSslCertificate ));
         }
 
         mCertPtr = server.getCaCertificate();
@@ -1278,12 +1275,12 @@ namespace RCF {
         }
         else if (mCertPtr && server.getSslImplementation() == Si_OpenSsl)
         {
-            RCF_THROW( RCF::Exception( _RcfError_InvalidOpenSslCertificate() ));
+            RCF_THROW( RCF::Exception( RcfError_InvalidOpenSslCertificate ));
         }
 
         std::string ciphers = server.getOpenSslCipherSuite();
 
-        const CertificateValidationCb & certValidationCb = server.getCertificateValidationCallback();
+        const CertificateValidationCallback & certValidationCb = server.getCertificateValidationCallback();
 
         return FilterPtr( new OpenSslEncryptionFilter(
             certificateFile,

@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,37 +11,26 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
+/// @file
+
 #ifndef INCLUDE_RCF_RCFSERVER_HPP
 #define INCLUDE_RCF_RCFSERVER_HPP
 
+#include <functional>
 #include <map>
 #include <memory>
-#include <set>
 #include <string>
 #include <vector>
 
-#include <boost/bind.hpp>
-#include <boost/function.hpp>
-#include <boost/mpl/bool.hpp>
-#include <boost/noncopyable.hpp>
-#include <boost/shared_ptr.hpp>
-#include <boost/utility/enable_if.hpp>
-#include <boost/weak_ptr.hpp>
-
-#include <RCF/CheckRtti.hpp>
 #include <RCF/Export.hpp>
-#include <RCF/GetInterfaceName.hpp>
 #include <RCF/RcfClient.hpp>
-#include <RCF/ServerObjectService.hpp>
-#include <RCF/ServerStub.hpp>
 #include <RCF/ServerTransport.hpp>
 #include <RCF/ThreadLibrary.hpp>
-#include <RCF/ThreadPool.hpp>
 
 #if RCF_FEATURE_FILETRANSFER==1
 #include <RCF/FileTransferService.hpp>
@@ -52,86 +41,383 @@
 #include <RCF/SubscriptionService.hpp>
 #endif
 
+#include <RCF/ServerObjectService.hpp>
+#include <RCF/ServerStub.hpp>
+
 namespace RCF {
 
-    class ServerTransport;
-    class StubEntry;
-    class I_Service;
-    class RcfSession;
-    class Endpoint;
-    class I_FilterFactoryLookupProvider;
-    class I_RcfClient;
-    class IpServerTransport;
-    class PingBackService;
-    class FileTransferService;
-    class ObjectFactoryService;
-    class FilterService;
-    class SessionTimeoutService;
-    class PublishingService;
-    class SubscriptionService;
-    class SessionObjectFactoryService;
-    class ObjectFactoryService;
-    class CallbackConnectionService;
+    /// Provides RCF server-side functionality. 
     
-    typedef boost::shared_ptr<ServerTransport>                  ServerTransportPtr;
-    typedef boost::shared_ptr<StubEntry>                        StubEntryPtr;
-    typedef boost::shared_ptr<I_Service>                        ServicePtr;
-    typedef boost::shared_ptr<RcfSession>                       RcfSessionPtr;
-    typedef boost::shared_ptr<I_FilterFactoryLookupProvider>    FilterFactoryLookupProviderPtr;
-    typedef boost::shared_ptr<I_RcfClient>                      RcfClientPtr;
-    typedef boost::shared_ptr<Endpoint>                         EndpointPtr;
-    typedef boost::shared_ptr<PingBackService>                  PingBackServicePtr;
-    typedef boost::shared_ptr<FileTransferService>              FileTransferServicePtr;
-    typedef boost::shared_ptr<ObjectFactoryService>             ObjectFactoryServicePtr;
-    typedef boost::shared_ptr<FilterService>                    FilterServicePtr;
-    typedef boost::shared_ptr<SessionTimeoutService>            SessionTimeoutServicePtr;
-    typedef boost::shared_ptr<PublishingService>                PublishingServicePtr;
-    typedef boost::shared_ptr<SubscriptionService>              SubscriptionServicePtr;
-    typedef boost::shared_ptr<SessionObjectFactoryService>      SessionObjectFactoryServicePtr;
-    typedef boost::shared_ptr<ObjectFactoryService>             ObjectFactoryServicePtr;
-    typedef boost::shared_ptr<CallbackConnectionService>        CallbackConnectionServicePtr;
-    typedef boost::weak_ptr<RcfSession>                         RcfSessionWeakPtr;  
-
-    template<typename Interface>
-    class Publisher;
-
-    class Subscription;
-    typedef boost::shared_ptr<Subscription> SubscriptionPtr;
-
-    class SubscriptionParms;
-
-    class BandwidthQuota;
-    typedef boost::shared_ptr<BandwidthQuota> BandwidthQuotaPtr;
-
-    class FileDownloadInfo;
-    class FileUploadInfo;
-
-    class JsonRpcRequest;
-    class JsonRpcResponse;
-
-    class SspiFilter;
-
-    class HttpSession;
-    typedef boost::shared_ptr<HttpSession> HttpSessionPtr;
-
-    typedef boost::function2<void, RcfSessionPtr, ClientTransportAutoPtr> OnCallbackConnectionCreated;
-
-    class RCF_EXPORT RcfServer : boost::noncopyable
+    /// An RcfServer instance listens on one or more server transport layers, and responds
+    /// to remote calls from RCF clients. Remote calls from RCF clients are routed through 
+    /// to servant bindings, configured with RcfServer::bind().
+    class RCF_EXPORT RcfServer : Noncopyable
     {
     public:
 
+        typedef std::function<void(RcfServer&)> StartCallback;
+
+    public:
+
+        /// @name Constructors and destructor
+
+        ///@{
+
+        /// Constructs an RcfServer instance with no initial server transport layers.
         RcfServer();
+        
+        /// Constructs an RcfServer instance with one initial server transport layer.
         RcfServer(const Endpoint &endpoint);
-        RcfServer(ServicePtr servicePtr);
+
+        /// Constructs an RcfServer instance with one initial server transport layer.
         RcfServer(ServerTransportPtr serverTransportPtr);
 
+        /// Destroys an RcfServer instance.
         ~RcfServer();
 
-        typedef boost::function0<void> JoinFunctor;
-        typedef boost::function1<void, RcfServer&> StartCallback;
+        ///@}
 
-        void    start();
-        void    stop();
+        /// @name Transports
+        /// This section describes functions relating to the transport layers of a RcfServer.
+
+        ///@{
+
+        /// Adds another server transport layer to the RcfServer.
+        ServerTransport &       addEndpoint(const Endpoint & endpoint);
+
+        /// Starts the RcfServer. After starting, clients are able to connect to the server and execute remote calls.
+        void                    start();
+
+        /// Stops the RcfServer. After stopping, clients are no longer able to connect to the server.
+        void                    stop();
+
+        /// Returns true if the RcfServer has been started.
+        bool                    isStarted();
+
+        /// Enumerates the proxy endpoints hosted on this RcfServer. See ProxyEndpoint.
+        void                    enumerateProxyEndpoints(std::vector<std::string>& endpoints);
+
+        /// Sets the supported transport protocols for this RcfServer.
+
+        /// If one or more transport protocols are specified, then clients are required to use one of the specified transport 
+        /// protocols to connect to the server.
+        /// If no encryption protocols are specified, then clients may use any transport protocol to connect to the server.
+        void                    setSupportedTransportProtocols(
+                                    const std::vector<TransportProtocol> & protocols);
+
+        /// Gets the supported encryption protocols for this RcfServer.
+        const std::vector<TransportProtocol> &
+                                getSupportedTransportProtocols() const;
+
+        /// Sets the thread pool for this RcfServer to use when dispatching remote calls.
+        /// The thread pool specified by this function is used by all the transports of the RcfServer. If you want a particular transport
+        /// to use a different thread pool, use RCF::ServerTransport::setThreadPool().
+        void                    setThreadPool(ThreadPoolPtr threadPoolPtr);
+
+        /// Gets the thread pool for this RcfServer.
+        ThreadPoolPtr           getThreadPool();
+
+
+        ///@}
+
+        // Waits for the RcfServer to stop. Can be called from any thread.
+        void                    waitForStopEvent();
+
+        // Waits for the RcfServer to start.  Can be called from any thread.
+        void                    waitForStartEvent();
+
+        /// Gets the first server transport of the RcfServer.
+        ServerTransport &       getServerTransport();
+
+        /// Gets the first server transport of the RcfServer, and casts it to an IpServerTransport.
+        IpServerTransport &     getIpServerTransport();
+
+
+        /// @name Servant binding
+        /// This section describes functions related to servant binding.
+        /// When clients make a remote call to a server, the call is routed to a corresponding servant object 
+        /// on the server. Servant objects are bound to a particular RCF interface, and must have functions 
+        /// that match the methods of the RCF interface.
+
+        ///@{
+
+        /// Creates a servant binding, exposing the servant object to remote calls through the RCF interface InterfaceT.
+
+        /// The servant binding name is optional and normally only needed if you are creating several servant 
+        /// bindings for a single RCF interface.
+        template<typename InterfaceT, typename ImplementationT>
+        ServerBindingPtr        bind(ImplementationT & servantObj, const std::string &name = "")
+        { 
+            std::reference_wrapper<ImplementationT> refWrapper(servantObj);
+
+            RcfClientPtr rcfClientPtr = createServerStub( 
+                (InterfaceT *) 0,
+                (ImplementationT *) 0, refWrapper);
+
+            return bindImpl( 
+                name.empty() ? 
+                    InterfaceT::getInterfaceName() :
+                    name , 
+                rcfClientPtr); 
+        }
+
+        /// Removes a servant binding from the RcfServer.
+        template<typename InterfaceT>
+        bool                    unbind(const std::string &name = "")
+        {
+            const std::string &name_ = (name == "") ?
+                getInterfaceName((InterfaceT *) NULL) :
+                name;
+
+            WriteLock writeLock(mStubMapMutex);
+            mStubMap.erase(name_);
+            return true;
+        }
+        
+        ///@}
+
+        /// @name SSL settings
+        /// This section describes functions relating to usage of SSL.
+
+        ///@{
+
+        /// Sets the server-side SSL certificate the RcfServer presents to SSL-based clients.
+        void                    setCertificate(CertificatePtr certificatePtr);
+
+        /// Gets the server-side SSL certificate the RcfServer presents to SSL-based clients.
+        CertificatePtr          getCertificate();
+
+        /// Sets the cipher suite to use when establishing an SSL connection. Only applicable to OpenSSL - based SSL.
+        void                    setOpenSslCipherSuite(const std::string & cipherSuite);
+
+        /// Gets the cipher suite to use when establishing an SSL connection. Only applicable to OpenSSL - based SSL.
+        std::string             getOpenSslCipherSuite() const;
+
+        /// Sets the certificate authority certificate to use when validating certificates from a HTTPS client. Not applicable to Schannel-based SSL.
+        void                    setCaCertificate(CertificatePtr certificatePtr);
+
+        /// Gets the certificate authority certificate to use when validating certificates from a HTTPS client. Not applicable to Schannel-based SSL.
+        CertificatePtr          getCaCertificate();
+
+        /// Sets the certificate validation callback, used to validate client certificates. 
+        void                    setCertificateValidationCallback(CertificateValidationCallback certificateValidationCb);
+
+        /// Gets the certificate validation callback, used to validate client certificates. 
+        const CertificateValidationCallback & 
+                                getCertificateValidationCallback() const;
+
+        /// Sets the certificate name to match against, when validating a client certificate. Only applicable to Schannel-based SSL.
+        void                    setEnableSchannelCertificateValidation(const tstring & peerName);
+
+        /// Gets the certificate name to match against, when validating a client certificate. Only applicable to Schannel-based SSL.
+        tstring                 getEnableSchannelCertificateValidation() const;
+
+        /// Sets the SSL implementation in use by this RcfServer (OpenSSL or Schannel).
+        void                    setSslImplementation(SslImplementation sslImplementation);
+
+        /// Gets the SSL implementation in use by this RcfServer (OpenSSL or Schannel).
+        SslImplementation       getSslImplementation() const;
+
+#if RCF_FEATURE_SSPI==1
+        void                    setSchannelEnabledProtocols(DWORD enabledProtocols);
+        DWORD                   getSchannelEnabledProtocols() const;
+
+        void                    setSchannelContextRequirements(ULONG contextRequirements);
+        ULONG                   getSchannelContextRequirements() const;
+#endif
+
+        ///@}
+
+        /// @name Timeout settings
+        /// This section describes functions related to server timeout settings.
+
+        ///@{
+
+        /// Sets the idle connection timeout value, in ms.
+
+        /// Client connections will be dropped if they remain idle long enough for the timeout setting to apply. A connection is idle if no remote calls are being made on it.
+        void                    setConnectionIdleTimeoutMs(std::uint32_t idleConnectionTimeoutMs);
+
+        /// Gets the idle connection timeout value, in ms.
+        std::uint32_t           getConnectionIdleTimeoutMs();
+
+        /// Sets the idle connection scan interval value, in ms.
+
+        /// This setting controls how often the RcfServer scans for idle client connections.
+        void                    setConnectionIdleScanIntervalMs(std::uint32_t idleConnectionScanIntervalMs);
+
+        /// Gets the idle connection scan interval value, in ms.
+        std::uint32_t           getConnectionIdleScanIntervalMs();
+
+        /// Sets the HTTP session timeout value, in ms.
+
+        /// This setting controls how long idle HTTP sessions are allowed to persist on the server, 
+        /// before being destroyed.
+        void                    setHttpSessionTimeoutMs(std::uint32_t httpSessionTimeoutMs);
+
+        /// Gets the HTTP session timeout value, in ms.
+        std::uint32_t           getHttpSessionTimeoutMs();
+
+        ///@}
+
+        /// @name Server objects
+        /// This section describes functions related to server objects.
+        /// Server objects are created by server-side application code. Server objects can be of arbitrary type,
+        /// and are associated with a string identifier which must be unique within the server. Server objects
+        /// have an associated timeout value, which determines how long a server object can be idle before
+        /// the server cleans it up.
+
+        ///@{
+
+        /// Gets the server object harvesting interval, in s.
+        std::uint32_t getServerObjectHarvestingIntervalS() const;
+
+        /// Sets the server object harvesting interval, in s.
+        void setServerObjectHarvestingIntervalS(std::uint32_t harvestingIntervalS);
+
+        /// Queries for a server object under the given key. Returns an empty std::shared_ptr if no object is found.
+        template<typename T>
+        std::shared_ptr<T> queryServerObject(
+            const std::string & objectKey)
+        {
+            return mServerObjectServicePtr->queryServerObject<T>(objectKey);
+        }
+
+        /// Queries or creates a server object under the given key. If creating the object, the timeout value is applicable and determines how long the object will be kept alive if left unused.
+        template<typename T>
+        std::shared_ptr<T> getServerObject(
+            const std::string & objectKey,
+            std::uint32_t timeoutMs)
+        {
+            return mServerObjectServicePtr->getServerObject<T>(objectKey, timeoutMs);
+        }
+
+        /// Deletes the server object under the given key.
+        void deleteServerObject(const std::string & objectKey);
+
+        ///@}
+
+#if RCF_FEATURE_PUBSUB==1
+
+        /// @name Publish/subscribe
+        /// This section describes functions related to publish/subscribe functionality. 
+
+        ///@{
+
+        /// Creates a publisher instance for the given RCF interface.
+
+        /// Use the Publisher::publish() function on the returned Publisher instance,
+        /// to publish remote calls to all listening subscribers.
+        template<typename Interface>
+        std::shared_ptr< Publisher<Interface> > createPublisher()
+        {
+            PublisherParms parms;
+            return mPublishingServicePtr->createPublisher<Interface>(parms);
+        }
+
+        /// Creates a publisher instance for the given RCF interface.
+
+        /// Use the Publisher::publish() function on the returned Publisher instance,
+        /// to publish remote calls to all listening subscribers.
+        template<typename Interface>
+        std::shared_ptr< Publisher<Interface> > createPublisher(
+            const PublisherParms & parms)
+        {
+            return mPublishingServicePtr->createPublisher<Interface>(parms);
+        }
+
+        /// Creates a subscription to a remote RCF publisher.
+
+        /// Remote calls from the publisher will be routed to the given servant object.
+        template<typename Interface, typename T>
+        std::shared_ptr< Subscription > createSubscription(
+            T &                             servantObj, 
+            const RCF::Endpoint &           publisherEp)
+        {
+            RCF_ASSERT(mStarted);
+            SubscriptionParms parms;
+            parms.setPublisherEndpoint(publisherEp);
+            return mSubscriptionServicePtr->createSubscription<Interface>(servantObj, publisherEp);
+        }
+
+        /// Creates a subscription to a remote RCF publisher.
+
+        /// Remote calls from the publisher will be routed to the given servant object.
+        template<typename Interface, typename T>
+        std::shared_ptr< Subscription > createSubscription(
+            T &                             servantObj,
+            const SubscriptionParms &       parms)
+        {
+            RCF_ASSERT(mStarted);
+            return mSubscriptionServicePtr->createSubscription<Interface>(servantObj, parms);
+        }
+
+        ///@}
+
+#endif
+
+        /// Sets whether proxy endpoints are enabled on this RcfServer.
+        void                setEnableProxyEndpoints(bool enable);
+
+        /// Gets whether proxy endpoints are enabled on this RcfServer.
+        bool                getEnableProxyEndpoints() const;
+
+#if RCF_FEATURE_FILETRANSFER==1
+
+        /// @name File transfers
+        /// This section describes functions related to file transfers.
+
+        ///@{
+
+        /// Sets the total bandwidth limit for all uploads to this RcfServer. By default the bandwidth limit is zero (unlimited).
+        void                setUploadBandwidthLimit(std::uint32_t uploadQuotaBps);
+
+        /// Gets the total bandwidth limit for all uploads to this RcfServer. By default the bandwidth limit is zero (unlimited).
+        std::uint32_t       getUploadBandwidthLimit() const;
+
+        /// Sets the total bandwidth limit for all downloads from this RcfServer. By default the bandwidth limit is zero (unlimited).
+        void                setDownloadBandwidthLimit(std::uint32_t downloadQuotaBps);
+
+        /// Gets the total bandwidth limit for all downloads from this RcfServer. By default the bandwidth limit is zero (unlimited).
+        std::uint32_t       getDownloadBandwidthLimit() const;
+
+        /// Sets the path under which client uploads are saved. Must be set before any files can be uploaded.
+        void                setUploadDirectory(const Path & uploadDir);
+
+        /// Gets the path under which client uploads are saved. Must be set before any files can be uploaded.
+        Path                getUploadDirectory() const;
+
+        /// Sets the download progress callback for this RcfServer. The callback is called for every chunk that is transferred when a client is downloading a file.
+        void                setDownloadProgressCallback(DownloadProgressCallback downloadProgressCb);
+
+        /// Sets the upload progress callback for this RcfServer. The callback is called for every chunk that is transferred when a client is uploading a file.
+        void                setUploadProgressCallback(UploadProgressCallback uploadProgressCb);
+
+        /// Sets a custom upload bandwidth quota callback. The callback is called when a upload begins, and allows the application to assign a bandwidth quota to that upload.
+        void                setUploadBandwidthQuotaCallback(UploadBandwidthQuotaCallback uploadQuotaCb);
+
+        /// Sets a custom download bandwidth quota callback. The callback is called when a download begins, and allows the application to assign a bandwidth quota to that download.
+        void                setDownloadBandwidthQuotaCallback(DownloadBandwidthQuotaCallback downloadQuotaCb);
+
+        ///@}
+
+#endif
+
+
+        
+        // For internal use.
+        std::uint32_t           getRuntimeVersion();
+        void                    setRuntimeVersion(std::uint32_t version);
+
+        /// Gets the archive version number used by this RcfServer.
+        std::uint32_t           getArchiveVersion();
+
+        /// Sets the archive version number used by this RcfServer.
+        void                    setArchiveVersion(std::uint32_t version);
+
+        void setOnCallbackConnectionCreated(OnCallbackConnectionCreated onCallbackConnectionCreated);
+        OnCallbackConnectionCreated getOnCallbackConnectionCreated();
+
 
     private:
 
@@ -139,17 +425,12 @@ namespace RCF {
 
     public:
 
-        ServerTransport &     
-                getServerTransport();
 
         I_Service &             
                 getServerTransportService();
 
         ServerTransportPtr      
                 getServerTransportPtr();
-
-        IpServerTransport &   
-                getIpServerTransport();
 
     private:
 
@@ -170,12 +451,6 @@ namespace RCF {
         SessionTimeoutServicePtr 
                 getSessionTimeoutServicePtr();
 
-        ObjectFactoryServicePtr
-                getObjectFactoryServicePtr();
-
-        SessionObjectFactoryServicePtr
-                getSessionObjectFactoryServicePtr();
-
         PublishingServicePtr
                 getPublishingServicePtr();
 
@@ -190,8 +465,10 @@ namespace RCF {
         bool    removeServerTransport(
                     ServerTransportPtr serverTransportPtr);
 
-        ServerTransport & 
-                findTransportCompatibleWith(ClientTransport & clienetTransport);
+        ServerTransport * 
+                findTransportCompatibleWith(ClientTransport & clientTransport);
+
+        ServerTransport * queryForTransport(RCF::TransportType transportType);
         
         void    setStartCallback(const StartCallback &startCallback);       
         
@@ -206,7 +483,6 @@ namespace RCF {
         //*************************************
         // async io transport interface
 
-    //private:
     public:
         SessionPtr  createSession();
         void        onReadCompleted(SessionPtr sessionPtr);
@@ -216,22 +492,16 @@ namespace RCF {
         //*************************************
         // transports, queues and threads
 
-    private:
-
-        void startImpl();
-
     public:
 
 
         template<typename Iter>
         void enumerateSessions(const Iter & iter)
         {
-
             for (std::size_t i=0; i<mServerTransports.size(); ++i)
             {
                 mServerTransports[i]->enumerateSessions(iter);
             }
-
         }
 
         //*************************************
@@ -239,10 +509,11 @@ namespace RCF {
 
     private:
         ReadWriteMutex                                  mStubMapMutex;
-        typedef std::map<std::string, StubEntryPtr>     StubMap;
+        typedef std::map<std::string, RcfClientPtr>     StubMap;
         StubMap                                         mStubMap;
 
-        typedef boost::function<void(const JsonRpcRequest &, JsonRpcResponse &)> JsonRpcMethod;
+
+        typedef std::function<void(const JsonRpcRequest &, JsonRpcResponse &)> JsonRpcMethod;
         typedef std::map<std::string, JsonRpcMethod>    JsonRpcMethods;
         JsonRpcMethods                                  mJsonRpcMethods;
 
@@ -263,8 +534,7 @@ namespace RCF {
         PublishingServicePtr                            mPublishingServicePtr;
         SubscriptionServicePtr                          mSubscriptionServicePtr;
         CallbackConnectionServicePtr                    mCallbackConnectionServicePtr;
-        SessionObjectFactoryServicePtr                  mSessionObjectFactoryServicePtr;
-        ObjectFactoryServicePtr                         mObjectFactoryServicePtr;
+        ProxyEndpointServicePtr                         mProxyEndpointServicePtr;
         ServerObjectServicePtr                          mServerObjectServicePtr;
 
         void startService(ServicePtr servicePtr) const;
@@ -274,168 +544,46 @@ namespace RCF {
         friend class AsioNetworkSession;
         FilterPtr createFilter(int filterId);
 
-    private:
         // start/stop functionality
         StartCallback                                   mStartCallback;
         Condition                                       mStartEvent;
         Condition                                       mStopEvent;
 
         Mutex                                           mStartStopMutex;
-        bool                                            mStarted;
-
-
-    public:
-        void                    setThreadPool(ThreadPoolPtr threadPoolPtr);
-        ThreadPoolPtr           getThreadPool();
-        ServerTransport &     addEndpoint(const Endpoint & endpoint);
+        bool                                            mStarted;      
 
     private:
         ThreadPoolPtr                                   mThreadPoolPtr;
 
-    public:
-
-        void                    waitForStopEvent();
-        void                    waitForStartEvent();
-
-    bool                        isStarted();
 
         // TODO: get rid of this hack
     private:
         friend class MethodInvocationRequest;
 
-    public:
-        boost::uint32_t         getRuntimeVersion();
-        void                    setRuntimeVersion(boost::uint32_t version);
-
-        boost::uint32_t         getArchiveVersion();
-        void                    setArchiveVersion(boost::uint32_t version);
-
     private:
-        boost::uint32_t                                 mRuntimeVersion;
-        boost::uint32_t                                 mArchiveVersion;
+        std::uint32_t                                 mRuntimeVersion;
+        std::uint32_t                                 mArchiveVersion;
 
 
     public:
-
-        template<typename I1, typename ImplementationT> 
-        ServerBindingPtr bind(ImplementationT & t, const std::string &name = "")
-        { 
-            boost::shared_ptr< I_Deref<ImplementationT> > derefPtr( 
-                new DerefObj<ImplementationT>(t) ); 
-
-            RcfClientPtr rcfClientPtr = createServerStub( 
-                (I1 *) 0, 
-                (ImplementationT *) 0, derefPtr);
-
-            return bindImpl( 
-                name.empty() ? 
-                    I1::getInterfaceName() : 
-                    name , 
-                rcfClientPtr); 
-        }
-
-        template<typename InterfaceT>
-        bool unbind(const std::string &name_ = "")
-        {
-            const std::string &name = (name_ == "") ?
-                getInterfaceName((InterfaceT *) NULL) :
-                name_;
-
-            WriteLock writeLock(mStubMapMutex);
-            mStubMap.erase(name);
-            return true;
-        }
-
-#if RCF_FEATURE_JSON==1
-        void bindJsonRpc(JsonRpcMethod jsonRpcMethod, const std::string & jsonRpcName);
-        void unbindJsonRpc(const std::string & jsonRpcName);
-#endif
-        
-        void setSupportedTransportProtocols(
-            const std::vector<TransportProtocol> & protocols);
-
-        const std::vector<TransportProtocol> & 
-            getSupportedTransportProtocols() const;
-
-        void setCertificate(CertificatePtr certificatePtr);
-        CertificatePtr getCertificate();
-
-        void setOpenSslCipherSuite(const std::string & cipherSuite);
-        std::string getOpenSslCipherSuite() const;
-
-        void setCaCertificate(CertificatePtr certificatePtr);
-        CertificatePtr getCaCertificate();
-
-
-        typedef boost::function<bool(Certificate *)> CertificateValidationCb;
-        void setCertificateValidationCallback(CertificateValidationCb certificateValidationCb);
-        const CertificateValidationCb & getCertificateValidationCallback() const;
-
-        void setEnableSchannelCertificateValidation(const tstring & peerName);
-        tstring getEnableSchannelCertificateValidation() const;
-
-        void setSslImplementation(SslImplementation sslImplementation);
-        SslImplementation getSslImplementation() const;
-
-        void setSessionTimeoutMs(boost::uint32_t sessionTimeoutMs);
-        boost::uint32_t getSessionTimeoutMs();
-
-        void setSessionHarvestingIntervalMs(boost::uint32_t sessionHarvestingIntervalMs);
-        boost::uint32_t getSessionHarvestingIntervalMs();
-
-        void setHttpSessionTimeoutMs(boost::uint32_t httpSessionTimeoutMs);
-        boost::uint32_t getHttpSessionTimeoutMs();
-
-        void setOnCallbackConnectionCreated(OnCallbackConnectionCreated onCallbackConnectionCreated);
-        OnCallbackConnectionCreated getOnCallbackConnectionCreated();
-
-        void setOfsMaxNumberOfObjects(boost::uint32_t ofsMaxNumberOfObjects);
-        void setOfsObjectTimeoutS(boost::uint32_t ofsObjectTimeoutS);
-        void setOfsCleanupIntervalS(boost::uint32_t ofsCleanupIntervalS);
-        void setOfsCleanupThreshold(float ofsCleanupThreshold);
-
-        boost::uint32_t getOfsMaxNumberOfObjects() const;
-        boost::uint32_t  getOfsObjectTimeoutS() const;
-        boost::uint32_t getOfsCleanupIntervalS() const;
-        float getOfsCleanupThreshold() const;
 
 #if RCF_FEATURE_FILETRANSFER==1
 
-        typedef FileTransferService::OnFileDownloadProgress OnFileDownloadProgress;
-        typedef FileTransferService::OnFileUploadProgress OnFileUploadProgress;
 
-        void setOnFileDownloadProgress(OnFileDownloadProgress onFileDownloadProgress);
-        void setOnFileUploadProgress(OnFileUploadProgress onFileUploadProgress);
-
-        void setFileUploadDirectory(const std::string & uploadDir);
-        std::string getFileUploadDirectory() const;
-
-        typedef boost::function1<BandwidthQuotaPtr, RcfSession &> BandwidthQuotaCallback;
-        typedef BandwidthQuotaCallback FileUploadQuotaCallback;
-        typedef BandwidthQuotaCallback FileDownloadQuotaCallback;
-
-        void setFileUploadBandwidthLimit(boost::uint32_t uploadQuotaBps);
-        boost::uint32_t getFileUploadBandwidthLimit() const;
-
-        void setFileUploadCustomBandwidthLimit(FileUploadQuotaCallback uploadQuotaCb);
-
-        void setFileDownloadBandwidthLimit(boost::uint32_t downloadQuotaBps);
-        boost::uint32_t getFileDownloadBandwidthLimit() const;
-
-        void setFileDownloadCustomBandwidthLimit(FileDownloadQuotaCallback downloadQuotaCb);
+        Path getUploadPath(const std::string & uploadId);
 
     private:
 
-        OnFileDownloadProgress          mOnFileDownloadProgress;
-        OnFileUploadProgress            mOnFileUploadProgress;
+        DownloadProgressCallback            mOnFileDownloadProgress;
+        UploadProgressCallback              mOnFileUploadProgress;
 
-        std::string                     mFileUploadDirectory;
+        Path                                mFileUploadDirectory;
 
-        boost::uint32_t                 mFileUploadQuota;
-        FileUploadQuotaCallback         mFileUploadQuotaCb;
+        std::uint32_t                       mFileUploadQuota;
+        UploadBandwidthQuotaCallback        mFileUploadQuotaCb;
 
-        boost::uint32_t                 mFileDownloadQuota;
-        FileDownloadQuotaCallback       mFileDownloadQuotaCb;
+        std::uint32_t                       mFileDownloadQuota;
+        DownloadBandwidthQuotaCallback      mFileDownloadQuotaCb;
 
         friend class FileTransferService;
 
@@ -450,67 +598,31 @@ namespace RCF {
         std::string                     mOpenSslCipherSuite;
 
         CertificatePtr                  mCaCertificatePtr;
-        CertificateValidationCb         mCertificateValidationCb;
+        CertificateValidationCallback   mCertificateValidationCb;
         tstring                         mSchannelCertificateValidation;
 
         SslImplementation               mSslImplementation;
 
-        boost::uint32_t                 mSessionTimeoutMs;
-        boost::uint32_t                 mSessionHarvestingIntervalMs;
+        std::uint32_t                   mSessionTimeoutMs;
+        std::uint32_t                   mSessionHarvestingIntervalMs;
 
-        boost::uint32_t                 mHttpSessionTimeoutMs;
+        std::uint32_t                   mHttpSessionTimeoutMs;
 
         OnCallbackConnectionCreated     mOnCallbackConnectionCreated;
 
-        boost::uint32_t                 mOfsMaxNumberOfObjects;
-        boost::uint32_t                 mOfsObjectTimeoutS;
-        boost::uint32_t                 mOfsCleanupIntervalS;
-        float                           mOfsCleanupThreshold;
+#if RCF_FEATURE_SSPI==1
+        DWORD                           mSchannelEnabledProtocols = 0;
+        ULONG                           mSchannelContextRequirements = 0;
+#endif
 
     public:
 
-#if RCF_FEATURE_PUBSUB==1
-
-        template<typename Interface>
-        boost::shared_ptr< Publisher<Interface> > createPublisher()
-        {
-            PublisherParms parms;
-            return mPublishingServicePtr->createPublisher<Interface>(parms);
-        }
-
-        template<typename Interface>
-        boost::shared_ptr< Publisher<Interface> > createPublisher(
-            const PublisherParms & parms)
-        {
-            return mPublishingServicePtr->createPublisher<Interface>(parms);
-        }
-
-        template<typename Interface, typename T>
-        boost::shared_ptr< Subscription > createSubscription(
-            T & t, 
-            const RCF::Endpoint & publisherEp)
-        {
-            RCF_ASSERT(mStarted);
-            SubscriptionParms parms;
-            parms.setPublisherEndpoint(publisherEp);
-            return mSubscriptionServicePtr->createSubscription<Interface>(t, publisherEp);
-        }
-
-        template<typename Interface, typename T>
-        boost::shared_ptr< Subscription > createSubscription(
-            T & t, 
-            const SubscriptionParms & parms)
-        {
-            RCF_ASSERT(mStarted);
-            return mSubscriptionServicePtr->createSubscription<Interface>(t, parms);
-        }
-
-#endif
 
     private:
 
-        boost::uint32_t mServerObjectHarvestingIntervalS;
+        std::uint32_t                           mServerObjectHarvestingIntervalS;
 
+#if RCF_FEATURE_HTTP==1
         Mutex                                   mHttpSessionMapMutex;
         std::map<std::string, HttpSessionPtr>   mHttpSessionMap;
 
@@ -521,30 +633,17 @@ namespace RCF {
 
         friend class ServerObjectService;
         void            harvestHttpSessions();
+#endif
 
     public:
 
-        boost::uint32_t getServerObjectHarvestingIntervalS() const;
-        void setServerObjectHarvestingIntervalS(boost::uint32_t harvestingIntervalS);
 
-        template<typename T>
-        boost::shared_ptr<T> queryServerObject(
-            const std::string & objectKey)
-        {
-            return mServerObjectServicePtr->queryServerObject<T>(objectKey);
-        }
+    private:
+        friend class ProxyEndpoint;
+        ClientTransportUniquePtr makeProxyEndpointConnection(const std::string& proxyEndpointName);
 
-        template<typename T>
-        boost::shared_ptr<T> getServerObject(
-            const std::string & objectKey, 
-            boost::uint32_t timeoutMs)
-        {
-            return mServerObjectServicePtr->getServerObject<T>(objectKey, timeoutMs);
-        }
+        bool                                    mEnableProxyEndpoints = false;
 
-        void deleteServerObject(const std::string & objectKey);
-
-        StubEntryPtr findStubEntryForToken(const Token & token);
     };
 
 } // namespace RCF

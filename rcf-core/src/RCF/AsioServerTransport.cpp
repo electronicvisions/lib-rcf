@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,20 +11,15 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
 #include <RCF/AsioServerTransport.hpp>
 
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/classification.hpp>
-#include <boost/algorithm/string/trim.hpp>
-
-#include <boost/bind.hpp>
-#include <boost/enable_shared_from_this.hpp>
-#include <boost/shared_ptr.hpp>
+#include <functional>
+#include <memory>
 
 #include <RCF/Asio.hpp>
 #include <RCF/Filter.hpp>
@@ -35,9 +30,15 @@
 #include <RCF/MethodInvocation.hpp>
 #include <RCF/ObjectPool.hpp>
 #include <RCF/RcfServer.hpp>
+#include <RCF/RcfSession.hpp>
 #include <RCF/TimedBsdSockets.hpp>
+#include <RCF/Log.hpp>
 
 namespace RCF {    
+
+    AsioAcceptor::~AsioAcceptor()
+    {
+    }
 
     // FilterAdapter
 
@@ -98,7 +99,10 @@ namespace RCF {
 
     void ReadHandler::operator()(AsioErrorCode err, std::size_t bytes)
     {
-        mNetworkSessionPtr->onNetworkReadCompleted(err, bytes);
+        if ( mNetworkSessionPtr )
+        {
+            mNetworkSessionPtr->onNetworkReadCompleted(err, bytes);
+        }
     }
 
     void * ReadHandler::allocate(std::size_t size)
@@ -117,7 +121,10 @@ namespace RCF {
 
     void WriteHandler::operator()(AsioErrorCode err, std::size_t bytes)
     {
-        mNetworkSessionPtr->onNetworkWriteCompleted(err, bytes);
+        if ( mNetworkSessionPtr )
+        {
+            mNetworkSessionPtr->onNetworkWriteCompleted(err, bytes);
+        }
     }
 
     void * WriteHandler::allocate(std::size_t size)
@@ -181,8 +188,6 @@ namespace RCF {
             return;
         }
 
-        BOOST_STATIC_ASSERT(sizeof(unsigned int) == 4);
-
         mSlicedWriteByteBuffers.resize(0);
         mWriteByteBuffers.resize(0);
 
@@ -201,7 +206,7 @@ namespace RCF {
 
             ByteBuffer &byteBuffer = mWriteByteBuffers.front();
 
-            RCF_ASSERT_GTEQ(byteBuffer.getLeftMargin() , 4);
+            RCF_ASSERT(byteBuffer.getLeftMargin() >= 4);
             byteBuffer.expandIntoLeftMargin(4);
             memcpy(byteBuffer.getPtr(), &messageSize, 4);
             RCF::machineToNetworkOrder(byteBuffer.getPtr(), 4, 1);
@@ -265,7 +270,7 @@ namespace RCF {
         {
 #if RCF_FEATURE_HTTP==1
             wireFilters.push_back(FilterPtr(new HttpSessionFilter(*this)));
-            wireFilters.push_back( FilterPtr(new HttpFrameFilter(transport.getMaxMessageLength())) );
+            wireFilters.push_back(FilterPtr(new HttpFrameFilter(transport.getMaxIncomingMessageLength())));
 #else
             RCF_ASSERT(0 && "This RCF build does not support HTTP tunneling.");
 #endif
@@ -284,7 +289,7 @@ namespace RCF {
             }
             if (!sslFilterPtr)
             {
-                RCF_THROW( Exception(_RcfError_SslNotSupported()) );
+                RCF_THROW( Exception(RcfError_SslNotSupported) );
             }
 
             wireFilters.push_back( sslFilterPtr );
@@ -315,9 +320,18 @@ namespace RCF {
         RCF_DTOR_END;
     }
 
+    void AsioNetworkSession::runOnDestroyCallbacks()
+    {
+        RcfSessionPtr sessionPtr = getSessionPtr();
+        if ( sessionPtr )
+        {
+            sessionPtr->runOnDestroyCallbacks();
+        }
+    }
+
     AsioNetworkSessionPtr AsioNetworkSession::sharedFromThis()
     {
-        return boost::static_pointer_cast<AsioNetworkSession>(shared_from_this());
+        return std::static_pointer_cast<AsioNetworkSession>(shared_from_this());
     }
 
     ByteBuffer AsioNetworkSession::getReadByteBuffer()
@@ -347,7 +361,7 @@ namespace RCF {
             mNetworkReadByteBuffer = ByteBuffer(byteBuffer, 0, bytesRequested);
         }
 
-        RCF_ASSERT_LTEQ(bytesRequested, mNetworkReadByteBuffer.getLength());
+        RCF_ASSERT(bytesRequested <= mNetworkReadByteBuffer.getLength());
 
         char *buffer = mNetworkReadByteBuffer.getPtr();
         std::size_t bufferLen = mNetworkReadByteBuffer.getLength();
@@ -392,7 +406,7 @@ namespace RCF {
 
         mBytesReceivedCounter += bytesTransferred;
 
-#ifdef BOOST_WINDOWS
+#ifdef RCF_WINDOWS
 
         if (error.value() == ERROR_OPERATION_ABORTED)
         {
@@ -444,7 +458,7 @@ namespace RCF {
 
         mBytesSentCounter += bytesTransferred;
 
-#ifdef BOOST_WINDOWS
+#ifdef RCF_WINDOWS
 
         if (error.value() == ERROR_OPERATION_ABORTED)
         {
@@ -589,10 +603,10 @@ namespace RCF {
                 {
                     Lock lock(mTransport.mSessionsMutex);
                     
-                    RCF_ASSERT_LTEQ(
-                        mTransport.mSessions.size() , 1+1+connectionLimit);
+                    //RCF_ASSERT(
+                    //    mTransport.mSessions.size() <= 1+1+connectionLimit);
 
-                    if (mTransport.mSessions.size() == 1+1+connectionLimit)
+                    if (mTransport.mSessions.size() >= 1+1+connectionLimit)
                     {
                         allowConnect = false;
                     }
@@ -605,7 +619,7 @@ namespace RCF {
                 }
                 else
                 {
-                    sendServerError(RcfError_ConnectionLimitExceeded);
+                    sendServerError(RcfError_ConnectionLimitExceeded_Id);
                 }
             }
         }
@@ -629,7 +643,7 @@ namespace RCF {
 
     void AsioNetworkSession::doRegularFraming(size_t bytesTransferred)
     {
-        RCF_ASSERT_LTEQ(bytesTransferred , mReadBufferRemaining);
+        RCF_ASSERT(bytesTransferred <= mReadBufferRemaining);
         mReadBufferRemaining -= bytesTransferred;
         if (mReadBufferRemaining > 0)
         {
@@ -649,20 +663,20 @@ namespace RCF {
         }
         else
         {
-            RCF_ASSERT_EQ(mReadBufferRemaining , 0);
+            RCF_ASSERT(mReadBufferRemaining == 0);
             if (mState == ReadingDataCount)
             {
                 ReallocBuffer & readBuffer = *mAppReadBufferPtr;
-                RCF_ASSERT_EQ(readBuffer.size() , 4);
+                RCF_ASSERT(readBuffer.size() == 4);
 
                 unsigned int packetLength = 0;
                 memcpy(&packetLength, &readBuffer[0], 4);
                 networkToMachineOrder(&packetLength, 4, 1);
 
-                if (    mTransport.getMaxMessageLength() 
-                    &&  packetLength > mTransport.getMaxMessageLength())
+                if (    mTransport.getMaxIncomingMessageLength()
+                    &&  packetLength > mTransport.getMaxIncomingMessageLength())
                 {
-                    sendServerError(RcfError_ServerMessageLength);
+                    sendServerError(RcfError_ServerMessageLength_Id);
                 }
                 else
                 {
@@ -684,7 +698,7 @@ namespace RCF {
 
     void AsioNetworkSession::doCustomFraming(size_t bytesTransferred)
     {
-        RCF_ASSERT_LTEQ(bytesTransferred , mReadBufferRemaining);
+        RCF_ASSERT(bytesTransferred <= mReadBufferRemaining);
         mReadBufferRemaining -= bytesTransferred;
         if (mReadBufferRemaining > 0)
         {
@@ -704,18 +718,18 @@ namespace RCF {
         }
         else
         {
-            RCF_ASSERT_EQ(mReadBufferRemaining , 0);
+            RCF_ASSERT(mReadBufferRemaining == 0);
             if (mState == ReadingDataCount)
             {
                 ReallocBuffer & readBuffer = *mAppReadBufferPtr;
-                RCF_ASSERT_EQ(readBuffer.size() , 4);
+                RCF_ASSERT(readBuffer.size() == 4);
 
                 std::size_t messageLength = mTransportFilters[0]->getFrameSize();
 
-                if (    mTransport.getMaxMessageLength() 
-                    &&  messageLength > mTransport.getMaxMessageLength())
+                if (    mTransport.getMaxIncomingMessageLength()
+                    &&  messageLength > mTransport.getMaxIncomingMessageLength())
                 {
-                    sendServerError(RcfError_ServerMessageLength);
+                    sendServerError(RcfError_ServerMessageLength_Id);
                 }
                 else
                 {
@@ -759,7 +773,7 @@ namespace RCF {
 
         case WritingData:
 
-            RCF_ASSERT_LTEQ(bytesTransferred , mWriteBufferRemaining);
+            RCF_ASSERT(bytesTransferred <= mWriteBufferRemaining);
 
             mWriteBufferRemaining -= bytesTransferred;
             if (mWriteBufferRemaining > 0)
@@ -789,7 +803,7 @@ namespace RCF {
             break;
 
         default:
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
         }
     }
 
@@ -805,15 +819,15 @@ namespace RCF {
 
     // I_ServerTransportEx implementation
 
-    ClientTransportAutoPtr AsioServerTransport::createClientTransport(
+    ClientTransportUniquePtr AsioServerTransport::createClientTransport(
         const Endpoint &endpoint)
     {
         return implCreateClientTransport(endpoint);
     }
 
     SessionPtr AsioServerTransport::createServerSession(
-        ClientTransportAutoPtr & clientTransportAutoPtr,
-        StubEntryPtr stubEntryPtr,
+        ClientTransportUniquePtr & clientTransportUniquePtr,
+        RcfClientPtr stubEntryPtr,
         bool keepClientConnection)
     {
         // Create a new network session.
@@ -826,7 +840,7 @@ namespace RCF {
         networkSessionPtr->mRcfSessionPtr = sessionPtr;
 
         // Move socket from client transport to network session.
-        networkSessionPtr->implTransferNativeFrom(*clientTransportAutoPtr);
+        networkSessionPtr->implTransferNativeFrom(*clientTransportUniquePtr);
 
         if (stubEntryPtr)
         {
@@ -835,7 +849,7 @@ namespace RCF {
 
         // Copy over the wire filters from the client transport.
         ConnectedClientTransport& clientTransport = 
-            static_cast<ConnectedClientTransport&>(*clientTransportAutoPtr);
+            static_cast<ConnectedClientTransport&>(*clientTransportUniquePtr);
 
         bool doingHttp = false;
 
@@ -852,10 +866,10 @@ namespace RCF {
         }
 
         // Create a new controlling client transport, if applicable.
-        clientTransportAutoPtr.reset();
+        clientTransportUniquePtr.reset();
         if ( keepClientConnection && !doingHttp )
         {
-            clientTransportAutoPtr.reset( createClientTransport(sessionPtr).release() );
+            clientTransportUniquePtr.reset( createClientTransport(sessionPtr).release() );
         }
 
         // Start reading on the server session.
@@ -864,7 +878,7 @@ namespace RCF {
         return sessionPtr;
     }
 
-    ClientTransportAutoPtr AsioServerTransport::createClientTransport(
+    ClientTransportUniquePtr AsioServerTransport::createClientTransport(
         SessionPtr sessionPtr)
     {
         // If wire filters are present, some special gymnastics are needed. For now
@@ -892,7 +906,7 @@ namespace RCF {
         // Make sure the network session stays alive for the time being.
         AsioNetworkSessionPtr networkSessionPtr = networkSession.sharedFromThis();
 
-        ClientTransportAutoPtr clientTransportPtr = networkSession.implCreateClientTransport();
+        ClientTransportUniquePtr clientTransportPtr = networkSession.implCreateClientTransport();
         ConnectedClientTransport & connClientTransport = static_cast<ConnectedClientTransport &>(*clientTransportPtr);
         connClientTransport.setRcfSession(networkSession.mRcfSessionPtr);
 
@@ -997,7 +1011,7 @@ namespace RCF {
     {
         bool runningOnWindowsVistaOrLater = false;
 
-#ifdef BOOST_WINDOWS
+#ifdef RCF_WINDOWS
         OSVERSIONINFO osvi = {0};
         osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
 
@@ -1032,7 +1046,7 @@ namespace RCF {
             // We can't apply it on earlier Windows (XP, 2003), because async 
             // calls are canceled when the issuing thread terminates.
 
-            Thread t( boost::bind(&AsioServerTransport::startAcceptingThread, this, boost::ref(e)) );
+            Thread t( std::bind(&AsioServerTransport::startAcceptingThread, this, std::ref(e)) );
             t.join();
         }
         else
@@ -1079,16 +1093,18 @@ namespace RCF {
     {
     }
 
-    void AsioServerTransport::registerSession(AsioNetworkSessionWeakPtr session)
+    void AsioServerTransport::registerSession(NetworkSessionWeakPtr session)
     {
         Lock lock(mSessionsMutex);
         mSessions.insert(session);
     }
 
-    void AsioServerTransport::unregisterSession(AsioNetworkSessionWeakPtr session)
+    void AsioServerTransport::unregisterSession(NetworkSessionWeakPtr session)
     {
         Lock lock(mSessionsMutex);
-        mSessions.erase(session);
+        std::size_t itemsRemoved = mSessions.erase(session);
+        RCF_UNUSED_VARIABLE(itemsRemoved);
+        RCF_ASSERT(itemsRemoved == 1);
     }
 
     void AsioServerTransport::cancelOutstandingIo()
@@ -1102,7 +1118,7 @@ namespace RCF {
             if (networkSessionPtr)
             {
                 AsioNetworkSessionPtr asioNetworkSessionPtr = 
-                    boost::static_pointer_cast<AsioNetworkSession>(networkSessionPtr);
+                    std::static_pointer_cast<AsioNetworkSession>(networkSessionPtr);
 
                 asioNetworkSessionPtr->close();
             }

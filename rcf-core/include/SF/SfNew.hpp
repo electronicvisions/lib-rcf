@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -21,9 +21,10 @@
 
 #include <typeinfo>
 
-#include <SF/Tools.hpp>
+#include <RCF/Tools.hpp>
 
 #include <RCF/Exception.hpp>
+#include <RCF/TypeTraits.hpp>
 
 namespace SF {
 
@@ -32,8 +33,8 @@ namespace SF {
     template<typename T, typename R>
     R sfNewImpl(T*, R*, Archive &, RCF::TrueType *)
     {
-        RCF::Exception e(RCF::_SfError_NoCtor());
-        RCF_THROW(e)(typeid(T));
+        RCF::Exception e(RCF::RcfError_SfNoCtor);
+        RCF_THROW(e);
         return NULL;
     }
 
@@ -46,19 +47,15 @@ namespace SF {
     template<typename T, typename R>
     R sfNew(T*t, R*r, Archive &ar)
     {
-#ifdef BOOST_NO_IS_ABSTRACT
-        return sfNewImpl(t, r, ar, (RCF::FalseType *) NULL);
-#else
-        typedef typename boost::is_abstract<T>::type type;
+        typedef typename std::is_abstract<T>::type type;
         return sfNewImpl(t, r, ar, (type *) NULL);
-#endif
     }
 
     template<typename T, unsigned int N, typename R>
     R sfNew(T (*)[N], R*, Archive &)
     {
-        RCF::Exception e(RCF::_SfError_NoCtor());
-        RCF_THROW(e)(typeid(T[N]));
+        RCF::Exception e(RCF::RcfError_SfNoCtor);
+        RCF_THROW(e);
         return NULL;
     }
 
@@ -86,8 +83,8 @@ namespace SF {
 #define SF_NO_CTOR(type)                                                    \
     inline type *sfNew(type*, type **, SF::Archive &)                       \
     {                                                                       \
-        RCF::Exception e(RCF::_SfError_NoCtor());                           \
-        RCF_THROW(e)(typeid(type));                                         \
+        RCF::Exception e(RCF::RcfError_SfNoCtor);                           \
+        RCF_THROW(e);                                         \
         return NULL;                                                        \
     }
 
@@ -97,8 +94,8 @@ namespace SF {
     template<typename T>                                                    \
     inline type<T> *sfNew(type<T>*, type<T> **, SF::Archive &)              \
     {                                                                       \
-        RCF::Exception e(RCF::_SfError_NoCtor());                           \
-        RCF_THROW(e)(typeid(type<T>));                                      \
+        RCF::Exception e(RCF::RcfError_SfNoCtor);                           \
+        RCF_THROW(e);                                      \
         return NULL;                                                        \
     }
 
@@ -108,8 +105,8 @@ namespace SF {
     template<typename T, typename U>                                        \
     inline type<T,U> *sfNew(type<T,U>*, type<T,U> **, SF::Archive &)        \
     {                                                                       \
-        RCF::Exception e(RCF::_SfError_NoCtor());                           \
-        RCF_THROW(e)(typeid(type<T,U>));                                    \
+        RCF::Exception e(RCF::RcfError_SfNoCtor);                           \
+        RCF_THROW(e);                                    \
         return NULL;                                                        \
     }
 

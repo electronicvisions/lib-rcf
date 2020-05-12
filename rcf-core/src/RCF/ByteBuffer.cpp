@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -20,8 +20,14 @@
 
 #include <RCF/Exception.hpp>
 #include <RCF/InitDeinit.hpp>
+#include <RCF/MemStream.hpp>
+#include <RCF/ReallocBuffer.hpp>
 #include <RCF/ThreadLibrary.hpp>
 #include <RCF/ThreadLocalData.hpp>
+#include <RCF/Tools.hpp>
+
+// memcpy, memcmp
+#include <string.h>
 
 namespace RCF {
 
@@ -62,7 +68,7 @@ namespace RCF {
     {}
 
     ByteBuffer::ByteBuffer(
-        boost::shared_ptr<std::vector<char> > spvc,
+        std::shared_ptr<std::vector<char> > spvc,
         bool readOnly) :
             mSpvc(spvc),
             mSpos(),
@@ -120,7 +126,7 @@ namespace RCF {
     ByteBuffer::ByteBuffer(
         char *pv,
         std::size_t pvlen,
-        boost::shared_ptr<RCF::MemOstream> spos,
+        std::shared_ptr<RCF::MemOstream> spos,
         bool readOnly) :
             mSpos(spos),
             mPv(pv),
@@ -133,7 +139,7 @@ namespace RCF {
         char *pv,
         std::size_t pvlen,
         std::size_t leftMargin,
-        boost::shared_ptr<RCF::MemOstream> spos,
+        std::shared_ptr<RCF::MemOstream> spos,
         bool readOnly) :
             mSpos(spos),
             mPv(pv),
@@ -145,7 +151,7 @@ namespace RCF {
     ByteBuffer::ByteBuffer(
         char *pv,
         std::size_t pvlen,
-        boost::shared_ptr<std::vector<char> > spvc,
+        std::shared_ptr<std::vector<char> > spvc,
         bool readOnly) :
             mSpvc(spvc),          
             mPv(pv),
@@ -158,7 +164,7 @@ namespace RCF {
         char *pv,
         std::size_t pvlen,
         std::size_t leftMargin,
-        boost::shared_ptr<std::vector<char> > spvc,
+        std::shared_ptr<std::vector<char> > spvc,
         bool readOnly) :
             mSpvc(spvc),
             mPv(pv),
@@ -206,11 +212,9 @@ namespace RCF {
             mReadOnly(byteBuffer.mReadOnly)
             
     {
-        RCF_ASSERT_LTEQ(offset , byteBuffer.mPvlen);
+        RCF_ASSERT(offset <= byteBuffer.mPvlen);
 
-        RCF_ASSERT(
-            len == npos || offset+len <= byteBuffer.mPvlen)
-            (offset)(len)(byteBuffer.mPvlen);
+        RCF_ASSERT(len == npos || offset+len <= byteBuffer.mPvlen);
     }
 
     ByteBuffer::operator bool()
@@ -268,7 +272,7 @@ namespace RCF {
 
     void ByteBuffer::setLeftMargin(std::size_t len)
     {
-        RCF_ASSERT_LTEQ(len , mLeftMargin + mPvlen);
+        RCF_ASSERT(len <= mLeftMargin + mPvlen);
 
         mPv                     = mPv - mLeftMargin + len;
         mPvlen                  = mPvlen + mLeftMargin - len;
@@ -277,7 +281,7 @@ namespace RCF {
 
     void ByteBuffer::expandIntoLeftMargin(std::size_t len)
     {
-        RCF_ASSERT_LTEQ(len , mLeftMargin);
+        RCF_ASSERT(len <= mLeftMargin);
         mPv -= len;
         mPvlen += len;
         mLeftMargin -= len;
@@ -315,6 +319,53 @@ namespace RCF {
             length += byteBuffers[i].getLength() ;
         }
         return length;
+    }
+
+    void forEachByteBuffer(
+        std::function<void(const ByteBuffer&)> functor,
+        const std::vector<ByteBuffer> &byteBuffers,
+        std::size_t offset,
+        std::size_t length)
+    {
+        std::size_t pos0 = 0;
+        std::size_t pos1 = 0;
+        std::size_t remaining = length;
+
+        for ( std::size_t i = 0; i < byteBuffers.size(); ++i )
+        {
+            pos1 = pos0 + byteBuffers[i].getLength();
+
+            if ( pos1 <= offset )
+            {
+                pos0 = pos1;
+            }
+            else if ( pos0 <= offset && offset < pos1 )
+            {
+                std::size_t len = RCF_MIN(pos1 - offset, remaining);
+
+                ByteBuffer byteBuffer(
+                    byteBuffers[i],
+                    offset - pos0,
+                    len);
+
+                functor(byteBuffer);
+                pos0 = pos1;
+                remaining -= len;
+            }
+            else if ( remaining > 0 )
+            {
+                std::size_t len = RCF_MIN(pos1 - pos0, remaining);
+
+                ByteBuffer byteBuffer(
+                    byteBuffers[i],
+                    0,
+                    len);
+
+                functor(byteBuffer);
+                pos1 = pos0;
+                remaining -= len;
+            }
+        }
     }
 
     class GetFirstByteBuffer
@@ -399,7 +450,7 @@ namespace RCF {
         const std::vector<ByteBuffer> &byteBuffers,
         ByteBuffer &byteBuffer)
     {
-        boost::shared_ptr<std::vector<char> > vecPtr(
+        std::shared_ptr<std::vector<char> > vecPtr(
             new std::vector<char>(lengthByteBuffers(byteBuffers)));
 
         copyByteBuffers(byteBuffers, &(*vecPtr)[0]);
@@ -426,7 +477,7 @@ namespace SF {
     {
         if (ar.isRead())
         {
-            boost::uint32_t len = 0;
+            std::uint32_t len = 0;
             ar & len;
 
             byteBuffer.clear();
@@ -452,18 +503,19 @@ namespace SF {
 
                 SF::IStream &is = *ar.getIstream();
 
-                boost::uint32_t bytesToRead = len;
-                boost::uint32_t bytesRead = is.read( (SF::Byte8 *) byteBuffer.getPtr(), bytesToRead);
+                std::uint32_t bytesToRead = len;
+                std::uint32_t bytesRead = is.read( (SF::Byte8 *) byteBuffer.getPtr(), bytesToRead);
 
-                RCF_VERIFY(
-                    bytesRead == bytesToRead,
-                    RCF::Exception(RCF::_SfError_ReadFailure()))
-                    (bytesToRead)(bytesRead);
+                if ( bytesRead != bytesToRead )
+                {
+                    RCF::Exception e(RCF::RcfError_SfReadFailure);
+                    RCF_THROW(e);
+                }
             }
         }
         else if (ar.isWrite())
         {
-            boost::uint32_t len = static_cast<boost::uint32_t>(byteBuffer.getLength());
+            std::uint32_t len = static_cast<std::uint32_t>(byteBuffer.getLength());
             ar & len;
 
             // See if we have a remote call context.
@@ -476,7 +528,7 @@ namespace SF {
             }
             else if (len)
             {
-                boost::uint32_t bytesToWrite = len;
+                std::uint32_t bytesToWrite = len;
                 ar.getOstream()->writeRaw(
                     (SF::Byte8 *) byteBuffer.getPtr(),
                     bytesToWrite);

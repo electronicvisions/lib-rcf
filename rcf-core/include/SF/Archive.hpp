@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,18 +19,17 @@
 #ifndef INCLUDE_SF_ARCHIVE_HPP
 #define INCLUDE_SF_ARCHIVE_HPP
 
-#include <boost/noncopyable.hpp>
-
 #include <RCF/Export.hpp>
-
 #include <SF/DataPtr.hpp>
+#include <RCF/Tools.hpp>
 
 namespace SF {
 
     class IStream;
     class OStream;
 
-    class RCF_EXPORT Archive : boost::noncopyable
+    /// Represents an archive, in which serialized objects are stored.
+    class RCF_EXPORT Archive : Noncopyable
     {
     public:
 
@@ -53,8 +52,13 @@ namespace SF {
         Archive(Direction dir, OStream *stream);
 
         Archive &   operator&(Flag flag);
+
+        /// Returns true if this archive is being read from.
         bool        isRead() const;
+
+        /// Returns true if this archive is being written to.
         bool        isWrite() const;
+
         IStream *   getIstream() const;
         OStream *   getOstream() const;
         bool        isFlagSet(Flag flag) const;
@@ -64,7 +68,10 @@ namespace SF {
         DataPtr &   getLabel();
         bool        verifyAgainstArchiveSize(std::size_t bytesToRead);
 
+        /// Gets the RCF runtime version associated with this archive.
         int         getRuntimeVersion();
+
+        /// Gets the archive version associated with this archive.
         int         getArchiveVersion();
 
     private:

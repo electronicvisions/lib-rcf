@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -20,11 +20,12 @@
 #define INCLUDE_RCF_DYNAMICLIB_HPP
 
 #include <string>
+#include <memory>
 
-#include <boost/config.hpp>
-#include <boost/shared_ptr.hpp>
+#include <RCF/Config.hpp>
+#include <RCF/Exception.hpp>
 
-#ifdef BOOST_WINDOWS
+#ifdef RCF_WINDOWS
 #include <windows.h>
 #else
 #include <dlfcn.h>
@@ -33,7 +34,7 @@
 namespace RCF {
 
     class                                   DynamicLib;
-    typedef boost::shared_ptr<DynamicLib>   DynamicLibPtr;
+    typedef std::shared_ptr<DynamicLib>   DynamicLibPtr;
 
     class DynamicLib
     {
@@ -45,7 +46,7 @@ namespace RCF {
 
         std::string mDllName;
 
-#ifdef BOOST_WINDOWS
+#ifdef RCF_WINDOWS
 
     public:
 
@@ -57,7 +58,7 @@ namespace RCF {
             if (pfn == NULL)
             {
                 DWORD dwErr = GetLastError();
-                Exception e(_RcfError_DllFuncLoad(mDllName, funcName), dwErr);
+                Exception e(RcfError_DllFuncLoad, mDllName, funcName, osError(dwErr));
                 throw e;
             }
         }
@@ -88,7 +89,7 @@ namespace RCF {
                 {
                     strErr = szErr;
                 }
-                Exception e(_RcfError_UnixDllFuncLoad(mDllName, funcName, strErr));
+                Exception e(RcfError_UnixDllFuncLoad, mDllName, funcName, strErr);
                 throw e;
             }
         }

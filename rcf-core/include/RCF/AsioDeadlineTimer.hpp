@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -21,10 +21,13 @@
 
 #include <RCF/Asio.hpp>
 
+#include <RCF/external/asio/asio/system_timer.hpp>
+
 namespace RCF {
 
-    typedef ASIO_NS::deadline_timer AsioDeadlineTimer;
-    typedef boost::shared_ptr<AsioDeadlineTimer> AsioDeadlineTimerPtr;
+    //typedef ASIO_NS::deadline_timer AsioDeadlineTimer;
+    typedef ASIO_NS::system_timer AsioDeadlineTimer;
+    typedef std::shared_ptr<AsioDeadlineTimer> AsioDeadlineTimerPtr;
 
     // Using a wrapper for deadline_timer so we can do forward declarations.
     class AsioTimer
@@ -34,7 +37,7 @@ namespace RCF {
             mImpl(ioService)
         {}
 
-        ASIO_NS::deadline_timer mImpl;
+        ASIO_NS::system_timer mImpl;
     };
 
 } // namespace RCF

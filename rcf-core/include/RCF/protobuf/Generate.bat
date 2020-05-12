@@ -1,1 +1,0 @@
-protoc RcfMessages.proto --cpp_out=.

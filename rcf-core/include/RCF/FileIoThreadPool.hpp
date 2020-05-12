@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -20,8 +20,7 @@
 #define INCLUDE_RCF_FILEIOTHREADPOOL_HPP
 
 #include <deque>
-#include <fstream>
-#include <boost/shared_ptr.hpp>
+#include <memory>
 
 #include <RCF/ByteBuffer.hpp>
 #include <RCF/Exception.hpp>
@@ -32,7 +31,10 @@
 namespace RCF {
     
     class FileIoRequest;
-    typedef boost::shared_ptr<FileIoRequest> FileIoRequestPtr;
+    typedef std::shared_ptr<FileIoRequest> FileIoRequestPtr;
+
+    class FileHandle;
+    typedef std::shared_ptr<FileHandle> FileHandlePtr;
     
     class RCF_EXPORT FileIoThreadPool
     {
@@ -65,12 +67,9 @@ namespace RCF {
         RCF::Mutex                      mCompletionMutex;
         RCF::Condition                  mCompletionCondition;
     };
-
-    typedef boost::shared_ptr< std::ifstream > IfstreamPtr;
-    typedef boost::shared_ptr< std::ofstream > OfstreamPtr;
-    
+   
     class RCF_EXPORT FileIoRequest : 
-        public boost::enable_shared_from_this<FileIoRequest>
+        public std::enable_shared_from_this<FileIoRequest>
     {
     public:
         FileIoRequest();    
@@ -79,10 +78,10 @@ namespace RCF {
         bool isInitiated();
         bool isCompleted();
         void complete();
-        void initiateRead(IfstreamPtr finPtr, RCF::ByteBuffer buffer);
-        void initateWrite(OfstreamPtr foutPtr, RCF::ByteBuffer buffer);
+        void initiateRead(FileHandlePtr finPtr, RCF::ByteBuffer buffer);
+        void initateWrite(FileHandlePtr foutPtr, RCF::ByteBuffer buffer);
 
-        boost::uint64_t getBytesTransferred();
+        std::uint64_t getBytesTransferred();
 
     private:
 
@@ -92,11 +91,11 @@ namespace RCF {
     
         FileIoThreadPool &                  mFts;
     
-        IfstreamPtr                         mFinPtr;
-        OfstreamPtr                         mFoutPtr;
+        FileHandlePtr                       mFinPtr;
+        FileHandlePtr                       mFoutPtr;
     
         RCF::ByteBuffer                     mBuffer;
-        boost::uint64_t                     mBytesTransferred;
+        std::uint64_t                       mBytesTransferred;
         bool                                mInitiated;
         bool                                mCompleted;
         RCF::Exception                      mError;

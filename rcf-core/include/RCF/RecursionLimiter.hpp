@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,14 +19,14 @@
 #ifndef INCLUDE_RCF_RECURSIONLIMITER_HPP
 #define INCLUDE_RCF_RECURSIONLIMITER_HPP
 
-#include <boost/type_traits/is_same.hpp>
-#include <boost/mpl/bool.hpp>
+#include <type_traits>
 
-#include <RCF/ByteBuffer.hpp>
-#include <RCF/Tools.hpp>
 #include <RCF/TypeTraits.hpp>
+#include <RCF/Tools.hpp>
 
 namespace RCF {
+
+    class ByteBuffer;
 
     template<typename T1,typename T2>
     class RecursionState
@@ -69,19 +69,19 @@ namespace RCF {
         T2      mT2;
 
     private:
-        void clearArg_(const ByteBuffer &byteBuffer, TrueType *)
+        void clearArg_(const ByteBuffer &byteBuffer, std::true_type *)
         {
             const_cast<ByteBuffer &>(byteBuffer).clear();
         }
 
         template<typename T>
-        void clearArg_(const T &, FalseType *)
+        void clearArg_(const T &, std::false_type *)
         {}
 
         template<typename T>
         void clearArg(const T &t)
         {
-            typedef typename boost::is_same<T, ByteBuffer>::type type;
+            typedef typename std::is_same<T, ByteBuffer>::type type;
             clearArg_(t, (type*) 0);
         }
     };
@@ -98,21 +98,13 @@ namespace RCF {
     {
         state.mBreak = false;
 
-        //state.assign(t1);
         if (state.mRecursing)
         {
             state.mRecursing = false;
         }
         else
         {
-            // gcc295 seems to need the namespace qualifier for make_obj_guard anyway
-            using namespace boost::multi_index::detail;
-
-            scope_guard guard = boost::multi_index::detail::make_obj_guard(
-                state,
-                &StateT::clear);
-
-            RCF_UNUSED_VARIABLE(guard);
+            ScopeGuard guard([&]() { state.clear(); });
 
             while (!state.mRecursing && !state.mBreak)
             {
@@ -139,14 +131,7 @@ namespace RCF {
         }
         else
         {
-            // gcc295 seems to need the namespace qualifier for make_obj_guard anyway
-            using namespace boost::multi_index::detail;
-
-            scope_guard guard = boost::multi_index::detail::make_obj_guard(
-                state,
-                &StateT::clear);
-
-            RCF_UNUSED_VARIABLE(guard);
+            ScopeGuard guard([&]() { state.clear(); });
 
             while (!state.mRecursing && !state.mBreak)
             {
@@ -173,14 +158,7 @@ namespace RCF {
         }
         else
         {
-            // gcc295 seems to need the namespace qualifier for make_obj_guard anyway
-            using namespace boost::multi_index::detail;
-
-            scope_guard guard = boost::multi_index::detail::make_obj_guard(
-                state,
-                &StateT::clear);
-
-            RCF_UNUSED_VARIABLE(guard);
+            ScopeGuard guard([&]() { state.clear(); });
 
             while (!state.mRecursing && !state.mBreak)
             {

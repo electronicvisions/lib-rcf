@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,21 +19,18 @@
 #ifndef INCLUDE_RCF_ASIOSERVERTRANSPORT_HPP
 #define INCLUDE_RCF_ASIOSERVERTRANSPORT_HPP
 
+#include <memory>
 #include <set>
 #include <vector>
 
-#include <boost/shared_ptr.hpp>
-#include <boost/weak_ptr.hpp>
-
 #include <RCF/Asio.hpp>
 #include <RCF/AsioBuffers.hpp>
-#include <RCF/Enums.hpp>
+#include <RCF/ByteBuffer.hpp>
 #include <RCF/Export.hpp>
-#include <RCF/IpAddress.hpp>
-#include <RCF/IpServerTransport.hpp>
 #include <RCF/ServerTransport.hpp>
 #include <RCF/Service.hpp>
 #include <RCF/ThreadLibrary.hpp>
+#include <RCF/Tools.hpp>
 
 namespace RCF {
 
@@ -42,17 +39,26 @@ namespace RCF {
     class AsioNetworkSession;
     class AsioServerTransport;
 
-    typedef boost::shared_ptr<AsioNetworkSession>         AsioNetworkSessionPtr;
-    typedef boost::weak_ptr<AsioNetworkSession>           AsioNetworkSessionWeakPtr;
+    typedef std::shared_ptr<AsioNetworkSession>         AsioNetworkSessionPtr;
+    typedef std::weak_ptr<AsioNetworkSession>           AsioNetworkSessionWeakPtr;
+
+    class ReallocBuffer;
+    typedef std::shared_ptr<ReallocBuffer> ReallocBufferPtr;
+
+    class Exception;
+
+    enum WireProtocol;
+
+    class I_RcfClient;
+    typedef std::shared_ptr<I_RcfClient> RcfClientPtr;
 
     class AsioAcceptor
     {
     public:
-        virtual ~AsioAcceptor()
-        {}
+        virtual ~AsioAcceptor();
     };
 
-    typedef boost::scoped_ptr<AsioAcceptor>           AsioAcceptorPtr;
+    typedef std::unique_ptr<AsioAcceptor>           AsioAcceptorPtr;
 
     class RCF_EXPORT AsioServerTransport :
         public ServerTransport,
@@ -68,23 +74,23 @@ namespace RCF {
 
         friend class Win32NamedPipeNetworkSession;
 
-        typedef boost::weak_ptr<I_Session>              SessionWeakPtr;
+        typedef std::weak_ptr<RcfSession>              SessionWeakPtr;
 
         AsioNetworkSessionPtr createNetworkSession();
 
     protected:
 
         // I_ServerTransportEx implementation
-        ClientTransportAutoPtr  
+        ClientTransportUniquePtr  
                             createClientTransport(
                                 const Endpoint &endpoint);
 
         SessionPtr          createServerSession(
-                                ClientTransportAutoPtr & clientTransportAutoPtr, 
-                                StubEntryPtr stubEntryPtr,
+                                ClientTransportUniquePtr & clientTransportUniquePtr, 
+                                RcfClientPtr stubEntryPtr,
                                 bool keepClientConnection);
 
-        ClientTransportAutoPtr  
+        ClientTransportUniquePtr  
                             createClientTransport(
                                 SessionPtr sessionPtr);
 
@@ -117,8 +123,8 @@ namespace RCF {
 
     private:
 
-        void                registerSession(AsioNetworkSessionWeakPtr session);
-        void                unregisterSession(AsioNetworkSessionWeakPtr session);
+        void                registerSession(NetworkSessionWeakPtr session);
+        void                unregisterSession(NetworkSessionWeakPtr session);
         void                cancelOutstandingIo();
 
         friend class AsioNetworkSession;
@@ -146,7 +152,7 @@ namespace RCF {
         virtual AsioNetworkSessionPtr     implCreateNetworkSession() = 0;
         virtual void                    implOpen() = 0;
 
-        virtual ClientTransportAutoPtr  implCreateClientTransport(
+        virtual ClientTransportUniquePtr  implCreateClientTransport(
                                             const Endpoint &endpoint) = 0;
 
     public:
@@ -181,7 +187,7 @@ namespace RCF {
 
     class RCF_EXPORT AsioNetworkSession :
         public NetworkSession,
-        boost::noncopyable
+        Noncopyable
     {
     public:
 
@@ -191,8 +197,8 @@ namespace RCF {
         friend class ServerHttpFrame;
 
 
-        typedef boost::weak_ptr<AsioNetworkSession>       AsioNetworkSessionWeakPtr;
-        typedef boost::shared_ptr<AsioNetworkSession>     AsioNetworkSessionPtr;
+        typedef std::weak_ptr<AsioNetworkSession>       AsioNetworkSessionWeakPtr;
+        typedef std::shared_ptr<AsioNetworkSession>     AsioNetworkSessionPtr;
 
         AsioNetworkSession(
             AsioServerTransport &transport,
@@ -215,6 +221,8 @@ namespace RCF {
         std::vector<char>       mWriteHandlerBuffer;
 
         AsioErrorCode           mLastError;
+
+        void            runOnDestroyCallbacks();
 
     private:
 
@@ -310,11 +318,11 @@ namespace RCF {
 
         bool                        mCloseAfterWrite;
 
-        AsioNetworkSessionWeakPtr   mWeakThisPtr;
+        NetworkSessionWeakPtr       mWeakThisPtr;
 
         AsioBuffers                 mBufs;
 
-        boost::shared_ptr<Mutex>    mSocketOpsMutexPtr;
+        std::shared_ptr<Mutex>    mSocketOpsMutexPtr;
 
         // I_NetworkSession
 
@@ -339,7 +347,7 @@ namespace RCF {
         virtual void implClose() = 0;
         virtual void implCloseAfterWrite() {}
         virtual void implTransferNativeFrom(ClientTransport & clientTransport) = 0;
-        virtual ClientTransportAutoPtr implCreateClientTransport() = 0;
+        virtual ClientTransportUniquePtr implCreateClientTransport() = 0;
     };
 
 } // namespace RCF

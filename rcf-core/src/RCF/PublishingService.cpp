@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -26,10 +26,7 @@
 #include <RCF/RcfSession.hpp>
 #include <RCF/ServerTransport.hpp>
 #include <RCF/ThreadLibrary.hpp>
-
-#if RCF_FEATURE_LEGACY==1
-#include <RCF/ServerInterfaces.hpp>
-#endif
+#include <RCF/ThreadLocalData.hpp>
 
 namespace RCF {
 
@@ -71,23 +68,23 @@ namespace RCF {
     {
     }
 
-    void PublishingService::setPingIntervalMs(boost::uint32_t pingIntervalMs)
+    void PublishingService::setPingIntervalMs(std::uint32_t pingIntervalMs)
     {
         mPingIntervalMs = pingIntervalMs;
     }
 
-    boost::uint32_t PublishingService::getPingIntervalMs() const
+    std::uint32_t PublishingService::getPingIntervalMs() const
     {
         return mPingIntervalMs;
     }
 
     // remotely accessible
 
-    boost::int32_t PublishingService::RequestSubscription(
+    std::int32_t PublishingService::RequestSubscription(
         const std::string &subscriptionName)
     {
-        boost::uint32_t subToPubPingIntervalMs = 0;
-        boost::uint32_t pubToSubPingIntervalMs = 0;
+        std::uint32_t subToPubPingIntervalMs = 0;
+        std::uint32_t pubToSubPingIntervalMs = 0;
 
         return RequestSubscription(
             subscriptionName, 
@@ -95,10 +92,10 @@ namespace RCF {
             pubToSubPingIntervalMs);
     }
 
-    boost::int32_t PublishingService::RequestSubscription(
+    std::int32_t PublishingService::RequestSubscription(
         const std::string &subscriptionName,
-        boost::uint32_t subToPubPingIntervalMs,
-        boost::uint32_t & pubToSubPingIntervalMs)
+        std::uint32_t subToPubPingIntervalMs,
+        std::uint32_t & pubToSubPingIntervalMs)
     {
         PublisherPtr publisherPtr;
         std::string publisherName = subscriptionName;
@@ -119,7 +116,7 @@ namespace RCF {
                 bool allowSubscriber = publisherPtr->mParms.mOnSubscriberConnect(rcfSession, subscriptionName);
                 if (!allowSubscriber)
                 {
-                    return RcfError_AccessDenied;
+                    return RcfError_AccessDenied_Id;
                 }
             }
 
@@ -128,15 +125,17 @@ namespace RCF {
             ServerTransportEx &serverTransport = dynamic_cast<ServerTransportEx &>(
                 rcfSession.getNetworkSession().getServerTransport());
 
-            ClientTransportAutoPtrPtr clientTransportAutoPtrPtr( new ClientTransportAutoPtr(
+            ClientTransportUniquePtrPtr clientTransportUniquePtrPtr( new ClientTransportUniquePtr(
                 serverTransport.createClientTransport( rcfSession.shared_from_this() )));
 
-            (*clientTransportAutoPtrPtr)->setRcfSession(
+            (*clientTransportUniquePtrPtr)->setRcfSession(
                 rcfSession.shared_from_this());
 
             if ( publisherPtr->mParms.mOnSubscriberDisconnect )
             {
-                rcfSession.setOnDestroyCallback( boost::bind(
+                using std::placeholders::_1;
+
+                rcfSession.setOnDestroyCallback( std::bind(
                     publisherPtr->mParms.mOnSubscriberDisconnect,
                     _1,
                     publisherName));
@@ -144,32 +143,27 @@ namespace RCF {
 
             rcfSession.setPingTimestamp();
 
-            rcfSession.addOnWriteCompletedCallback( boost::bind(
+            using std::placeholders::_1;
+
+            rcfSession.addOnWriteCompletedCallback( std::bind(
                 &PublishingService::addSubscriberTransport,
                 this,
                 _1,
                 publisherName,
-                clientTransportAutoPtrPtr) );
+                clientTransportUniquePtrPtr) );
         }  
         pubToSubPingIntervalMs = mPingIntervalMs;
-        return publisherPtr ? RcfError_Ok : RcfError_UnknownPublisher;
+        return publisherPtr ? RcfError_Ok_Id : RcfError_UnknownPublisher_Id;
     }
 
     void PublishingService::onServiceAdded(RcfServer & server)
     {
-
-#if RCF_FEATURE_LEGACY==1
-        server.bind<I_RequestSubscription>(*this);
-#endif
+        RCF_UNUSED_VARIABLE(server);
     }
 
     void PublishingService::onServiceRemoved(RcfServer &server)
     {
-
-#if RCF_FEATURE_LEGACY==1
-        server.unbind<I_RequestSubscription>();
-#endif
-
+        RCF_UNUSED_VARIABLE(server);
     }
 
     void PublishingService::onServerStart(RcfServer &server)
@@ -211,7 +205,7 @@ namespace RCF {
     void PublishingService::addSubscriberTransport(
         RcfSession &rcfSession,
         const std::string &publisherName,
-        ClientTransportAutoPtrPtr clientTransportAutoPtrPtr)
+        ClientTransportUniquePtrPtr clientTransportUniquePtrPtr)
     {
         PublisherPtr publisherPtr;
 
@@ -232,13 +226,13 @@ namespace RCF {
             {
                 // This doesn't actually close anything, it just takes the session out of the server IO loop.
                 rcfSession.setCloseSessionAfterWrite(true);
-                (*clientTransportAutoPtrPtr)->setRcfSession(RcfSessionWeakPtr());
+                (*clientTransportUniquePtrPtr)->setRcfSession(RcfSessionWeakPtr());
 
                 std::size_t wireFilterCount = networkSession.mWireFilters.size();
                 RCF_ASSERT(wireFilterCount == 1 || wireFilterCount == 2);
                 RCF_UNUSED_VARIABLE(wireFilterCount);
 
-                ConnectedClientTransport& connClientTransport = static_cast<ConnectedClientTransport&>(**clientTransportAutoPtrPtr);
+                ConnectedClientTransport& connClientTransport = static_cast<ConnectedClientTransport&>(**clientTransportUniquePtrPtr);
                 connClientTransport.setWireFilters(networkSession.mWireFilters);
                 networkSession.mWireFilters.clear();
                 networkSession.setTransportFilters(std::vector<FilterPtr>());
@@ -248,7 +242,7 @@ namespace RCF {
                 static_cast<MulticastClientTransport &>(
                     publisherPtr->mRcfClientPtr->getClientStub().getTransport());
 
-            multicastClientTransport.addTransport(*clientTransportAutoPtrPtr);
+            multicastClientTransport.addTransport(std::move(*clientTransportUniquePtrPtr));
         }
     }
 
@@ -389,11 +383,10 @@ namespace RCF {
     void PublisherBase::init()
     {
         mRcfClientPtr->getClientStub().setTransport(
-            ClientTransportAutoPtr(new MulticastClientTransport));
+            ClientTransportUniquePtr(new MulticastClientTransport));
 
-        mRcfClientPtr->getClientStub().setRemoteCallSemantics(Oneway);
-        mRcfClientPtr->getClientStub().setTargetName("");
-        mRcfClientPtr->getClientStub().setTargetToken( Token());
+        mRcfClientPtr->getClientStub().setRemoteCallMode(Oneway);
+        mRcfClientPtr->getClientStub().setServerBindingName("");
     }
 
 } // namespace RCF

@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -22,6 +22,7 @@
 #include <RCF/AsioFwd.hpp>
 #include <RCF/AsioServerTransport.hpp>
 #include <RCF/Export.hpp>
+#include <RCF/Tchar.hpp>
 
 namespace RCF {
 
@@ -29,7 +30,7 @@ namespace RCF {
 
     // Win32NamedPipeNetworkSession
 
-    class Win32NamedPipeNetworkSession : public AsioNetworkSession
+    class RCF_EXPORT Win32NamedPipeNetworkSession : public AsioNetworkSession
     {
     public:
         Win32NamedPipeNetworkSession(
@@ -54,7 +55,7 @@ namespace RCF {
 
         void implClose();
 
-        ClientTransportAutoPtr implCreateClientTransport();
+        ClientTransportUniquePtr implCreateClientTransport();
 
         void implTransferNativeFrom(ClientTransport & clientTransport);
 
@@ -85,7 +86,7 @@ namespace RCF {
 
         AsioNetworkSessionPtr implCreateNetworkSession();
         void implOpen();
-        ClientTransportAutoPtr implCreateClientTransport(
+        ClientTransportUniquePtr implCreateClientTransport(
             const Endpoint &endpoint);
 
         tstring getPipeName() const;
@@ -105,13 +106,21 @@ namespace RCF {
         LPSECURITY_ATTRIBUTES           mpSec;
     };
 
+    /// Allows the server side of a Win32 named pipe to impersonate the client.
     class RCF_EXPORT Win32NamedPipeImpersonator
     {
     public:
-        Win32NamedPipeImpersonator();
+        /// Impersonates the named pipe client associated with the RcfSession. Impersonation lasts until revertToSelf() is called, or the Win32NamedPipeImpersonator object is destroyed.
+        Win32NamedPipeImpersonator(RcfSession& session);
+
         Win32NamedPipeImpersonator(Win32NamedPipeNetworkSession & pipeSession);
+        
+        /// Destroys the Win32NamedPipeImpersonator object, and ceases any impersonation.
         ~Win32NamedPipeImpersonator();
+
         void impersonate();
+
+        /// Ceases impersonation of the named pipe client.
         void revertToSelf() const;
 
     private:

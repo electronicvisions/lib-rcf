@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,28 +11,24 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
 #include <RCF/Schannel.hpp>
 
+#include <RCF/ClientStub.hpp>
 #include <RCF/Exception.hpp>
 #include <RCF/RcfServer.hpp>
 #include <RCF/SspiFilter.hpp>
 #include <RCF/ThreadLocalData.hpp>
 #include <RCF/Tools.hpp>
 #include <RCF/Win32Certificate.hpp>
+#include <RCF/Log.hpp>
 
 #include <wincrypt.h>
 #include <schnlsp.h>
-
-#ifdef __MINGW32__
-#ifndef CERT_STORE_ADD_USE_EXISTING
-#define CERT_STORE_ADD_USE_EXISTING                         2
-#endif
-#endif // __MINGW32__
 
 namespace RCF {
 
@@ -42,7 +38,7 @@ namespace RCF {
     {
         // encrypt the pre buffer to the write buffer
 
-        RCF_ASSERT_EQ(mContextState , AuthOkAck);
+        RCF_ASSERT(mContextState == AuthOkAck);
 
         SecPkgContext_Sizes sizes;
         getSft()->QueryContextAttributes(
@@ -100,14 +96,11 @@ namespace RCF {
 
         RCF_VERIFY(
             status == SEC_E_OK,
-            FilterException(
-                _RcfError_SspiEncrypt("EncryptMessage()"),
-                status,
-                RcfSubsystem_Os))(status);
-
-        RCF_ASSERT_EQ(rgsb[0].cbBuffer , cbHeader);
-        RCF_ASSERT_EQ(rgsb[1].cbBuffer , cbMsg);
-        RCF_ASSERT_LTEQ(rgsb[2].cbBuffer , cbTrailer);
+            Exception(RcfError_SspiEncrypt, "EncryptMessage()", osError(status)));
+            
+        RCF_ASSERT(rgsb[0].cbBuffer == cbHeader);
+        RCF_ASSERT(rgsb[1].cbBuffer == cbMsg);
+        RCF_ASSERT(rgsb[2].cbBuffer <= cbTrailer);
 
         cbTrailer               = rgsb[2].cbBuffer;
         cbPacket                = cbHeader + cbMsg + cbTrailer;
@@ -118,7 +111,7 @@ namespace RCF {
     {
         // decrypt read buffer in place
 
-        RCF_ASSERT_EQ(mContextState , AuthOkAck);
+        RCF_ASSERT(mContextState == AuthOkAck);
 
         BYTE *pMsg              = ((BYTE *) mReadBuffer);
         DWORD cbMsg             = static_cast<DWORD>(mReadBufferPos);
@@ -180,14 +173,11 @@ namespace RCF {
 
         RCF_VERIFY(
             status == SEC_E_OK,
-            FilterException(
-                _RcfError_SspiDecrypt("DecryptMessage()"),
-                status,
-                RcfSubsystem_Os))(status);
+            Exception(RcfError_SspiDecrypt, "DecryptMessage()", osError(status)));
 
-        RCF_ASSERT_EQ(rgsb[0].BufferType , SECBUFFER_STREAM_HEADER);
-        RCF_ASSERT_EQ(rgsb[1].BufferType , SECBUFFER_DATA);
-        RCF_ASSERT_EQ(rgsb[2].BufferType , SECBUFFER_STREAM_TRAILER);
+        RCF_ASSERT(rgsb[0].BufferType == SECBUFFER_STREAM_HEADER);
+        RCF_ASSERT(rgsb[1].BufferType == SECBUFFER_DATA);
+        RCF_ASSERT(rgsb[2].BufferType == SECBUFFER_STREAM_TRAILER);
 
         DWORD cbHeader          = rgsb[0].cbBuffer;
         DWORD cbData            = rgsb[1].cbBuffer;
@@ -203,10 +193,10 @@ namespace RCF {
 
     bool SspiServerFilter::doHandshakeSchannel()
     {
-        // use the block in the read buffer to proceed through the handshake procedure
+        // Use the block in the read buffer to proceed through the handshake procedure.
 
-        // lazy acquiring of implicit credentials
-        if (mImplicitCredentials && !mHaveCredentials)
+        // Lazy acquiring of implicit credentials.
+        if (!mHaveCredentials)
         {
             acquireCredentials();
         }
@@ -237,7 +227,7 @@ namespace RCF {
         ibd.pBuffers            = ib;
 
         DWORD contextRequirements = mContextRequirements;
-        if (mCertValidationCallback || mAutoCertValidation.size() > 0)
+        if ( mCertValidationCallback || mAutoCertValidation.size() > 0 )
         {
             // Need this to get the client to send the server a certificate.
             contextRequirements |= ASC_REQ_MUTUAL_AUTH;
@@ -287,7 +277,7 @@ namespace RCF {
         else if (ib[1].BufferType == SECBUFFER_EXTRA)
         {
             // We consider any extra data at this stage to be a protocol error.
-            Exception e(_RcfError_SspiHandshakeExtraData());
+            Exception e(RcfError_SspiHandshakeExtraData);
             RCF_THROW(e);
         }
 
@@ -304,7 +294,7 @@ namespace RCF {
         {
             // Authorization ok, send last handshake block to the client.
             mContextState = AuthOk;
-            RCF_ASSERT_GT(cbPacket , 0);
+            RCF_ASSERT(cbPacket > 0);
             resizeWriteBuffer(cbPacket);
             memcpy(mWriteBuffer, ob.pvBuffer, ob.cbBuffer);
             getSft()->FreeContextBuffer(ob.pvBuffer);
@@ -323,15 +313,48 @@ namespace RCF {
             }
 
             // If we have a custom validation callback, call it.
-            if (mCertValidationCallback)
+            if ( mCertValidationCallback )
             {
-                mCertValidationCallback(mRemoteCertPtr.get());
-            }
+                bool validated = mCertValidationCallback(mRemoteCertPtr.get());
+                if ( !validated )
+                {
+                    Exception e(RcfError_SslCertVerificationCustom);
+                    RCF_THROW(e);
+                }
+            }       
         }
         else
         {
-            // Authorization failed. Do nothing here, the connection will automatically close.
-            RCF_LOG_2() << "Schannel SSL handshake failed. Error: " + RCF::getOsErrorString(status);
+            std::string errorMsg;
+
+            // First check if the client has gotten its port numbers mixed up and sent us a HTTP message by mistake.
+            std::string msg(mReadBuffer, mReadBufferPos);
+            std::size_t linePos = msg.find('\n');
+            std::size_t httpPos = msg.find("HTTP");
+            if ( httpPos < linePos )
+            {
+                std::string body = "<html><body>Invalid protocol (use HTTPS).</body></html>";
+                std::string bodyLen = std::to_string(body.length());
+                std::string response =
+                    "HTTP/1.0 400 Bad Request\r\n"
+                    "X-RCFError: Invalid protocol (use HTTPS)\r\n"
+                    "Content-Type: text/html\r\n"
+                    "Content-Length: " + bodyLen + "\r\n"
+                    "Connection: Closed\r\n\r\n"
+                    + body;
+
+                errorMsg = response;
+            }
+            else
+            {
+                // Authorization failed.
+                RCF_LOG_2() << "Schannel SSL handshake failed. Error: " + RCF::osError(status);
+
+                errorMsg = "Schannel SSL handshake failed. Error: " + RCF::osError(status);
+            }
+
+            resizeWriteBuffer(errorMsg.length());
+            memcpy(mWriteBuffer, errorMsg.c_str(), errorMsg.length());
         }
 
         return true;
@@ -397,6 +420,37 @@ namespace RCF {
             &CtxtAttr,
             &Expiration);
 
+        if ( status == SEC_I_INCOMPLETE_CREDENTIALS )
+        {
+            // We're in here if the server has requested a client certificate but the client hasn't provided one.
+            // We proceed anyway, and let the server-side application code decide what to do.
+
+            contextRequirements |= ISC_REQ_USE_SUPPLIED_CREDS;
+
+            status = getSft()->InitializeSecurityContext(
+                &mCredentials,
+                mHaveContext ? &mContext : NULL,
+                (TCHAR *)target,
+                mContextRequirements,
+                0,
+                SECURITY_NATIVE_DREP,
+                mHaveContext ? &ibd : NULL,
+                0,
+                &mContext,
+                &obd,
+                &CtxtAttr,
+                &Expiration);
+        }
+
+        if ( status == SEC_E_INVALID_TOKEN )
+        {
+            // The data may be a plain text error message, so display it to the user.
+            std::size_t displayLen = RCF_MIN(std::size_t(1024), mReadBufferPos);
+            std::string msg(mReadBuffer, displayLen);
+            RCF::Exception e(RcfError_NonSSLResponse, msg);
+            throw e;
+        }
+
         switch (status)
         {
         case SEC_E_OK:
@@ -427,7 +481,7 @@ namespace RCF {
         else if (ib[1].BufferType == SECBUFFER_EXTRA)
         {
             // We consider any extra data at this stage to be a protocol error.
-            Exception e(_RcfError_SspiHandshakeExtraData());
+            Exception e(RcfError_SspiHandshakeExtraData);
             RCF_THROW(e);
         }
 
@@ -464,7 +518,7 @@ namespace RCF {
                 bool ok = mCertValidationCallback(mRemoteCertPtr.get());
                 if (!ok)
                 {
-                    Exception e( _RcfError_SslCertVerificationCustom() );
+                    Exception e( RcfError_SslCertVerificationCustom );
                     RCF_THROW(e);
                 }
             }
@@ -476,7 +530,7 @@ namespace RCF {
         }
         else
         {
-            Exception e(_RcfError_SspiAuthFailClient(), status);
+            Exception e(RcfError_SspiAuthFailClient, osError(status));
             RCF_THROW(e);
             return false;
         }
@@ -536,12 +590,8 @@ namespace RCF {
 
         if (status != SEC_E_OK)
         {
-            FilterException e(
-                _RcfError_Sspi("AcquireCredentialsHandle()"), 
-                status, 
-                RcfSubsystem_Os);
-
-            RCF_THROW(e)(mPkgInfo.Name)(status);
+            Exception e(RcfError_Sspi, "AcquireCredentialsHandle()", osError(status));
+            RCF_THROW(e);
         }
 
         mHaveCredentials = true;
@@ -554,7 +604,7 @@ namespace RCF {
             SspiServerFilter(UNISP_NAME, RCF_T(""), BoolSchannel)
     {
         CertificatePtr certificatePtr = server.getCertificate();
-        Win32CertificatePtr certificateBasePtr = boost::dynamic_pointer_cast<Win32Certificate>(certificatePtr);
+        Win32CertificatePtr certificateBasePtr = std::dynamic_pointer_cast<Win32Certificate>(certificatePtr);
         if (certificateBasePtr)
         {
             mLocalCertPtr = certificateBasePtr;
@@ -567,42 +617,71 @@ namespace RCF {
         mEnabledProtocols = enabledProtocols;
     }
 
-    SchannelFilterFactory::SchannelFilterFactory(
-        DWORD enabledProtocols,
-        ULONG contextRequirements) :
-            mContextRequirements(contextRequirements),
-            mEnabledProtocols(enabledProtocols)/*,
-            mEnableClientCertificateValidation(false)*/
+    static const ULONG DefaultSchannelContextRequirements =
+            ASC_REQ_SEQUENCE_DETECT 
+        |   ASC_REQ_REPLAY_DETECT 
+        |   ASC_REQ_CONFIDENTIALITY 
+        |   ASC_REQ_EXTENDED_ERROR 
+        |   ASC_REQ_ALLOCATE_MEMORY 
+        |   ASC_REQ_STREAM;
+
+    static const DWORD DefaultSchannelServerProtocols = 
+            SP_PROT_TLS1_2_SERVER 
+        /*| SP_PROT_TLS1_1_SERVER 
+        |   SP_PROT_TLS1_0_SERVER*/;
+
+    static const DWORD DefaultSchannelClientProtocols = 
+            SP_PROT_TLS1_2_CLIENT 
+        |   SP_PROT_TLS1_1_CLIENT 
+        |   SP_PROT_TLS1_0_CLIENT;
+
+    SchannelFilterFactory::SchannelFilterFactory()
     {
     }
 
     FilterPtr SchannelFilterFactory::createFilter(RcfServer & server)
     {
-        boost::shared_ptr<SchannelServerFilter> filterPtr(
-            new SchannelServerFilter(
-                server,
-                mEnabledProtocols,
-                mContextRequirements));
+        DWORD dwProtocols = server.getSchannelEnabledProtocols();
+        if (dwProtocols == 0)
+        {
+            dwProtocols = DefaultSchannelServerProtocols;
+        }
+
+        ULONG contextRequirements = server.getSchannelContextRequirements();
+        if (contextRequirements == 0)
+        {
+            contextRequirements = DefaultSchannelContextRequirements;
+        }
+
+        std::shared_ptr<SchannelServerFilter> filterPtr(
+            new SchannelServerFilter(server, dwProtocols, contextRequirements));
 
         return filterPtr;
     }
 
-    SchannelClientFilter::SchannelClientFilter(
-        ClientStub *            pClientStub,
-        DWORD                   enabledProtocols,
-        ULONG                   contextRequirements) :
+    SchannelClientFilter::SchannelClientFilter(ClientStub * pClientStub) :
             SspiClientFilter(
                 pClientStub,
-                Encryption, 
-                contextRequirements, 
+                Smp_Encryption,
+                0, 
                 UNISP_NAME, 
                 RCF_T(""),
                 BoolSchannel)
     {
-        mEnabledProtocols = enabledProtocols;
+        mEnabledProtocols = pClientStub->getSchannelEnabledProtocols();
+        if (mEnabledProtocols == 0)
+        {
+            mEnabledProtocols = DefaultSchannelClientProtocols;
+        }
+
+        mContextRequirements = pClientStub->getSchannelContextRequirements();
+        if (mContextRequirements == 0)
+        {
+            mContextRequirements = DefaultSchannelContextRequirements;
+        }
 
         CertificatePtr certificatePtr = pClientStub->getCertificate();
-        Win32CertificatePtr certificateBasePtr = boost::dynamic_pointer_cast<Win32Certificate>(certificatePtr);
+        Win32CertificatePtr certificateBasePtr = std::dynamic_pointer_cast<Win32Certificate>(certificatePtr);
         if (certificateBasePtr)
         {
             mLocalCertPtr = certificateBasePtr;
@@ -615,6 +694,11 @@ namespace RCF {
     Win32CertificatePtr SspiFilter::getPeerCertificate()
     {
         return mRemoteCertPtr;
-    }    
+    }
+
+    PCtxtHandle SspiFilter::getSecurityContext() const
+    {
+        return (PCtxtHandle) &mContext;
+    }
 
 } // namespace RCF

@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -24,7 +24,10 @@
 
 namespace RCF {
 
-    /// Represents a HTTPS endpoint.
+    /// Represents a HTTPS endpoint. 
+
+    /// RCF implements HTTPS endpoints with an HTTPS envelope around the native RCF protocol.
+    /// The primary use case for HttpsEndpoint is client/server communication that may need to pass through forward or reverse HTTP proxies.
     class RCF_EXPORT HttpsEndpoint : public TcpEndpoint
     {
     public:
@@ -42,8 +45,8 @@ namespace RCF {
         /// Returns a string representation of the HTTP endpoint.
         std::string asString() const;
 
-        ServerTransportAutoPtr createServerTransport() const;
-        ClientTransportAutoPtr createClientTransport() const;
+        ServerTransportUniquePtr createServerTransport() const;
+        ClientTransportUniquePtr createClientTransport() const;
         EndpointPtr clone() const;
     };
 

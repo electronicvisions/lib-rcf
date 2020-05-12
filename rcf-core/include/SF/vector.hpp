@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,12 +19,11 @@
 #ifndef INCLUDE_SF_VECTOR_HPP
 #define INCLUDE_SF_VECTOR_HPP
 
+#include <type_traits>
 #include <vector>
 
 #include <SF/Serializer.hpp>
 #include <SF/SerializeStl.hpp>
-
-#include <boost/type_traits.hpp>
 
 namespace SF {
 
@@ -57,10 +56,10 @@ namespace SF {
         // Don't need to cover the case where T is a bool, as vector<bool> has
         // its own serialize() function (see below).
 
-        const bool IsBool = boost::is_same<T, bool>::value;
-        BOOST_STATIC_ASSERT( !IsBool );
+        const bool IsBool = std::is_same<T, bool>::value;
+        static_assert( !IsBool, "This serialization function cannot be used for vector<bool>." );
 
-        typedef typename boost::is_fundamental<T>::type type;
+        typedef typename std::is_fundamental<T>::type type;
         serializeVector(ar, vec, (type *) 0);
     }
 
@@ -73,9 +72,9 @@ namespace SF {
         virtual ~I_VecWrapper() {}
 
         virtual void            resize(std::size_t newSize) = 0;
-        virtual boost::uint32_t size() = 0;
+        virtual std::uint32_t size() = 0;
         virtual char *          addressOfElement(std::size_t idx) = 0;
-        virtual boost::uint32_t sizeofElement() = 0;
+        virtual std::uint32_t sizeofElement() = 0;
     };
 
     template<typename Vec>
@@ -91,9 +90,9 @@ namespace SF {
             mVec.resize(newSize);
         }
 
-        boost::uint32_t size()
+        std::uint32_t size()
         {
-            return static_cast<boost::uint32_t>(mVec.size());
+            return static_cast<std::uint32_t>(mVec.size());
         }
 
         char * addressOfElement(std::size_t idx)
@@ -101,7 +100,7 @@ namespace SF {
             return reinterpret_cast<char *>( &mVec[idx] );
         }
 
-        boost::uint32_t sizeofElement()
+        std::uint32_t sizeofElement()
         {
             typedef typename Vec::value_type ValueType;
             return sizeof(ValueType);

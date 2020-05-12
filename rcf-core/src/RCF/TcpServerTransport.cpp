@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,10 +19,13 @@
 #include <RCF/TcpServerTransport.hpp>
 
 #include <RCF/Asio.hpp>
+#include <RCF/Enums.hpp>
+#include <RCF/Exception.hpp>
 #include <RCF/IpAddress.hpp>
 #include <RCF/TcpClientTransport.hpp>
 #include <RCF/TcpEndpoint.hpp>
 #include <RCF/TimedBsdSockets.hpp>
+#include <RCF/Log.hpp>
 
 namespace RCF {
 
@@ -86,6 +89,14 @@ namespace RCF {
     {
     }
 
+    TcpNetworkSession::~TcpNetworkSession()
+    {
+        // Have to call this explicitly, or else destructors will destroy this class 
+        // before RcfSession runs the callbacks.
+
+        runOnDestroyCallbacks();
+    }
+
     const RemoteAddress & TcpNetworkSession::implGetRemoteAddress()
     {
         return mIpAddress;
@@ -122,7 +133,7 @@ namespace RCF {
         if (mWriteCounter > 1)
         {
             // Put a breakpoint here to catch write buffer fragmentation.
-            mWriteCounter = mWriteCounter;
+            RCF_LOG_4()(mWriteCounter) << "Detected multiple outgoing write buffers.";
         }
 
         RCF_LOG_4()(RCF::lengthByteBuffers(buffers))
@@ -161,12 +172,14 @@ namespace RCF {
         TcpAcceptor & tcpAcceptor = 
             static_cast<TcpAcceptor &>(mTransport.getAcceptor());
 
+        using std::placeholders::_1;
+
         tcpAcceptor.mAcceptor.async_accept(
             *mSocketPtr,
-            boost::bind(
+            std::bind(
                 &AsioNetworkSession::onAcceptCompleted,
                 sharedFromThis(),
-                ASIO_NS::placeholders::error));
+                _1));// ASIO_NS::placeholders::error));
     }
 
     bool TcpNetworkSession::implOnAccept()
@@ -200,7 +213,7 @@ namespace RCF {
         const int BufferSize = 8*1024;
         char buffer[BufferSize];
         while (recv(fd, buffer, BufferSize, 0) > 0);
-#ifdef BOOST_WINDOWS
+#ifdef RCF_WINDOWS
         int ret = shutdown(fd, SD_BOTH);
 #else
         int ret = shutdown(fd, SHUT_RDWR);
@@ -216,9 +229,9 @@ namespace RCF {
         return isFdConnected(fd);
     }
 
-    ClientTransportAutoPtr TcpNetworkSession::implCreateClientTransport()
+    ClientTransportUniquePtr TcpNetworkSession::implCreateClientTransport()
     {
-        std::auto_ptr<TcpClientTransport> tcpClientTransportPtr(
+        std::unique_ptr<TcpClientTransport> tcpClientTransportPtr(
             new TcpClientTransport(mSocketPtr));
 
         ASIO_NS::ip::tcp::endpoint endpoint = 
@@ -227,7 +240,7 @@ namespace RCF {
         IpAddress ipAddress = boostToRcfIpAdress(endpoint);
         tcpClientTransportPtr->setRemoteAddr(ipAddress);
 
-        return ClientTransportAutoPtr(tcpClientTransportPtr.release());
+        return ClientTransportUniquePtr(tcpClientTransportPtr.release());
     }
 
     void TcpNetworkSession::implTransferNativeFrom(ClientTransport & clientTransport)
@@ -238,7 +251,7 @@ namespace RCF {
         if (pTcpClientTransport == NULL)
         {
             Exception e("Incompatible client transport.");
-            RCF_THROW(e)(typeid(clientTransport));
+            RCF_THROW(e);
         }
 
         TcpClientTransport & tcpClientTransport = *pTcpClientTransport;
@@ -301,7 +314,7 @@ namespace RCF {
             return;
         }
 
-        RCF_ASSERT_EQ(mAcceptorFd , -1);
+        RCF_ASSERT(mAcceptorFd == -1);
 
         if (mIpAddress.getPort() != -1)
         {
@@ -315,7 +328,7 @@ namespace RCF {
             int ret = 0;
             int err = 0;
 
-#ifdef BOOST_WINDOWS
+#ifdef RCF_WINDOWS
             bool runningOnWindows = true;
 #else
             bool runningOnWindows = false;
@@ -331,10 +344,7 @@ namespace RCF {
             
                 RCF_VERIFY(
                     ret ==  0,
-                    Exception(
-                        _RcfError_Socket("setsockopt() with SO_REUSEADDR"),
-                        err,
-                        RcfSubsystem_Os));
+                    Exception(RcfError_Socket, "setsockopt() with SO_REUSEADDR", err));
             }
 
             ret = ::bind(
@@ -347,13 +357,13 @@ namespace RCF {
                 err = Platform::OS::BsdSockets::GetLastError();
                 if (err == Platform::OS::BsdSockets::ERR_EADDRINUSE)
                 {
-                    Exception e(_RcfError_PortInUse(mIpAddress.getIp(), mIpAddress.getPort()), err, RcfSubsystem_Os, "bind() failed");
-                    RCF_THROW(e)(mAcceptorFd);
+                    Exception e(RcfError_PortInUse, mIpAddress.getIp(), mIpAddress.getPort());
+                    RCF_THROW(e);
                 }
                 else
                 {
-                    Exception e(_RcfError_SocketBind(mIpAddress.getIp(), mIpAddress.getPort()), err, RcfSubsystem_Os, "bind() failed");
-                    RCF_THROW(e)(mAcceptorFd);
+                    Exception e(RcfError_SocketBind, mIpAddress.getIp(), mIpAddress.getPort(), osError(err));
+                    RCF_THROW(e);
                 }
             }
 
@@ -363,7 +373,7 @@ namespace RCF {
             if (ret < 0)
             {
                 err = Platform::OS::BsdSockets::GetLastError();
-                Exception e(_RcfError_Socket("listen()"), err, RcfSubsystem_Os);
+                Exception e(RcfError_Socket, "listen()", osError(err));
                 RCF_THROW(e);
             }
 
@@ -403,16 +413,16 @@ namespace RCF {
         }
     }
 
-    ClientTransportAutoPtr TcpServerTransport::implCreateClientTransport(
+    ClientTransportUniquePtr TcpServerTransport::implCreateClientTransport(
         const Endpoint &endpoint)
     {
         const TcpEndpoint &tcpEndpoint = 
             dynamic_cast<const TcpEndpoint &>(endpoint);
 
-        ClientTransportAutoPtr clientTransportAutoPtr(
+        ClientTransportUniquePtr clientTransportUniquePtr(
             new TcpClientTransport(tcpEndpoint.getIpAddress()));
 
-        return clientTransportAutoPtr;
+        return clientTransportUniquePtr;
     }
 
 } // namespace RCF

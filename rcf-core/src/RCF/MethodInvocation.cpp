@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,23 +11,25 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
 #include <RCF/MethodInvocation.hpp>
 
+#include <string.h>
 #include <vector>
 
-#include <boost/mpl/assert.hpp>
-
 #include <RCF/CurrentSession.hpp>
+#include <RCF/Filter.hpp>
 #include <RCF/RcfServer.hpp>
 #include <RCF/RcfSession.hpp>
 #include <RCF/SerializationProtocol.hpp>
 #include <RCF/Service.hpp>
 #include <RCF/ThreadLocalData.hpp>
+
+#include <RCF/Log.hpp>
 
 #include <SF/Encoding.hpp>
 
@@ -86,26 +88,21 @@ namespace RCF {
     //*************************************
     // MethodInvocationRequest
 
-    RemoteCallRequest::RemoteCallRequest(const MethodInvocationRequest & req) :
+    RemoteCallInfo::RemoteCallInfo(const MethodInvocationRequest & req) :
         mServantBindingName(req.mService),
-        mInterfaceName(req.mSubInterface),
         mFnId(req.mFnId),
         mOneway(req.mOneway),
         mSerializationProtocol(req.mSerializationProtocol),
         mRuntimeVersion(req.mRuntimeVersion),
         mArchiveVersion(req.mArchiveVersion),
         mPingBackIntervalMs(req.mPingBackIntervalMs),
-        mUseNativeWstringSerialization(req.mUseNativeWstringSerialization),
         mEnableSfPointerTracking(req.mEnableSfPointerTracking)
     {
     }
 
     MethodInvocationRequest::MethodInvocationRequest() :
-        mToken(),
-        mSubInterface(),
         mFnId(0),
         mSerializationProtocol(DefaultSerializationProtocol),
-        mMarshalingProtocol(DefaultMarshalingProtocol),
         mOneway(false),
         mClose(false),
         mService(),
@@ -113,41 +110,34 @@ namespace RCF {
         mIgnoreRuntimeVersion(false),
         mPingBackIntervalMs(0),
         mArchiveVersion(0),
-        mUseNativeWstringSerialization(false),
         mEnableSfPointerTracking(false)
     {
     }
     
     void MethodInvocationRequest::init(
-        const Token &           token,
         const std::string &     service,
-        const std::string &     subInterface,
         int                     fnId,
         SerializationProtocol   serializationProtocol,
-        MarshalingProtocol      marshalingProtocol,
         bool                    oneway,
         bool                    close,
         int                     runtimeVersion,
         bool                    ignoreRuntimeVersion,
-        boost::uint32_t         pingBackIntervalMs,
+        std::uint32_t           pingBackIntervalMs,
         int                     archiveVersion,
-        bool                    useNativeWstringSerialization,
-        bool                    enableSfPointerTracking)
+        bool                    enableSfPointerTracking,
+        bool                    enableNativeWstringSerialization)
     {
-        mToken                      = token;
-        mService                    = service;
-        mSubInterface               = subInterface;
-        mFnId                       = fnId;
-        mSerializationProtocol      = serializationProtocol;
-        mMarshalingProtocol         = marshalingProtocol;
-        mOneway                     = oneway;
-        mClose                      = close;
-        mRuntimeVersion             = runtimeVersion;
-        mIgnoreRuntimeVersion       = ignoreRuntimeVersion;
-        mPingBackIntervalMs         = pingBackIntervalMs;
-        mArchiveVersion             = archiveVersion;
-        mUseNativeWstringSerialization = useNativeWstringSerialization;
-        mEnableSfPointerTracking    = enableSfPointerTracking;
+        mService                            = service;
+        mFnId                               = fnId;
+        mSerializationProtocol              = serializationProtocol;
+        mOneway                             = oneway;
+        mClose                              = close;
+        mRuntimeVersion                     = runtimeVersion;
+        mIgnoreRuntimeVersion               = ignoreRuntimeVersion;
+        mPingBackIntervalMs                 = pingBackIntervalMs;
+        mArchiveVersion                     = archiveVersion;
+        mEnableSfPointerTracking            = enableSfPointerTracking;
+        mEnableNativeWstringSerialization   = enableNativeWstringSerialization;
     }
 
     void MethodInvocationRequest::init(
@@ -161,30 +151,17 @@ namespace RCF {
         const MethodInvocationRequest & rhs)
     {
         init(
-            rhs.mToken, 
             rhs.mService, 
-            rhs.mSubInterface, 
             rhs.mFnId, 
             rhs.mSerializationProtocol,
-            rhs.mMarshalingProtocol, 
             rhs.mOneway, 
             rhs.mClose, 
             rhs.mRuntimeVersion, 
             rhs.mIgnoreRuntimeVersion,
             rhs.mPingBackIntervalMs, 
             rhs.mArchiveVersion, 
-            rhs.mUseNativeWstringSerialization,
-            rhs.mEnableSfPointerTracking);
-    }
-
-    Token MethodInvocationRequest::getToken() const
-    {
-        return mToken;
-    }
-
-    const std::string & MethodInvocationRequest::getSubInterface() const
-    {
-        return mSubInterface;
+            rhs.mEnableSfPointerTracking,
+            rhs.mEnableNativeWstringSerialization);
     }
 
     int MethodInvocationRequest::getFnId() const
@@ -246,11 +223,13 @@ namespace RCF {
             
         bool ignoreRuntimeVersion = false;
 
+        //bool mUseNativeWstringSerialization = true;
+
         // For backwards compatibility.
         mEnableSfPointerTracking = true;
 
         SF::decodeInt(msgId, buffer, pos);
-        RCF_VERIFY(msgId == Descriptor_Request, Exception(_RcfError_Decoding()))(msgId);
+        RCF_VERIFY(msgId == Descriptor_Request, Exception(RcfError_Decoding));
         SF::decodeInt(messageVersion, buffer, pos);
             
         if (messageVersion > 7)
@@ -260,7 +239,10 @@ namespace RCF {
 
         SF::decodeString(mService, buffer, pos);
         SF::decodeInt(tokenId, buffer, pos);
-        SF::decodeString(mSubInterface, buffer, pos);
+
+        std::string subInterface; // Unused
+        SF::decodeString(subInterface, buffer, pos);
+
         SF::decodeInt(mFnId, buffer, pos);
             
         int sp = 0;
@@ -304,7 +286,7 @@ namespace RCF {
             SF::decodeInt(mPingBackIntervalMs, buffer, pos);
             SF::decodeInt(mArchiveVersion, buffer, pos);
             SF::decodeByteBuffer(mRequestUserData, buffer, pos);
-            SF::decodeBool(mUseNativeWstringSerialization, buffer, pos);
+            SF::decodeBool(mEnableNativeWstringSerialization, buffer, pos);
         }
         else if (messageVersion == 6)
         {
@@ -313,7 +295,7 @@ namespace RCF {
             SF::decodeInt(mPingBackIntervalMs, buffer, pos);
             SF::decodeInt(mArchiveVersion, buffer, pos);
             SF::decodeByteBuffer(mRequestUserData, buffer, pos);
-            SF::decodeBool(mUseNativeWstringSerialization, buffer, pos);
+            SF::decodeBool(mEnableNativeWstringSerialization, buffer, pos);
             SF::decodeBool(mEnableSfPointerTracking, buffer, pos);
         }
         else if (messageVersion == 7)
@@ -323,17 +305,12 @@ namespace RCF {
             SF::decodeInt(mPingBackIntervalMs, buffer, pos);
             SF::decodeInt(mArchiveVersion, buffer, pos);
             SF::decodeByteBuffer(mRequestUserData, buffer, pos);
-            SF::decodeBool(mUseNativeWstringSerialization, buffer, pos);
+            SF::decodeBool(mEnableNativeWstringSerialization, buffer, pos);
             SF::decodeBool(mEnableSfPointerTracking, buffer, pos);
             SF::decodeByteBuffer(mOutOfBandRequest, buffer, pos);
         }
             
-        mToken = Token(tokenId);            
-
-        if (mSubInterface.empty())
-        {
-            mSubInterface = mService;
-        }
+        RCF_UNUSED_VARIABLE(tokenId);
 
         // Check runtime version.
         if (mRuntimeVersion > rcfServer.getRuntimeVersion())
@@ -346,7 +323,7 @@ namespace RCF {
         }
 
         // Check archive version.
-        boost::uint32_t serverArchiveVersion = rcfServer.getArchiveVersion();
+        std::uint32_t serverArchiveVersion = rcfServer.getArchiveVersion();
         if (serverArchiveVersion && mArchiveVersion > serverArchiveVersion)
         {
             return false;
@@ -355,8 +332,6 @@ namespace RCF {
         {
             rcfSessionPtr->setArchiveVersion(mArchiveVersion);
         }
-
-        rcfSessionPtr->setNativeWstringSerialization(mUseNativeWstringSerialization);
 
         messageBody = ByteBuffer(buffer, pos);
 
@@ -397,7 +372,7 @@ namespace RCF {
         }
 
         std::size_t pos = 0;
-        BOOST_STATIC_ASSERT(0 <= Descriptor_Response && Descriptor_Response < 255);
+        static_assert(0 <= Descriptor_Response && Descriptor_Response < 255, "Invalid message descriptor.");
         SF::encodeInt(Descriptor_Response, *mVecPtr, pos);
         SF::encodeInt(messageVersion, *mVecPtr, pos);
         SF::encodeBool(isException, *mVecPtr, pos);
@@ -476,11 +451,10 @@ namespace RCF {
         SF::encodeInt(Descriptor_Request, *mVecPtr, pos);
         SF::encodeInt(messageVersion, *mVecPtr, pos);
         SF::encodeString(mService, *mVecPtr, pos);
-        SF::encodeInt(mToken.getId(), *mVecPtr, pos);
+        SF::encodeInt(0, *mVecPtr, pos);
 
-        mSubInterface == mService ?
-            SF::encodeString(EmptyString, *mVecPtr, pos) :
-            SF::encodeString(mSubInterface, *mVecPtr, pos);
+        // mSubInterface - unused
+        SF::encodeString(EmptyString, *mVecPtr, pos);
 
         SF::encodeInt(mFnId, *mVecPtr, pos);
         SF::encodeInt(mSerializationProtocol, *mVecPtr, pos);
@@ -520,7 +494,7 @@ namespace RCF {
             SF::encodeInt(mPingBackIntervalMs, *mVecPtr, pos);
             SF::encodeInt(mArchiveVersion, *mVecPtr, pos);
             SF::encodeByteBuffer(mRequestUserData, *mVecPtr, pos);
-            SF::encodeBool(mUseNativeWstringSerialization, *mVecPtr, pos);
+            SF::encodeBool(mEnableNativeWstringSerialization, *mVecPtr, pos);
         }
         else if (messageVersion == 6)
         {
@@ -529,7 +503,7 @@ namespace RCF {
             SF::encodeInt(mPingBackIntervalMs, *mVecPtr, pos);
             SF::encodeInt(mArchiveVersion, *mVecPtr, pos);
             SF::encodeByteBuffer(mRequestUserData, *mVecPtr, pos);
-            SF::encodeBool(mUseNativeWstringSerialization, *mVecPtr, pos);
+            SF::encodeBool(mEnableNativeWstringSerialization, *mVecPtr, pos);
             SF::encodeBool(mEnableSfPointerTracking, *mVecPtr, pos);
         }
         else if (messageVersion == 7)
@@ -539,7 +513,7 @@ namespace RCF {
             SF::encodeInt(mPingBackIntervalMs, *mVecPtr, pos);
             SF::encodeInt(mArchiveVersion, *mVecPtr, pos);
             SF::encodeByteBuffer(mRequestUserData, *mVecPtr, pos);
-            SF::encodeBool(mUseNativeWstringSerialization, *mVecPtr, pos);
+            SF::encodeBool(mEnableNativeWstringSerialization, *mVecPtr, pos);
             SF::encodeBool(mEnableSfPointerTracking, *mVecPtr, pos);
             SF::encodeByteBuffer(mOutOfBandRequest, *mVecPtr, pos);
         }
@@ -583,7 +557,7 @@ namespace RCF {
            
         if (msgId == Descriptor_Error)
         {
-            RCF_VERIFY(ver <= 1, Exception(_RcfError_Decoding()))(ver);
+            RCF_VERIFY(ver <= 1, Exception(RcfError_Decoding));
 
             int error = 0;
             SF::decodeInt(error, buffer, pos);
@@ -591,8 +565,8 @@ namespace RCF {
             response.mError = true;
             response.mErrorCode = error;
             if (
-                error == RcfError_VersionMismatch ||
-                error == RcfError_PingBack)
+                error == RcfError_VersionMismatch_Id ||
+                error == RcfError_PingBack_Id )
             {
                 SF::decodeInt(response.mArg0, buffer, pos);
 
@@ -604,8 +578,8 @@ namespace RCF {
         }
         else
         {
-            RCF_VERIFY(msgId == Descriptor_Response, Exception(_RcfError_Decoding()))(msgId);
-            RCF_VERIFY(ver <= 3, Exception(_RcfError_Decoding()))(ver);
+            RCF_VERIFY(msgId == Descriptor_Response, Exception(RcfError_Decoding));
+            RCF_VERIFY(ver <= 3, Exception(RcfError_Decoding));
 
             // For backwards compatibility.
             response.mEnableSfPointerTracking = true;
@@ -638,19 +612,14 @@ namespace RCF {
         buffer = ByteBuffer(buffer, pos);
     }
 
-    StubEntryPtr MethodInvocationRequest::locateStubEntryPtr(
+    RcfClientPtr MethodInvocationRequest::locateStubEntryPtr(
         RcfServer &rcfServer)
     {
-        Token targetToken = getToken();
         const std::string & targetName = getService();
-        StubEntryPtr stubEntryPtr;
+        RcfClientPtr stubEntryPtr;
         RcfSession * pRcfSession = getTlsRcfSessionPtr();
 
-        if (targetToken != Token())
-        {
-            stubEntryPtr = rcfServer.findStubEntryForToken(targetToken);
-        }
-        else if (!targetName.empty())
+        if (targetName.size() > 0)
         {
             ReadLock readLock(rcfServer.mStubMapMutex);
             const std::string & servantName = getService();
@@ -706,9 +675,9 @@ namespace RCF {
         return mArg1;
     }
 
-    std::auto_ptr<RemoteException> MethodInvocationResponse::getExceptionPtr()
+    std::unique_ptr<RemoteException> MethodInvocationResponse::getExceptionPtr()
     {
-        return mExceptionPtr;
+        return std::move(mExceptionPtr);
     }
 
     bool MethodInvocationResponse::getEnableSfPointerTracking() const
@@ -743,7 +712,7 @@ namespace RCF {
 
             std::size_t unfilteredLen = lengthByteBuffers(buffers);
             bool ok = filterData(buffers, filteredBuffers, filters);
-            RCF_VERIFY(ok, Exception(_RcfError_FilterMessage()));
+            RCF_VERIFY(ok, Exception(RcfError_FilterMessage));
 
             message.resize(0);
 
@@ -755,9 +724,9 @@ namespace RCF {
             if (filteredBuffers.empty())
             {
                 // Can happen if buffers has e.g. a single zero length buffer.
-                RCF_ASSERT_EQ(lengthByteBuffers(buffers) , 0);
+                RCF_ASSERT(lengthByteBuffers(buffers) == 0);
                 RCF_ASSERT(!buffers.empty());
-                RCF_ASSERT_EQ(buffers.front().getLength() , 0);
+                RCF_ASSERT(buffers.front().getLength() == 0);
                 message.push_back(buffers.front());
             }
 
@@ -776,7 +745,7 @@ namespace RCF {
 
             RCF_VERIFY(
                 filters.size() <= 10,
-                Exception(_RcfError_FilterCount(filters.size(), 10)));
+                Exception(RcfError_FilterCount, filters.size(), 10));
 
             // Number of filters.
             SF::encodeInt(static_cast<int>(filters.size()), byteBuffer, pos);
@@ -799,16 +768,15 @@ namespace RCF {
             // Copy the filter header into the left margin of the first buffer.
             std::size_t headerLen = pos;
             
-            RCF_ASSERT_LTEQ(headerLen, BufferLen);
+            RCF_ASSERT(headerLen <= BufferLen);
             
             RCF_ASSERT(
                 !message.empty() &&
-                message.front().getLeftMargin() >= headerLen)
-                (message.front().getLeftMargin())(headerLen);
+                message.front().getLeftMargin() >= headerLen);
 
             if ( headerLen > BufferLen )
             {
-                RCF_THROW(_RcfError_MessageHeaderEncoding(BufferLen, headerLen));
+                RCF_THROW( Exception(RcfError_MessageHeaderEncoding, BufferLen, headerLen) );
             }
 
             ByteBuffer &front = message.front();
@@ -845,8 +813,6 @@ namespace RCF {
         std::size_t pos = 0;
         std::size_t unfilteredLen = 0;
 
-        mMarshalingProtocol = Mp_Rcf;
-
         char * const pch = (char*) message.getPtr() ;
         if ( message.getLength() == 0 )
         {
@@ -856,15 +822,15 @@ namespace RCF {
         {
             int descriptor = 0;
             SF::decodeInt(descriptor, message, pos);
-            RCF_VERIFY(descriptor == Descriptor_FilteredPayload, Exception(_RcfError_Decoding()))(descriptor);
+            RCF_VERIFY(descriptor == Descriptor_FilteredPayload, Exception(RcfError_Decoding));
 
             int version = 0;
             SF::decodeInt(version, message, pos);
-            RCF_VERIFY(version == 0, Exception(_RcfError_Decoding()))(version);
+            RCF_VERIFY(version == 0, Exception(RcfError_Decoding));
 
             int filterCount = 0;
             SF::decodeInt(filterCount, message, pos);
-            RCF_VERIFY(0 < filterCount && filterCount <= 10, Exception(_RcfError_Decoding()))(filterCount);
+            RCF_VERIFY(0 < filterCount && filterCount <= 10, Exception(RcfError_Decoding));
 
             filterIds.resize(0);
             for (int i=0; i<filterCount; ++i)
@@ -876,11 +842,11 @@ namespace RCF {
 
             int clearLen = 0;
             SF::decodeInt(clearLen, message, pos);
-            RCF_VERIFY(0 <= clearLen, Exception(_RcfError_Decoding()))(clearLen);
+            RCF_VERIFY(0 <= clearLen, Exception(RcfError_Decoding));
                
             int unfilteredLen_ = 0;
             SF::decodeInt(unfilteredLen_, message, pos);
-            RCF_VERIFY(0 <= unfilteredLen_, Exception(_RcfError_Decoding()))(unfilteredLen_);
+            RCF_VERIFY(0 <= unfilteredLen_, Exception(RcfError_Decoding));
             unfilteredLen = unfilteredLen_;
         }
 
@@ -909,24 +875,26 @@ namespace RCF {
                 {
                     filters.clear();
 
+                    using namespace std::placeholders;
+
                     std::transform(
                         filterIds.begin(),
                         filterIds.end(),
                         std::back_inserter(filters),
-                        boost::bind( &RcfServer::createFilter, pRcfServer, _1) );
+                        std::bind( &RcfServer::createFilter, pRcfServer, _1) );
 
                     if (
-                        std::find_if(
+                        std::find(
                             filters.begin(),
                             filters.end(),
-                            SharedPtrIsNull()) == filters.end())
+                            FilterPtr()) == filters.end() )
                     {
                         connectFilters(filters);
                     }
                     else
                     {
                         // TODO: better not to throw exceptions here?
-                        Exception e(_RcfError_UnknownFilter());
+                        Exception e(RcfError_UnknownFilter);
                         RCF_THROW(e);
                     }
                 }
@@ -964,15 +932,49 @@ namespace RCF {
                         unfilteredLen,
                         existingFilters);
 
-                    RCF_VERIFY(bRet, Exception(_RcfError_UnfilterMessage()));
+                    RCF_VERIFY(bRet, Exception(RcfError_UnfilterMessage));
                 }
             }
             else
             {
-                Exception e(_RcfError_PayloadFilterMismatch());
+                Exception e(RcfError_PayloadFilterMismatch);
                 RCF_THROW(e);
             }
         }
+    }
+
+    RCF::MemOstream& operator<<(RCF::MemOstream& os, const MethodInvocationRequest& r)
+    {
+        os
+            << NAMEVALUE(r.mService)
+            << NAMEVALUE(r.mFnId)
+            << NAMEVALUE(r.mSerializationProtocol)
+            << NAMEVALUE(r.mOneway)
+            << NAMEVALUE(r.mClose)           
+            << NAMEVALUE(r.mRuntimeVersion)
+            << NAMEVALUE(r.mPingBackIntervalMs)
+            << NAMEVALUE(r.mArchiveVersion);
+
+        return os;
+    }
+
+    RCF::MemOstream& operator<<(RCF::MemOstream& os, const MethodInvocationResponse& r)
+    {
+        os << NAMEVALUE(r.mException);
+        if ( r.mExceptionPtr.get() )
+        {
+            os << NAMEVALUE(r.mExceptionPtr->getErrorString());
+        }
+
+        os << NAMEVALUE(r.mError);
+        if ( r.mError )
+        {
+            os << NAMEVALUE(r.mErrorCode);
+            os << NAMEVALUE(r.mArg0);
+            os << NAMEVALUE(r.mArg1);
+        }
+
+        return os;
     }
 
     // Out of band messages.
@@ -989,7 +991,7 @@ namespace RCF {
 
     void OobMessage::encodeResponse(ByteBuffer & buffer)
     {
-        boost::shared_ptr< std::vector<char> > vecPtr( new std::vector<char>(50) );
+        std::shared_ptr< std::vector<char> > vecPtr( new std::vector<char>(50) );
         std::size_t pos = 0;
         encodeResponseCommon(vecPtr, pos);
         vecPtr->resize(pos);
@@ -1033,13 +1035,13 @@ namespace RCF {
         int msgVersion = 0;
 
         SF::decodeInt(magicNumber, buffer, pos);
-        RCF_VERIFY(magicNumber == 66, Exception(_RcfError_Decoding()));
+        RCF_VERIFY(magicNumber == 66, Exception(RcfError_Decoding));
 
         SF::decodeInt(msgType, buffer, pos);
-        RCF_VERIFY(msgType == getMessageType(), Exception(_RcfError_Decoding()));
+        RCF_VERIFY(msgType == getMessageType(), Exception(RcfError_Decoding));
 
         SF::decodeInt(msgVersion, buffer, pos);
-        RCF_VERIFY(msgVersion == mRuntimeVersion, Exception(_RcfError_Decoding()));
+        RCF_VERIFY(msgVersion == mRuntimeVersion, Exception(RcfError_Decoding));
 
         SF::decodeInt(mResponseError, buffer, pos);
         SF::decodeString(mResponseErrorString, buffer, pos);
@@ -1054,7 +1056,7 @@ namespace RCF {
         int msgVersion = 0;
 
         SF::decodeInt(magicNumber, buffer, pos);
-        RCF_VERIFY(magicNumber == 65, Exception(_RcfError_Decoding()));
+        RCF_VERIFY(magicNumber == 65, Exception(RcfError_Decoding));
 
         SF::decodeInt(msgType, buffer, pos);
         SF::decodeInt(msgVersion, buffer, pos);
@@ -1074,8 +1076,12 @@ namespace RCF {
             msgPtr.reset( new OobRequestSubscription(msgVersion) );
             break;
 
+        case Omt_RequestProxyConnection:
+            msgPtr.reset( new OobRequestProxyConnection(msgVersion) );
+            break;
+
         default:
-            RCF_THROW( Exception(_RcfError_Decoding()) );
+            RCF_THROW( Exception(RcfError_Decoding) );
         }
 
         msgPtr->decodeRequest(buffer, pos);
@@ -1108,19 +1114,16 @@ namespace RCF {
 
     void OobRequestTransportFilters::encodeRequest(ByteBuffer & buffer)
     {
-        boost::shared_ptr< std::vector<char> > vecPtr( new std::vector<char>(50) );
+        std::shared_ptr< std::vector<char> > vecPtr( new std::vector<char>(50) );
         std::size_t pos = 0;
 
         encodeRequestCommon(vecPtr, pos);
 
-        if (mRuntimeVersion <= 12)
+        int filterCount = static_cast<int>(mFilterIds.size());
+        SF::encodeInt(filterCount, *vecPtr, pos);
+        for (std::size_t i=0; i<mFilterIds.size(); ++i)
         {
-            int filterCount = static_cast<int>(mFilterIds.size());
-            SF::encodeInt(filterCount, *vecPtr, pos);
-            for (std::size_t i=0; i<mFilterIds.size(); ++i)
-            {
-                SF::encodeInt(mFilterIds[i], *vecPtr, pos);
-            }
+            SF::encodeInt(mFilterIds[i], *vecPtr, pos);
         }
 
         vecPtr->resize(pos);
@@ -1129,19 +1132,16 @@ namespace RCF {
 
     void OobRequestTransportFilters::decodeRequest(const ByteBuffer & buffer, std::size_t & pos)
     {
-        if (mRuntimeVersion <= 12)
-        {
-            int filterCount = 0;
-            SF::decodeInt(filterCount, buffer, pos);
-            RCF_VERIFY(filterCount <= 10, Exception(_RcfError_Decoding()));
+        int filterCount = 0;
+        SF::decodeInt(filterCount, buffer, pos);
+        RCF_VERIFY(filterCount <= 10, Exception(RcfError_Decoding));
 
-            mFilterIds.clear();
-            for (int i=0; i<filterCount; ++i)
-            {
-                int filterId = 0;
-                SF::decodeInt(filterId, buffer, pos);
-                mFilterIds.push_back(filterId);
-            }
+        mFilterIds.clear();
+        for (int i=0; i<filterCount; ++i)
+        {
+            int filterId = 0;
+            SF::decodeInt(filterId, buffer, pos);
+            mFilterIds.push_back(filterId);
         }
     }
 
@@ -1159,7 +1159,7 @@ namespace RCF {
 
     void OobCreateCallbackConnection::encodeRequest(ByteBuffer & buffer)
     {
-        boost::shared_ptr< std::vector<char> > vecPtr( new std::vector<char>(50) );
+        std::shared_ptr< std::vector<char> > vecPtr( new std::vector<char>(50) );
         std::size_t pos = 0;
         encodeRequestCommon(vecPtr, pos);
         vecPtr->resize(pos);
@@ -1187,7 +1187,7 @@ namespace RCF {
     OobRequestSubscription::OobRequestSubscription(
         int                     runtimeVersion,
         const std::string &     publisherName, 
-        boost::uint32_t         subToPubPingIntervalMs) :
+        std::uint32_t         subToPubPingIntervalMs) :
             OobMessage(runtimeVersion),
             mPublisherName(publisherName),
             mSubToPubPingIntervalMs(subToPubPingIntervalMs),
@@ -1202,7 +1202,7 @@ namespace RCF {
 
     void OobRequestSubscription::encodeRequest(ByteBuffer & buffer)
     {
-        boost::shared_ptr< std::vector<char> > vecPtr( new std::vector<char>(50) );
+        std::shared_ptr< std::vector<char> > vecPtr( new std::vector<char>(50) );
         std::size_t pos = 0;
         encodeRequestCommon(vecPtr, pos);
 
@@ -1217,16 +1217,13 @@ namespace RCF {
         const ByteBuffer & buffer, 
         std::size_t & pos)
     {
-        if (mRuntimeVersion <= 12)
-        {
-            SF::decodeString(mPublisherName, buffer, pos);
-            SF::decodeInt(mSubToPubPingIntervalMs, buffer, pos);
-        }
+        SF::decodeString(mPublisherName, buffer, pos);
+        SF::decodeInt(mSubToPubPingIntervalMs, buffer, pos);
     }
 
     void OobRequestSubscription::encodeResponse(ByteBuffer & buffer)
     {
-        boost::shared_ptr< std::vector<char> > vecPtr( new std::vector<char>(50) );
+        std::shared_ptr< std::vector<char> > vecPtr( new std::vector<char>(50) );
         std::size_t pos = 0;
 
         encodeResponseCommon(vecPtr, pos);
@@ -1234,7 +1231,7 @@ namespace RCF {
 
         vecPtr->resize(pos);
         buffer = ByteBuffer(vecPtr);
-        }
+    }
 
     void OobRequestSubscription::decodeResponse(const ByteBuffer & buffer)
     {
@@ -1243,5 +1240,57 @@ namespace RCF {
         SF::decodeInt(mPubToSubPingIntervalMs, buffer, pos);
     }
 
+
+    OobRequestProxyConnection::OobRequestProxyConnection(int runtimeVersion) : 
+        OobMessage(runtimeVersion)
+    {
+    }
+
+    OobRequestProxyConnection::OobRequestProxyConnection(
+        int                     runtimeVersion,
+        const std::string &     proxyEndpointName) :
+            OobMessage(runtimeVersion),
+            mProxyEndpointName(proxyEndpointName)
+    {
+    }
+
+    OobMessageType OobRequestProxyConnection::getMessageType()
+    {
+        return Omt_RequestProxyConnection;
+    }
+
+    void OobRequestProxyConnection::encodeRequest(ByteBuffer & buffer)
+    {
+        std::shared_ptr< std::vector<char> > vecPtr(new std::vector<char>(50));
+        std::size_t pos = 0;
+        encodeRequestCommon(vecPtr, pos);
+
+        SF::encodeString(mProxyEndpointName, *vecPtr, pos);
+
+        vecPtr->resize(pos);
+        buffer = ByteBuffer(vecPtr);
+    }
+
+    void OobRequestProxyConnection::decodeRequest(const ByteBuffer & buffer, std::size_t & pos)
+    {
+        SF::decodeString(mProxyEndpointName, buffer, pos);
+    }
+
+    void OobRequestProxyConnection::encodeResponse(ByteBuffer & buffer)
+    {
+        std::shared_ptr< std::vector<char> > vecPtr(new std::vector<char>(50));
+        std::size_t pos = 0;
+
+        encodeResponseCommon(vecPtr, pos);
+
+        vecPtr->resize(pos);
+        buffer = ByteBuffer(vecPtr);
+    }
+
+    void OobRequestProxyConnection::decodeResponse(const ByteBuffer & buffer)
+    {
+        std::size_t pos = 0;
+        decodeResponseCommon(buffer, pos);
+    }
 
 } // namespace RCF

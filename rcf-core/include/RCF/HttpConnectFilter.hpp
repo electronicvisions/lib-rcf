@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -20,15 +20,16 @@
 #define INCLUDE_RCF_HTTPCONNECTFILTER_HPP
 
 #include <memory>
-#include <boost/shared_ptr.hpp>
+#include <memory>
 
 #include <RCF/Filter.hpp>
-#include <RCF/ByteBuffer.hpp>
 #include <RCF/HttpFrameFilter.hpp>
 
 namespace RCF {
 
     class NtlmWrapper;
+
+    class ByteBuffer;
 
     class HttpConnectFilter : public Filter
     {
@@ -36,6 +37,7 @@ namespace RCF {
 
         HttpConnectFilter();
         HttpConnectFilter(const std::string serverAddr, int serverPort);
+        ~HttpConnectFilter();
 
         void resetState();
 
@@ -91,7 +93,7 @@ namespace RCF {
 
         std::size_t                 mCurrentAuthType;
 
-        std::auto_ptr<NtlmWrapper>    mNtlmWrapper;
+        std::unique_ptr<NtlmWrapper>    mNtlmWrapper;
     };
 
 } // namespace RCF

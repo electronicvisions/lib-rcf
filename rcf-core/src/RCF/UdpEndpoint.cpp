@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -50,13 +50,12 @@ namespace RCF {
         mEnableSharedAddressBinding(rhs.mEnableSharedAddressBinding)
     {}
 
-    UdpEndpoint & UdpEndpoint::enableSharedAddressBinding(bool enable)
+    void UdpEndpoint::enableSharedAddressBinding(bool enable)
     {
         mEnableSharedAddressBinding = enable;
-        return *this;
     }
 
-    UdpEndpoint & UdpEndpoint::listenOnMulticast(const IpAddress & multicastIp)
+    void UdpEndpoint::listenOnMulticast(const IpAddress & multicastIp)
     {
         mMulticastIp = multicastIp;
 
@@ -64,11 +63,9 @@ namespace RCF {
         {
             mEnableSharedAddressBinding = true;
         }
-
-        return *this;
     }
 
-    UdpEndpoint & UdpEndpoint::listenOnMulticast(const std::string & multicastIp)
+    void UdpEndpoint::listenOnMulticast(const std::string & multicastIp)
     {
         return listenOnMulticast(IpAddress(multicastIp));
     }
@@ -88,9 +85,9 @@ namespace RCF {
         return mIp.getPort();
     }
 
-    ServerTransportAutoPtr UdpEndpoint::createServerTransport() const
+    ServerTransportUniquePtr UdpEndpoint::createServerTransport() const
     {
-        std::auto_ptr<UdpServerTransport> udpServerTransportPtr(
+        std::unique_ptr<UdpServerTransport> udpServerTransportPtr(
             new UdpServerTransport(mIp, mMulticastIp));
 
         if (mEnableSharedAddressBinding)
@@ -98,19 +95,24 @@ namespace RCF {
             udpServerTransportPtr->enableSharedAddressBinding();
         }
 
-        return ServerTransportAutoPtr(udpServerTransportPtr.release());
+        return ServerTransportUniquePtr(udpServerTransportPtr.release());
     }
 
-    std::auto_ptr<ClientTransport> UdpEndpoint::createClientTransport() const
+    std::unique_ptr<ClientTransport> UdpEndpoint::createClientTransport() const
     {
-        return std::auto_ptr<ClientTransport>(
+        return std::unique_ptr<ClientTransport>(
             new UdpClientTransport(mIp));
     }
 
     std::string UdpEndpoint::asString() const
     {
         MemOstream os;
-        os << "udp://" << mIp.string() << ":" << getPort();
+        std::string ip = getIp();
+        if ( ip.empty() )
+        {
+            ip = "127.0.0.1";
+        }
+        os << "udp://" << ip << ":" << getPort();
         return os.string();
     }
 

@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,29 +11,24 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
 #include <RCF/HttpFrameFilter.hpp>
 
+#include <RCF/AsioServerTransport.hpp>
+#include <RCF/ByteBuffer.hpp>
 #include <RCF/ClientStub.hpp>
 #include <RCF/Exception.hpp>
 #include <RCF/ObjectPool.hpp>
 #include <RCF/RcfSession.hpp>
 #include <RCF/ThreadLocalData.hpp>
+#include <RCF/Log.hpp>
+#include <RCF/Uuid.hpp>
 
-#include <boost/algorithm/string/predicate.hpp>
-#include <boost/algorithm/string/trim.hpp>
-
-#include <boost/uuid/uuid.hpp>
-#include <boost/uuid/uuid_generators.hpp>
-#include <boost/uuid/uuid_io.hpp>
-
-#include <RCF/AsioServerTransport.hpp>
-
-#ifndef BOOST_WINDOWS
+#ifndef RCF_WINDOWS
 #define strnicmp strncasecmp
 #define stricmp strcasecmp
 #endif
@@ -54,35 +49,52 @@ namespace RCF  {
         while (pos < stringToSplit.size() && pos != std::string::npos && lineCounter < 50)
         {
             posNext = stringToSplit.find(splitAt, pos);
-            if (posNext != std::string::npos)
+
+            // The split will not include empty strings.
+            if ( posNext > pos + splitAtLen )
             {
                 RCF_ASSERT(lineCounter <= lines.size());
                 if ( lineCounter == lines.size() )
                 {
                     lines.push_back(std::string());
                 }
-                lines[lineCounter].assign( stringToSplit.c_str() + pos, posNext - pos);
+                if ( posNext == std::string::npos )
+                {
+                    posNext = stringToSplit.size();
+                }
+                lines[lineCounter].assign(stringToSplit.c_str() + pos, posNext - pos);
                 ++lineCounter;
-
-                pos = posNext + splitAtLen;
             }
+
+            pos = posNext + splitAtLen;
         }
 
+        // Pad with empty strings on the end. That way we can hang onto memory that has already been
+        // allocated for the list.
         for ( std::size_t i = lineCounter; i < lines.size(); ++i )
         {
             lines[i].resize(0);
         }
     }
 
-    bool istarts_with(const std::string& line, const std::string& searchFor)
-    {
-        return 0 == strnicmp(line.c_str(), searchFor.c_str(), searchFor.size());
-    }
-
-    bool iequals(const std::string& lhs, const std::string& rhs)
-    {
-        return 0 == stricmp(lhs.c_str(), rhs.c_str());
-    }
+//#ifdef _MSC_VER
+//#pragma warning( push )
+//#pragma warning( disable : 4996 )  // warning C4996: 'ctime' was declared deprecated
+//#endif
+//
+//    bool istarts_with(const std::string& line, const std::string& searchFor)
+//    {
+//        return 0 == strnicmp(line.c_str(), searchFor.c_str(), searchFor.size());
+//    }
+//
+//    bool iequals(const std::string& lhs, const std::string& rhs)
+//    {
+//        return 0 == stricmp(lhs.c_str(), rhs.c_str());
+//    }
+//
+//#ifdef _MSC_VER
+//#pragma warning( pop )
+//#endif
 
     HttpFrameFilter::HttpFrameFilter(std::size_t maxMessageLength) :
         mChunkedResponseMode(false),
@@ -90,7 +102,8 @@ namespace RCF  {
         mServerPort(0),
         mClientSide(false),
         mHttpSessionIndex(0),
-        mMaxMessageLength(maxMessageLength)        
+        mMaxMessageLength(maxMessageLength),
+        mMaxMessageLengthSet(true)
     {
         init();
     }
@@ -102,7 +115,8 @@ namespace RCF  {
         mServerPort(serverPort),
         mClientSide(true),
         mHttpSessionIndex(0),
-        mMaxMessageLength(0)        
+        mMaxMessageLength(0),
+        mMaxMessageLengthSet(false)
     {
         init();
     }
@@ -141,9 +155,11 @@ namespace RCF  {
             // Client-side needs to specify a session id to send through in the HTTP header,
             // so the server-side can piece together the RPC stream.
 
-            boost::uuids::uuid uuid = boost::uuids::random_generator()();
-            std::string uuidStr = boost::uuids::to_string(uuid);
-            mHttpSessionId = uuidStr;
+            //boost::uuids::uuid uuid = boost::uuids::random_generator()();
+            //std::string uuidStr = boost::uuids::to_string(uuid);
+            //mHttpSessionId = uuidStr;
+
+            mHttpSessionId = generateUuid();
 
             mHttpSessionIndex = 0;
         }
@@ -165,13 +181,14 @@ namespace RCF  {
         RCF_ASSERT(mReadPos <= mMaxReadPos);
         std::size_t bytesAvailableInCurrentFrame = mMaxReadPos - mReadPos;
 
-        if ( !mMaxMessageLength )
+        if ( !mMaxMessageLengthSet )
         {
             ClientStub * pClientStub = getTlsClientStubPtr();
             if ( pClientStub )
             {
                 ClientTransport & clientTransport = pClientStub->getTransport();
-                mMaxMessageLength = clientTransport.getMaxMessageLength();
+                mMaxMessageLength = clientTransport.getMaxIncomingMessageLength();
+                mMaxMessageLengthSet = true;
             }
         }
         
@@ -239,6 +256,7 @@ namespace RCF  {
             bytesToReturn = RCF_MIN(bytesToReturn, byteBuffer_.getLength());
             memcpy(byteBuffer_.getPtr(), &(*mReadBufferPtr)[mReadPos], bytesToReturn);
             mReadPos += bytesToReturn;
+            mRecursionStateRead.clear();
             mpPreFilter->onReadCompleted(ByteBuffer(byteBuffer_, 0, bytesToReturn));
         }
     }
@@ -269,9 +287,10 @@ namespace RCF  {
     static const std::string XRcfSessionId      = "X-RCFSessionId";
     static const std::string XRcfSessionIndex   = "X-RCFSessionIndex";
     static const std::string XRcfError          = "X-RCFError";
+    static const std::string SetCookie          = "Set-Cookie";
 
 
-    void HttpFrameFilter::tryParseHttpChunkHeader()
+    bool HttpFrameFilter::tryParseHttpChunkHeader()
     {
         const char * pBody = &(*mReadBufferPtr)[mHttpMessage.mHeaderLen];
         const char * pChar = strnstr(pBody, mBytesReceived - mHttpMessage.mHeaderLen, CrLf.c_str());
@@ -280,10 +299,6 @@ namespace RCF  {
             mChunkHeaderLen = pChar - pBody + 2;
             mChunkLen = strtoul(pBody, NULL, 16);
 
-            // TODO: dealing w/ the last zero-size chunk.
-            // ...
-
-            RCF_ASSERT(mChunkLen != 0);
             mHttpMessage.mFrameLen = mHttpMessage.mHeaderLen + mChunkHeaderLen + mChunkLen + 2;
 
             if ( RCF::LogManager::instance().isEnabled(LogNameRcf, LogLevel_3) )
@@ -295,22 +310,23 @@ namespace RCF  {
             // Message length check.
             if ( mMaxMessageLength && mHttpMessage.mFrameLen > mMaxMessageLength )
             {
-                int rcfError = mClientSide ? RcfError_ClientMessageLength : RcfError_ServerMessageLength;
-                RCF_THROW(Exception(Error(rcfError)))(mMaxMessageLength)(mHttpMessage.mFrameLen);
+                int rcfError = mClientSide ? RcfError_ClientMessageLength_Id : RcfError_ServerMessageLength_Id;
+                RCF_THROW(Exception(ErrorMsg(rcfError)));
             }
 
             mMaxReadPos = mHttpMessage.mFrameLen - 2;
             ++mChunkedResponseCounter;
         }
+        return true;
     }
 
 
     void HttpMessage::getHttpStatus(std::string& httpStatus, std::string& httpStatusMsg)
     {
-        MemIstream is(mHeaderLines[0].c_str(), mHeaderLines[0].size());
+        MemIstream is(mMessageLines[0].c_str(), mMessageLines[0].size());
         std::string httpVer;
         is >> httpVer >> httpStatus >> httpStatusMsg;
-        boost::trim_left(httpStatus);
+        trimLeft(httpStatus);
     }
 
     void HttpMessage::getHeaderValue(const std::string& headerName, std::string& headerValue)
@@ -349,28 +365,33 @@ namespace RCF  {
         mHttpMessageHeader.assign(pFrame, mHeaderLen);
 
         // Split HTTP message into lines.
-        splitString(mHttpMessageHeader, CrLf.c_str(), mHeaderLines);
+        splitString(mHttpMessageHeader, CrLf.c_str(), mMessageLines);
 
         // Parse request/response line.
-        const std::string & firstLine = mHeaderLines.front();
+        const std::string & firstLine = mMessageLines.front();
         if ( 0 == strncmp(firstLine.c_str(), "POST", 4) )
         {
-            mRequestLine = mHeaderLines.front();
+            mRequestLine = mMessageLines.front();
         }
         else if ( 0 == strncmp(firstLine.c_str(), "GET", 3) )
         {
-            mRequestLine = mHeaderLines.front();
+            mRequestLine = mMessageLines.front();
         }
         else if ( 0 == strncmp(firstLine.c_str(), "HTTP/", 5) )
         {
-            mResponseLine = mHeaderLines.front();
+            mResponseLine = mMessageLines.front();
         }
         
         // Parse headers.
-        mHeaderList.resize(mHeaderLines.size() - 1);
-        for ( std::size_t i = 1; i < mHeaderLines.size(); ++i )
+        mHeaderList.resize(mMessageLines.size() - 1);
+        for ( std::size_t i = 1; i < mMessageLines.size(); ++i )
         {
-            const std::string & line = mHeaderLines[i];
+            const std::string & line = mMessageLines[i];
+
+            std::pair<std::string, std::string> & header = mHeaderList[i-1];
+
+            header.first.assign("");
+            header.second.assign("");
 
             std::size_t pos = line.find(':');
             if ( pos != std::string::npos )
@@ -379,17 +400,42 @@ namespace RCF  {
                 const char * pHeaderValue = pHeaderName + pos;
                 while ( isspace((int)*(++pHeaderValue)) );
 
-                mHeaderList[i].first.assign(pHeaderName, pos);
-                mHeaderList[i].second.assign(pHeaderValue);
+                header.first.assign(pHeaderName, pos);
+                header.second.assign(pHeaderValue);
+            }
+            else if ( line.size() > 0 )
+            {
+                // Empty lines are OK and just an artifact of our efforts to reuse objects to avoid memory allocations.
+                RCF_ASSERT(0 && "Encountered invalid header line in HTTP message.");
             }
         }
 
         return true;
-
     }
-    
 
-    void HttpFrameFilter::tryParseHttpHeader()
+    const char* ws = " \t\n\r\f\v";
+
+    // Trim whitespace from right.
+    std::string& trimRight(std::string& s, const char* t = ws)
+    {
+        s.erase(s.find_last_not_of(t) + 1);
+        return s;
+    }
+
+    // Trim whitespace from left.
+    std::string& trimLeft(std::string& s, const char* t = ws)
+    {
+        s.erase(0, s.find_first_not_of(t));
+        return s;
+    }
+
+    // Trim whitespace.
+    inline std::string& trimBoth(std::string& s, const char* t = ws)
+    {
+        return trimLeft(trimRight(s, t), t);
+    }
+
+    bool HttpFrameFilter::tryParseHttpHeader()
     {
         // Sanity check that we are receiving a HTTP message.
         if ( !mProtocolChecked && mBytesReceived >= 4 )
@@ -398,27 +444,65 @@ namespace RCF  {
 
             if ( mClientSide && 0 != strncmp(pBuffer, "HTTP", 4) )
             {
-                Exception e(_RcfError_NotHttpResponse());
+                std::size_t displayLen = RCF_MIN(std::size_t(1024), mBytesReceived);
+                std::string responseBytes(pBuffer, displayLen);
+                Exception e(RcfError_NotHttpResponse, responseBytes);
                 onError(e);
+                return false;
             }
-            else if ( !mClientSide && 0 == strncmp(pBuffer, "GET", 3) )
+            else if ( !mClientSide && mBytesReceived >= 6 )
             {
-                Exception e(_RcfError_NotHttpPostRequest());
-                onError(e);
+                if ( 0 == strncmp(pBuffer, "GET / ", 6) )
+                {
+                    MemOstreamPtr osPtr(new MemOstream());
+
+                    *osPtr
+                        << "HTTP/1.1 200 OK"
+                        << "\r\n\r\n"
+                        << "Server is online."
+                        << "\r\n\r\n";
+
+                    sendHttpErrorResponse(osPtr);
+                    return false;
+                }
+                else if ( 0 == strncmp(pBuffer, "GET", 3) )
+                {
+                    MemOstreamPtr osPtr(new MemOstream());
+
+                    *osPtr
+                        << "HTTP/1.1 404 Not Found"
+                        << "\r\n\r\n"
+                        << "Page not found."
+                        << "\r\n\r\n";
+
+                    sendHttpErrorResponse(osPtr);
+                    return false;
+                }
+                else if ( 0 != strncmp(pBuffer, "POST", 4) )
+                {
+                    MemOstreamPtr osPtr(new MemOstream());
+
+                    *osPtr
+                        << "HTTP/1.1 400 Bad Request"
+                        << "\r\n\r\n"
+                        << "Bad request."
+                        << "\r\n\r\n";
+
+                    sendHttpErrorResponse(osPtr);
+                    return false;
+                }
+                else
+                {
+                    mProtocolChecked = true;
+                }
             }
-            else if ( !mClientSide && 0 != strncmp(pBuffer, "POST", 4) )
-            {
-                Exception e(_RcfError_NotHttpRequest());
-                onError(e);
-            }
-            mProtocolChecked = true;
         }
 
         const char * pFrame = &(*mReadBufferPtr)[0];
         bool parseOk = mHttpMessage.parseHttpMessage(pFrame, mBytesReceived);
         if ( !parseOk )
         {
-            return;
+            return true;
         }
 
         RCF_LOG_3()(this)(mHttpMessage.mFrameLen)("\n" + mHttpMessage.mHttpMessageHeader) << "Received HTTP message";
@@ -439,6 +523,9 @@ namespace RCF  {
             const std::string& headerValue = mHttpMessage.mHeaderList[i].second;
             if ( iequals(headerName, ContentLength) )
             {
+                // Should not be setting this more than once.
+                RCF_ASSERT(mHttpMessage.mContentLen == 0);
+
                 mHttpMessage.mContentLen = atoi(headerValue.c_str());
                 mHttpMessage.mFrameLen = mHttpMessage.mHeaderLen + mHttpMessage.mContentLen;
                 mMaxReadPos = mHttpMessage.mFrameLen;
@@ -450,7 +537,7 @@ namespace RCF  {
             }
             else if ( iequals(headerName, XRcfSessionIndex) )
             {
-                boost::uint32_t idx = atoi(headerValue.c_str());
+                std::uint32_t idx = atoi(headerValue.c_str());
                 if ( idx )
                 {
                     mHttpSessionIndex = idx;
@@ -464,7 +551,7 @@ namespace RCF  {
             {
                 if ( mClientSide )
                 {
-                    Exception e(_RcfError_HttpTunnelError(headerValue));
+                    Exception e(RcfError_HttpTunnelError, headerValue);
                     RCF_THROW(e);
                 }
             }
@@ -477,6 +564,32 @@ namespace RCF  {
                     mChunkedResponseCounter = 0;
                 }
             }
+            else if ( iequals(headerName, SetCookie) )
+            {
+                // Check for any cookies returned by server.
+                std::vector<std::string> parts;
+                splitString(headerValue, ";", parts);
+                if ( parts.size() > 0 )
+                {
+                    auto cookieKeyValue = parts[0];
+                    auto pos = cookieKeyValue.find('=');
+                    if ( pos != std::string::npos )
+                    {
+                        std::string cookieName = cookieKeyValue.substr(0, pos);
+                        cookieName = trimBoth(cookieName);
+
+                        std::string cookieValue = cookieKeyValue.substr(pos+1);
+                        cookieValue = trimBoth(cookieValue);
+
+                        ClientStub * pStub = RCF::getTlsClientStubPtr();
+                        if ( pStub )
+                        {
+                            std::map<std::string, HttpCookie> & cookieMap = pStub->getCookieMap();
+                            cookieMap[cookieName] = HttpCookie(cookieName, cookieValue);
+                        }
+                    }
+                }
+            }
         }
 
         // Message length check.
@@ -484,11 +597,12 @@ namespace RCF  {
         {
             if ( mClientSide )
             {
-                RCF_THROW(Exception(Error(RcfError_ClientMessageLength)))(mMaxMessageLength)(mHttpMessage.mFrameLen);
+                RCF_THROW(Exception(RcfError_ClientMessageLength));
             }
             else
             {
-                sendServerError(RcfError_ServerMessageLength);
+                sendServerError(RcfError_ServerMessageLength_Id);
+                return false;
             }
         }
 
@@ -498,13 +612,13 @@ namespace RCF  {
             std::string httpMessage(&(*mReadBufferPtr)[0], mHttpMessage.mHeaderLen);
             if ( mHttpMessage.mResponseLine.size() > 0 )
             {
-                onError(Exception(_RcfError_HttpResponseContentLength(mHttpMessage.mResponseLine, httpMessage)));
+                onError(Exception(RcfError_HttpResponseContentLength, mHttpMessage.mResponseLine, httpMessage));
             }
             else
             {
-                onError(Exception(_RcfError_HttpRequestContentLength()));
+                onError(Exception(RcfError_HttpRequestContentLength));
             }
-            return;
+            return false;
         }
 
         // Client side - check that the response session ID and session index matches with the request.
@@ -514,20 +628,21 @@ namespace RCF  {
                 &&  mHttpSessionId.size() > 0 
                 &&  mPrevHttpSessionId != mHttpSessionId )
             {
-                Exception e(_RcfError_HttpResponseSessionId(mPrevHttpSessionId, mHttpSessionId));
+                Exception e(RcfError_HttpResponseSessionId, mPrevHttpSessionId, mHttpSessionId);
                 onError(e);
-                return;
+                return false;
             }
             if (    mPrevHttpSessionIndex 
                 &&  mHttpSessionIndex 
                 &&  mPrevHttpSessionIndex != mHttpSessionIndex )
             {
-                Exception e(_RcfError_HttpResponseSessionIndex(mPrevHttpSessionIndex, mHttpSessionIndex));
+                Exception e(RcfError_HttpResponseSessionIndex, mPrevHttpSessionIndex, mHttpSessionIndex);
                 onError(e);
-                return;
+                return false;
             }
         }
 
+        return true;
     }
 
     void HttpFrameFilter::sendServerError(int error)
@@ -547,7 +662,7 @@ namespace RCF  {
             // Add frame (4 byte length prefix).
             int messageSize = static_cast<int>(RCF::lengthByteBuffers(byteBuffers));
             ByteBuffer &byteBuffer = byteBuffers.front();
-            RCF_ASSERT_GTEQ(byteBuffer.getLeftMargin(), 4);
+            RCF_ASSERT(byteBuffer.getLeftMargin() >= 4);
             byteBuffer.expandIntoLeftMargin(4);
             memcpy(byteBuffer.getPtr(), &messageSize, 4);
             RCF::machineToNetworkOrder(byteBuffer.getPtr(), 4, 1);
@@ -576,9 +691,23 @@ namespace RCF  {
                 {
                     mReadBufferPtr->resize(mHttpMessage.mFrameLen);
                 }
-                mpPostFilter->read( 
-                    ByteBuffer(ByteBuffer(mReadBufferPtr), mBytesReceived, bytesRemainingInFrame),
-                    bytesRemainingInFrame);
+
+                ByteBuffer bufferRemaining(ByteBuffer(mReadBufferPtr), mBytesReceived, bytesRemainingInFrame);
+                if ( mClientSide )
+                {
+                    applyRecursionLimiter(
+                        mRecursionStateRead,
+                        &Filter::read,
+                        *mpPostFilter,
+                        bufferRemaining,
+                        bytesRemainingInFrame);
+                }
+                else
+                {
+                    mpPostFilter->read(
+                        bufferRemaining,
+                        bytesRemainingInFrame);
+                }
             }
             else
             {
@@ -597,17 +726,22 @@ namespace RCF  {
             RCF_ASSERT(mHttpMessage.mFrameLen == 0);
 
             // Try to pick out HTTP header or chunk header, to determine frame length.
+            bool shouldContinueReading = true;
             if ( mChunkedResponseMode && mChunkedResponseCounter > 0)
             {
-                tryParseHttpChunkHeader();
+                shouldContinueReading = tryParseHttpChunkHeader();
             }
             else
             {
-                tryParseHttpHeader();
-                if ( mChunkedResponseMode )
+                shouldContinueReading = tryParseHttpHeader();
+                if ( shouldContinueReading && mChunkedResponseMode )
                 {
-                    tryParseHttpChunkHeader();
+                    shouldContinueReading = tryParseHttpChunkHeader();
                 }
+            }
+            if ( !shouldContinueReading )
+            {
+                return;
             }
 
             if ( mHttpMessage.mFrameLen == 0 )
@@ -615,7 +749,7 @@ namespace RCF  {
                 // Still don't know the frame length, so do another read on the network.
                 if ( mBytesReceived > 10 * 1024 )
                 {
-                    onError(Exception(_RcfError_InvalidHttpMessage()));
+                    onError(Exception(RcfError_InvalidHttpMessage));
                     return;
                 }
                 if ( mBytesReceived == mReadBufferPtr->size() )
@@ -662,7 +796,7 @@ namespace RCF  {
                         if ( pos == std::string::npos )
                         {
                             std::string httpMessage(&(*mReadBufferPtr)[0], mHttpMessage.mHeaderLen);
-                            onError(Exception(_RcfError_HttpResponseStatus(mHttpMessage.mResponseLine, httpMessage)));
+                            onError(Exception(RcfError_HttpResponseStatus, mHttpMessage.mResponseLine, httpMessage));
                             return;
                         }
                     }
@@ -685,7 +819,7 @@ namespace RCF  {
         return mHttpSessionId;
     }
 
-    boost::uint32_t HttpFrameFilter::getHttpSessionIndex()
+    std::uint32_t HttpFrameFilter::getHttpSessionIndex()
     {
         return mHttpSessionIndex;
     }
@@ -694,6 +828,25 @@ namespace RCF  {
     {
         return mConnectionHeader;
     }
+
+    void HttpFrameFilter::getHttpFrameInfo(
+        std::string&                                            requestLine,
+        std::vector< std::pair<std::string, std::string> >&     headers)
+    {
+        requestLine = mHttpMessage.mRequestLine;
+        for ( auto header : mHttpMessage.mHeaderList )
+        {
+            if ( header.first.size() > 0 )
+            {
+                headers.push_back(header);
+            }
+        }
+    }
+
+#ifdef _MSC_VER
+#pragma warning( push )
+#pragma warning( disable : 4996 )  // warning C4996: 'ctime' was declared deprecated
+#endif
 
     void HttpFrameFilter::write(const std::vector<ByteBuffer> & byteBuffers)
     {
@@ -716,16 +869,30 @@ namespace RCF  {
 
             ++mHttpSessionIndex;
 
-            *mOsPtr <<  
+            *mOsPtr <<
                 "POST / HTTP/1.1\r\n"
                 "Host: " << mServerAddr << ":" << mServerPort << "\r\n"
                 "Accept: */*\r\n"
                 "Connection: Keep-Alive\r\n"
                 //"Connection: close\r\n"
                 "X-RCFSessionId: " << mHttpSessionId << "\r\n"
-                "X-RCFSessionIndex: " << mHttpSessionIndex << "\r\n"
-                "Content-Length: " << messageLength << "\r\n"
-                "\r\n";
+                "X-RCFSessionIndex: " << mHttpSessionIndex << "\r\n";
+
+            // Feed in any cookies we have received from the server.
+            ClientStub * pStub = RCF::getTlsClientStubPtr();
+            RCF_ASSERT(pStub);
+            if ( pStub )
+            {
+                std::map<std::string, HttpCookie> & cookieMap = pStub->getCookieMap();
+                for ( const auto & cookieEntry : cookieMap )
+                {
+                    *mOsPtr << "Cookie: " << cookieEntry.first << "=" << cookieEntry.second.mValue << "\r\n";
+                }
+            }
+
+            *mOsPtr 
+                << "Content-Length: " << messageLength << "\r\n"
+                << "\r\n";
         }
         else
         {
@@ -760,7 +927,6 @@ namespace RCF  {
                     "X-RCFSessionIndex: " << mHttpSessionIndex << "\r\n"
                     "Content-Length: " << messageLength << "\r\n"
                     "Connection: Keep-Alive\r\n"
-                    //"Connection: close\r\n"
                     "\r\n";
             }
         }   
@@ -789,6 +955,10 @@ namespace RCF  {
 
         mpPostFilter->write(mWriteBuffers);
     }
+
+#ifdef _MSC_VER
+#pragma warning( pop )
+#endif
 
     void HttpFrameFilter::onWriteCompleted(std::size_t bytesTransferred)
     {
@@ -827,6 +997,23 @@ namespace RCF  {
         return RcfFilter_Unknown;
     }   
 
+    void HttpFrameFilter::sendHttpErrorResponse(MemOstreamPtr osPtr)
+    {
+        RcfSession * pSession = getCurrentRcfSessionPtr();
+        if ( pSession )
+        {
+            NetworkSession& nwSession = pSession->getNetworkSession();
+            AsioNetworkSession& asioNwSession = static_cast<AsioNetworkSession&>(nwSession);
+            asioNwSession.setCloseAfterWrite();
+        }
+
+        ByteBuffer buffer(osPtr);
+        mWriteBuffers.clear();
+        mWriteBuffers.push_back(buffer);
+        mWritePos = 0;
+        mpPostFilter->write(mWriteBuffers);
+    }
+
     void HttpFrameFilter::onError(const Exception& e)
     {
         if ( mClientSide )
@@ -839,15 +1026,12 @@ namespace RCF  {
 
             *osPtr
                 << "HTTP/1.1 400 Bad Request\r\n"
-                << "X-RCFError: " << e.getErrorString() << "\r\n"
-                << "Content-Length: 0\r\n"
-                << "\r\n";
+                << "X-RCFError: " << e.getErrorMessage()
+                << "\r\n\r\n"
+                << e.getErrorMessage()
+                << "\r\n\r\n";
 
-            ByteBuffer buffer(osPtr);
-            mWriteBuffers.clear();
-            mWriteBuffers.push_back(buffer);
-            mWritePos = 0;
-            mpPostFilter->write(mWriteBuffers);
+            sendHttpErrorResponse(osPtr);
         }
     }
 

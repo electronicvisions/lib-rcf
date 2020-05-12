@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -21,10 +21,13 @@
 #include <RCF/ClientStub.hpp>
 #include <RCF/Exception.hpp>
 #include <RCF/Future.hpp>
+#include <RCF/Globals.hpp>
 #include <RCF/RcfClient.hpp>
 #include <RCF/RcfSession.hpp>
+#include <RCF/ServerTransport.hpp>
 #include <RCF/Timer.hpp>
 #include <RCF/Tools.hpp>
+#include <RCF/Log.hpp>
 
 namespace RCF {
 
@@ -33,15 +36,15 @@ namespace RCF {
         return Tt_Unknown;
     }
 
-    ClientTransportAutoPtr MulticastClientTransport::clone() const
+    ClientTransportUniquePtr MulticastClientTransport::clone() const
     {
-        RCF_ASSERT(0);
-        return ClientTransportAutoPtr();
+        RCF_ASSERT_ALWAYS("");
+        return ClientTransportUniquePtr();
     }
 
     EndpointPtr MulticastClientTransport::getEndpointPtr() const
     {
-        RCF_ASSERT(0);
+        RCF_ASSERT_ALWAYS("");
         return EndpointPtr();
     }
     
@@ -74,11 +77,11 @@ namespace RCF {
             RCF_ASSERT(mCompletedCount + mFailedCount <= mNotifyOnCount);
             if (mCompletedCount + mFailedCount == mNotifyOnCount)
             {
-                mCondition.notify_all(lock);
+                mCondition.notify_all();
             }
         }
 
-        void wait(boost::uint32_t waitMs)
+        void wait(std::uint32_t waitMs)
         {
             Timer waitTimer;
 
@@ -88,10 +91,11 @@ namespace RCF {
                     !waitTimer.elapsed(waitMs)
                 &&  mCompletedCount + mFailedCount < mNotifyOnCount)
             {
-                boost::uint32_t timeUsedSoFarMs = waitTimer.getDurationMs();
+                std::uint32_t timeUsedSoFarMs = waitTimer.getDurationMs();
                 timeUsedSoFarMs = RCF_MIN(timeUsedSoFarMs, waitMs);
-                boost::uint32_t timeRemainingMs = waitMs - timeUsedSoFarMs;
-                bool timedOut = mCondition.timed_wait(lock, timeRemainingMs);
+                std::uint32_t timeRemainingMs = waitMs - timeUsedSoFarMs;
+                using namespace std::chrono_literals;
+                bool timedOut = (mCondition.wait_for(lock, timeRemainingMs * 1ms) == std::cv_status::timeout);
                 if (    !timedOut 
                     &&  (mCompletedCount + mFailedCount == mNotifyOnCount))
                 {
@@ -144,7 +148,7 @@ namespace RCF {
         void onConnectCompleted(bool alreadyConnected = false)
         {
             RCF_UNUSED_VARIABLE(alreadyConnected);
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
         }
 
         void onSendCompleted()
@@ -157,12 +161,12 @@ namespace RCF {
 
         void onReceiveCompleted()
         {
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
         }
 
         void onTimerExpired()
         {
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
         }
 
         void onError(const std::exception &e)
@@ -181,6 +185,93 @@ namespace RCF {
         std::string             mError;
     };
 
+    void MulticastClientTransport::doSendOnTransports(
+        Lock&                           lock, 
+        ClientTransportList&            transportList,
+        const std::vector<ByteBuffer> & data,
+        unsigned int                    timeoutMs)
+    {
+        RCF_UNUSED_VARIABLE(lock);
+        std::size_t transportsInitial = transportList.size();
+
+        PublishCompletionInfo info(transportList.size());
+
+        // Setup completion handlers.
+        std::vector<PublishCompletionHandler> handlers(transportList.size());
+        for (std::size_t i = 0; i < transportList.size(); ++i)
+        {
+            ClientTransport * pTransport = (*transportList[i]).get();
+            handlers[i] = PublishCompletionHandler(pTransport, &info);
+        }
+
+        // Async send on all transports.
+        for (std::size_t i = 0; i < handlers.size(); ++i)
+        {
+            try
+            {
+                handlers[i].mpClientTransport->setAsync(true);
+                handlers[i].mpClientTransport->send(handlers[i], data, 0);
+            }
+            catch (const Exception &e)
+            {
+                Exception err(RcfError_SyncPublishError, e.what());
+                handlers[i].onError(err);
+            }
+        }
+
+        // Wait for async completions.
+        std::uint32_t completionDurationMs = 0;
+        {
+            Timer timer;
+            info.wait(timeoutMs);
+            completionDurationMs = timer.getDurationMs();
+        }
+
+        // Cancel any outstanding sends.
+        for (std::size_t i = 0; i < handlers.size(); ++i)
+        {
+            if (!handlers[i].mCompleted)
+            {
+                (*transportList[i])->cancel();
+
+                RCF_LOG_2()(i)
+                    << "MulticastClientTransport::send() - cancel send.";
+            }
+        }
+
+        // Wait for canceled ops to complete.
+        std::uint32_t cancelDurationMs = 0;
+        {
+            Timer timer;
+            info.wait(timeoutMs);
+            cancelDurationMs = timer.getDurationMs();
+        }
+
+        RCF_ASSERT(info.getCompletionCount() == handlers.size());
+
+        // Close and remove any subscriber transports with errors.
+        std::size_t transportsRemoved = 0;
+        for (std::size_t i = 0; i < handlers.size(); ++i)
+        {
+            RCF_ASSERT(handlers[i].mCompleted);
+            if (!handlers[i].mOk)
+            {
+                transportList[i] = ClientTransportUniquePtrPtr();
+                ++transportsRemoved;
+
+                RCF_LOG_2()(i)(handlers[i].mCompleted)(handlers[i].mOk)(handlers[i].mError)
+                    << "MulticastClientTransport::send() - remove subscriber transport.";
+            }
+        }
+        eraseRemove(transportList, ClientTransportUniquePtrPtr());
+
+        std::size_t transportsFinal = transportList.size();
+
+        RCF_LOG_2()
+            (completionDurationMs)(cancelDurationMs)(transportsInitial)(transportsFinal)
+            << "MulticastClientTransport::doSendOnTransports()";
+
+    }
 
     int MulticastClientTransport::send(
         ClientTransportCallback &           clientStub,
@@ -205,84 +296,41 @@ namespace RCF {
 
         std::size_t transportsInitial = mClientTransports.size();
 
-        PublishCompletionInfo info( mClientTransports.size() );
-
-        // Setup completion handlers.
-        std::vector<PublishCompletionHandler> handlers( mClientTransports.size() );
-        for (std::size_t i=0; i<mClientTransports.size(); ++i)
+        std::size_t MaxTransportsToSendOn = globals().getSimultaneousPublishLimit();
+        if (MaxTransportsToSendOn <= 0)
         {
-            ClientTransport * pTransport = (*mClientTransports[i]).get();
-            handlers[i] = PublishCompletionHandler(pTransport, &info);
+            MaxTransportsToSendOn = mClientTransports.size();
         }
 
-        // Async send on all transports.
-        for (std::size_t i=0; i<handlers.size(); ++i)
-        {
-            try
-            {
+        mClientTransportsTemp.reserve(mClientTransports.size());
+        mClientTransportsTemp.resize(0);
 
-                handlers[i].mpClientTransport->setAsync(true);
-                handlers[i].mpClientTransport->send(handlers[i], data, 0);
-            }
-            catch(const Exception &e)
-            {
-                Exception err( _RcfError_SyncPublishError(e.what()) );
-                handlers[i].onError(err);
-            }
+        mClientTransportsSending.reserve(MaxTransportsToSendOn);
+        mClientTransportsSending.resize(0);
+
+        while (mClientTransports.size() > 0)
+        {
+            std::size_t count = RCF_MIN(MaxTransportsToSendOn, mClientTransports.size());
+            std::size_t pos = mClientTransports.size() - count;
+            mClientTransportsSending.assign(mClientTransports.begin() + pos, mClientTransports.end());
+            mClientTransports.resize(pos);
+
+            doSendOnTransports(lock, mClientTransportsSending, data, timeoutMs);
+
+            mClientTransportsTemp.insert(
+                mClientTransportsTemp.end(),
+                mClientTransportsSending.begin(),
+                mClientTransportsSending.end());
         }
 
-        // Wait for async completions.
-        boost::uint32_t completionDurationMs = 0;
-        {
-            Timer timer;
-            info.wait(timeoutMs);
-            completionDurationMs = timer.getDurationMs();
-        }
-
-        // Cancel any outstanding sends.
-        for (std::size_t i=0; i<handlers.size(); ++i)
-        {
-            if (!handlers[i].mCompleted)
-            {
-                (*mClientTransports[i])->cancel();
-
-                RCF_LOG_2()(i)
-                    << "MulticastClientTransport::send() - cancel send.";
-            }
-        }
-
-        // Wait for canceled ops to complete.
-        boost::uint32_t cancelDurationMs = 0;
-        {
-            Timer timer;
-            info.wait(timeoutMs);
-            cancelDurationMs = timer.getDurationMs();
-        }
-
-        RCF_ASSERT(info.getCompletionCount() == handlers.size());
-
-        // Close and remove any subscriber transports with errors.
-        std::size_t transportsRemoved = 0;
-        for (std::size_t i=0; i<handlers.size(); ++i)
-        {
-            RCF_ASSERT(handlers[i].mCompleted);
-            if (!handlers[i].mOk)
-            {
-                mClientTransports[i] = ClientTransportAutoPtrPtr();
-                ++transportsRemoved;
-
-                RCF_LOG_2()(i)(handlers[i].mCompleted)(handlers[i].mOk)(handlers[i].mError) 
-                    << "MulticastClientTransport::send() - remove subscriber transport.";
-            }
-        }
-        eraseRemove(mClientTransports, ClientTransportAutoPtrPtr());
+        mClientTransports = mClientTransportsTemp;
 
         clientStub.onSendCompleted();
 
-        std::size_t transportsFinal = transportsInitial - transportsRemoved;
+        std::size_t transportsFinal = mClientTransports.size();
 
         RCF_LOG_2()
-            (lengthByteBuffers(data))(completionDurationMs)(cancelDurationMs)(transportsInitial)(transportsFinal)
+            (lengthByteBuffers(data))(transportsInitial)(transportsFinal)
             << "MulticastClientTransport::send() - exit.";
 
         return 1;
@@ -296,7 +344,7 @@ namespace RCF {
         RCF_UNUSED_VARIABLE(clientStub);
         RCF_UNUSED_VARIABLE(byteBuffer);
         RCF_UNUSED_VARIABLE(timeoutMs);
-        RCF_ASSERT(0);
+        RCF_ASSERT_ALWAYS("");
         return 1;
     }
 
@@ -318,14 +366,14 @@ namespace RCF {
     }
 
     void MulticastClientTransport::addTransport(
-        ClientTransportAutoPtr clientTransportAutoPtr)
+        ClientTransportUniquePtr clientTransportUniquePtr)
     {
         Lock lock(mAddedClientTransportsMutex);
 
-        clientTransportAutoPtr->setAsync(false);
+        clientTransportUniquePtr->setAsync(false);
 
-        mAddedClientTransports.push_back( ClientTransportAutoPtrPtr( 
-            new ClientTransportAutoPtr(clientTransportAutoPtr) ) );
+        mAddedClientTransports.push_back( ClientTransportUniquePtrPtr( 
+            new ClientTransportUniquePtr(std::move(clientTransportUniquePtr)) ) );
     }
 
     void MulticastClientTransport::bringInNewTransports()
@@ -358,7 +406,7 @@ namespace RCF {
     }
 
     void MulticastClientTransport::setTimer(
-        boost::uint32_t timeoutMs,
+        std::uint32_t timeoutMs,
         ClientTransportCallback *pClientStub)
     {
         RCF_UNUSED_VARIABLE(timeoutMs);
@@ -392,7 +440,7 @@ namespace RCF {
             }
             else
             {
-                boost::uint32_t pingIntervalMs = rcfSessionPtr->getPingIntervalMs();
+                std::uint32_t pingIntervalMs = rcfSessionPtr->getPingIntervalMs();
                 if (pingIntervalMs)
                 {
                     RCF::Timer pingTimer( rcfSessionPtr->getPingTimestamp() );
@@ -412,7 +460,7 @@ namespace RCF {
 
         if (needToRemove)
         {
-            eraseRemove(mClientTransports, ClientTransportAutoPtrPtr());
+            eraseRemove(mClientTransports, ClientTransportUniquePtrPtr());
         }
     }
 
@@ -436,18 +484,25 @@ namespace RCF {
         for (iter = mClientTransports.begin(); iter != mClientTransports.end(); ++iter)
         {
             ClientTransport & transport = ***iter;
-            RcfSessionPtr rcfSessionPtr = transport.getRcfSession().lock();
-            if (rcfSessionPtr)
+            if ( transport.getTransportType() == Tt_Http || transport.getTransportType() == Tt_Https )
             {
-                boost::uint32_t pingIntervalMs = rcfSessionPtr->getPingIntervalMs();
-                if (pingIntervalMs)
+                multicastTemp.mClientTransports.push_back(*iter);
+            }
+            else
+            {
+                RcfSessionPtr rcfSessionPtr = transport.getRcfSession().lock();
+                if ( rcfSessionPtr )
                 {
-                    multicastTemp.mClientTransports.push_back(*iter);
+                    std::uint32_t pingIntervalMs = rcfSessionPtr->getPingIntervalMs();
+                    if ( pingIntervalMs )
+                    {
+                        multicastTemp.mClientTransports.push_back(*iter);
+                    }
                 }
             }
         }
 
-        I_RcfClient nullClient("", mMulticastTemp );
+        I_RcfClient nullClient("", std::move(mMulticastTemp) );
         nullClient.getClientStub().ping(RCF::Oneway);
         mMulticastTemp.reset( nullClient.getClientStub().releaseTransport().release() );
         multicastTemp.mClientTransports.resize(0);

@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,32 +11,36 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
 #include <RCF/FilterService.hpp>
 
-#include <boost/bind.hpp>
+#include <functional>
 
 #include <RCF/CurrentSession.hpp>
 #include <RCF/RcfServer.hpp>
 #include <RCF/RcfSession.hpp>
+#include <RCF/ServerTransport.hpp>
+#include <RCF/ThreadLocalData.hpp>
+#include <RCF/Log.hpp>
 
 #if RCF_FEATURE_LEGACY==1
-#include <RCF/ServerInterfaces.hpp>
+#include <RCF/ClientStubLegacy.hpp>
 #endif
 
 namespace RCF {
 
     FilterService::FilterService() :
-        mFilterFactoryMapMutex(WriterPriority)
+        mFilterFactoryMapMutex()
     {
     }
 
     void FilterService::onServerStart(RcfServer & server)
     {
+        RCF_UNUSED_VARIABLE(server);
 
 #if RCF_FEATURE_LEGACY==1
         server.bind<I_RequestTransportFilters>(*this);
@@ -46,11 +50,7 @@ namespace RCF {
 
     void FilterService::onServerStop(RcfServer & server)
     {
-
-#if RCF_FEATURE_LEGACY==1
-        server.unbind<I_RequestTransportFilters>();
-#endif
-
+        RCF_UNUSED_VARIABLE(server);
     }
 
     void FilterService::addFilterFactory(FilterFactoryPtr filterFactoryPtr)
@@ -72,22 +72,22 @@ namespace RCF {
     }
 
     // remotely accessible
-    boost::int32_t FilterService::QueryForTransportFilters(const std::vector<boost::int32_t> & filterIds)
+    std::int32_t FilterService::QueryForTransportFilters(const std::vector<std::int32_t> & filterIds)
     {
-        RCF_THROW( _RcfError_NoLongerSupported("FilterService::QueryForTransportFilters()") );
+        RCF_THROW( Exception( RcfError_NoLongerSupported, "FilterService::QueryForTransportFilters()" ));
         RCF_UNUSED_VARIABLE(filterIds);
-        return RcfError_Ok;
+        return RcfError_Ok_Id;
     }
 
     // remotely accessible
-    boost::int32_t FilterService::RequestTransportFilters(const std::vector<boost::int32_t> &filterIds)
+    std::int32_t FilterService::RequestTransportFilters(const std::vector<std::int32_t> &filterIds)
     {
         RCF_LOG_3()(filterIds) << "FilterService::RequestTransportFilters() - entry";
 
         RcfSession & session = getCurrentRcfSession();
         RcfServer & server = session.getRcfServer();
 
-        boost::shared_ptr< std::vector<FilterPtr> > filters(
+        std::shared_ptr< std::vector<FilterPtr> > filters(
             new std::vector<FilterPtr>());
 
         ReadLock readLock(mFilterFactoryMapMutex);
@@ -110,7 +110,7 @@ namespace RCF {
             if (mFilterFactoryMap.find(filterId) == mFilterFactoryMap.end())
             {
                 RCF_LOG_3()(filterId) << "FilterService::RequestTransportFilters() - filter not supported.";
-                return RcfError_UnknownFilter;
+                return RcfError_UnknownFilter_Id;
             }
 
             FilterFactoryPtr filterFactoryPtr = mFilterFactoryMap[filterId];
@@ -167,7 +167,7 @@ namespace RCF {
         {
             if (std::find(protocols.begin(), protocols.end(), protocol) == protocols.end())
             {
-                RCF_THROW( Exception(_RcfError_ProtocolNotSupported()) );
+                RCF_THROW( Exception(RcfError_ProtocolNotSupported) );
             }
         }
 
@@ -179,11 +179,14 @@ namespace RCF {
         if (session.transportFiltersLocked())
         {
             RCF_LOG_3() << "FilterService::RequestTransportFilters() - filter sequence already locked.";
-            return RcfError_FiltersLocked;
+            return RcfError_FiltersLocked_Id;
         }
         else
         {
-            session.addOnWriteCompletedCallback( boost::bind(
+
+            using namespace std::placeholders;
+
+            session.addOnWriteCompletedCallback( std::bind(
                 &FilterService::setTransportFilters, 
                 this, 
                 _1, 
@@ -191,7 +194,7 @@ namespace RCF {
         }        
 
         RCF_LOG_3() << "FilterService::RequestTransportFilters() - exit";
-        return RcfError_Ok;
+        return RcfError_Ok_Id;
     }
 
     FilterFactoryPtr FilterService::getFilterFactoryPtr(int filterId)
@@ -204,7 +207,7 @@ namespace RCF {
 
     void FilterService::setTransportFilters(
         RcfSession &session,
-        boost::shared_ptr<std::vector<FilterPtr> > filters)
+        std::shared_ptr<std::vector<FilterPtr> > filters)
     {
         session.getNetworkSession().setTransportFilters(*filters);
     }

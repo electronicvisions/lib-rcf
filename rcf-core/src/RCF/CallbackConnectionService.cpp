@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -21,10 +21,6 @@
 #include <RCF/Marshal.hpp>
 #include <RCF/RcfServer.hpp>
 
-#if RCF_FEATURE_LEGACY==1
-#include <RCF/ServerInterfaces.hpp>
-#endif
-
 namespace RCF {
 
     CallbackConnectionService::CallbackConnectionService() : mpServer(NULL)
@@ -33,20 +29,12 @@ namespace RCF {
 
     void CallbackConnectionService::onServiceAdded(RcfServer & server)
     {
-
-#if RCF_FEATURE_LEGACY==1
-        server.bind<I_CreateCallbackConnection>(*this);
-#endif
-
+        RCF_UNUSED_VARIABLE(server);
     }
 
     void CallbackConnectionService::onServiceRemoved(RcfServer & server)
     {
-
-#if RCF_FEATURE_LEGACY==1
-        server.unbind<I_CreateCallbackConnection>();
-#endif
-
+        RCF_UNUSED_VARIABLE(server);
     }
 
     void CallbackConnectionService::onServerStart(RcfServer & server)
@@ -58,7 +46,7 @@ namespace RCF {
     {
         if ( !mOnCallbackConnectionCreated )
         {
-            RCF_THROW( Exception(_RcfError_ServerCallbacksNotSupported()) );
+            RCF_THROW( Exception(RcfError_ServerCallbacksNotSupported) );
         }
 
         RCF::convertRcfSessionToRcfClient( mOnCallbackConnectionCreated );

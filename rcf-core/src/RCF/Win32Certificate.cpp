@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,14 +11,17 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
 #include <RCF/Win32Certificate.hpp>
 
+#include <RCF/ByteBuffer.hpp>
+#include <RCF/Enums.hpp>
 #include <RCF/Exception.hpp>
+#include <RCF/MemStream.hpp>
 #include <RCF/Tools.hpp>
 
 namespace RCF {
@@ -59,7 +62,7 @@ namespace RCF {
         FILE * fp = fopen(pathToCert.c_str(), "rb");
         std::size_t bytesRead = fread(pfxBlob.getPtr(), sizeof(char), pfxBlob.getLength(), fp);
         fclose(fp);
-        RCF_ASSERT_EQ(bytesRead , fileSize);
+        RCF_ASSERT(bytesRead == fileSize);
         RCF_UNUSED_VARIABLE(bytesRead);
 
         init(pfxBlob, password, certName);
@@ -81,10 +84,9 @@ namespace RCF {
         BOOL recognizedPFX = PFXIsPFXBlob(&blob);
         DWORD dwErr = GetLastError();
 
-
         RCF_VERIFY(
             recognizedPFX, 
-            Exception(_RcfError_ApiError("PFXIsPFXBlob()"), dwErr));
+            Exception(RcfError_ApiError, "PFXIsPFXBlob()", osError(dwErr)));
 
         std::wstring wPassword = RCF::toWstring(password);
 
@@ -98,7 +100,7 @@ namespace RCF {
 
         RCF_VERIFY(
             mPfxStore, 
-            Exception(_RcfError_ApiError("PFXImportCertStore()"), dwErr));
+            Exception(RcfError_ApiError, "PFXImportCertStore()", osError(dwErr)));
 
         PCCERT_CONTEXT pCertStore = NULL;
 
@@ -123,7 +125,7 @@ namespace RCF {
 
         RCF_VERIFY(
             pCertStore, 
-            Exception(_RcfError_ApiError("CertFindCertificateInStore()"), dwErr));
+            Exception(RcfError_ApiError, "CertFindCertificateInStore()", osError(dwErr)));
 
         BOOL bFreeHandle;
         HCRYPTPROV hProv;
@@ -141,7 +143,7 @@ namespace RCF {
 
         RCF_VERIFY(
             bResult, 
-            Exception(_RcfError_ApiError("CryptAcquireCertificatePrivateKey()"), dwErr));
+            Exception(RcfError_ApiError, "CryptAcquireCertificatePrivateKey()", osError(dwErr)));
 
         mpCert = pCertStore; 
     }
@@ -163,7 +165,7 @@ namespace RCF {
         case Cs_TrustedPeople:          wStoreName = L"TrustedPeople";    break;
         case Cs_TrustedPublisher:       wStoreName = L"TrustedPublisher"; break;
         default:
-            RCF_ASSERT(0 && "Invalid certificate store value.");
+            RCF_ASSERT_ALWAYS("Invalid certificate store value.");
         }
 
         DWORD dwFlags = 0;
@@ -172,7 +174,7 @@ namespace RCF {
         case Cl_CurrentUser:            dwFlags = CERT_SYSTEM_STORE_CURRENT_USER;   break;
         case Cl_LocalMachine:           dwFlags = CERT_SYSTEM_STORE_LOCAL_MACHINE;  break;
         default:
-            RCF_ASSERT(0 && "Invalid certificate store location value.");
+            RCF_ASSERT_ALWAYS("Invalid certificate store location value.");
         }
 
         HCERTSTORE hCertStore = CertOpenStore(
@@ -186,10 +188,7 @@ namespace RCF {
 
         RCF_VERIFY(
             hCertStore, 
-            RCF::Exception(
-                _RcfError_CryptoApiError("CertOpenStore()"), 
-                dwErr, 
-                RCF::RcfSubsystem_Os));
+            RCF::Exception(RcfError_CryptoApiError, "CertOpenStore()", osError(dwErr)));
 
         BOOL ret = CertAddCertificateContextToStore(
             hCertStore,
@@ -201,10 +200,7 @@ namespace RCF {
 
         RCF_VERIFY(
             ret, 
-            RCF::Exception(
-                _RcfError_CryptoApiError("CertAddCertificateContextToStore()"), 
-                dwErr, 
-                RCF::RcfSubsystem_Os));
+            RCF::Exception(RcfError_CryptoApiError, "CertAddCertificateContextToStore()", osError(dwErr)));
 
         CertCloseStore(hCertStore, 0);
     }
@@ -228,6 +224,11 @@ namespace RCF {
             CertFreeCertificateContext(mpCert);
             mpCert = NULL;
         }
+    }
+
+    CertificateImplementationType Win32Certificate::_getType()
+    {
+        return Cit_Win32;
     }
 
     tstring Win32Certificate::getSubjectName()
@@ -304,10 +305,7 @@ namespace RCF {
 
         RCF_VERIFY(
             dwRet, 
-            RCF::Exception(
-                _RcfError_CryptoApiError("CryptDecodeObject()"), 
-                dwErr, 
-                RCF::RcfSubsystem_Os));
+            RCF::Exception(RcfError_CryptoApiError, "CryptDecodeObject()", osError(dwErr)));
 
         std::vector<char> vec(cbNameInfo);
 
@@ -324,10 +322,7 @@ namespace RCF {
 
         RCF_VERIFY(
             dwRet, 
-            RCF::Exception(
-                _RcfError_CryptoApiError("CryptDecodeObject()"), 
-                dwErr, 
-                RCF::RcfSubsystem_Os));
+            RCF::Exception(RcfError_CryptoApiError, "CryptDecodeObject()", osError(dwErr)));
 
         PCERT_NAME_INFO pCertNameInfo = (PCERT_NAME_INFO) &vec[0];
 
@@ -366,7 +361,7 @@ namespace RCF {
         case Cs_TrustedPeople:          storeName = L"TrustedPeople";    break;
         case Cs_TrustedPublisher:       storeName = L"TrustedPublisher"; break;
         default:
-            RCF_ASSERT(0 && "Invalid certificate store value.");
+            RCF_ASSERT_ALWAYS("Invalid certificate store value.");
         }
 
         DWORD dwFlags = 0;
@@ -375,7 +370,7 @@ namespace RCF {
         case Cl_CurrentUser:            dwFlags = CERT_SYSTEM_STORE_CURRENT_USER;   break;
         case Cl_LocalMachine:           dwFlags = CERT_SYSTEM_STORE_LOCAL_MACHINE;  break;
         default:
-            RCF_ASSERT(0 && "Invalid certificate store location value.");
+            RCF_ASSERT_ALWAYS("Invalid certificate store location value.");
         }
 
         Win32CertificatePtr issuerCertPtr;
@@ -391,7 +386,7 @@ namespace RCF {
 
         RCF_VERIFY(
             hCertStore, 
-            Exception(_RcfError_ApiError("CertOpenStore()"), dwErr));
+            Exception(RcfError_ApiError, "CertOpenStore()", osError(dwErr)));
 
         PCCERT_CONTEXT  pSubjectContext = getWin32Context();
 
@@ -475,7 +470,7 @@ namespace RCF {
         case Cs_TrustedPeople:          wStoreName = L"TrustedPeople";    break;
         case Cs_TrustedPublisher:       wStoreName = L"TrustedPublisher"; break;
         default:
-            RCF_ASSERT(0 && "Invalid certificate store value.");
+            RCF_ASSERT_ALWAYS("Invalid certificate store value.");
         }
 
         DWORD dwFlags = 0;
@@ -484,8 +479,10 @@ namespace RCF {
         case Cl_CurrentUser:            dwFlags = CERT_SYSTEM_STORE_CURRENT_USER;   break;
         case Cl_LocalMachine:           dwFlags = CERT_SYSTEM_STORE_LOCAL_MACHINE;  break;
         default:
-            RCF_ASSERT(0 && "Invalid certificate store location value.");
+            RCF_ASSERT_ALWAYS("Invalid certificate store location value.");
         }
+
+        dwFlags |= CERT_STORE_MAXIMUM_ALLOWED_FLAG;
 
         mStore = CertOpenStore(
             (LPCSTR) CERT_STORE_PROV_SYSTEM,
@@ -498,10 +495,7 @@ namespace RCF {
 
         RCF_VERIFY(
             mStore, 
-            RCF::Exception(
-                _RcfError_CryptoApiError("CertOpenStore()"), 
-                dwErr, 
-                RCF::RcfSubsystem_Os));
+            RCF::Exception(RcfError_CryptoApiError, "CertOpenStore()", osError(dwErr)));
 
         std::wstring wCertName(certName.begin(), certName.end());
 
@@ -519,10 +513,7 @@ namespace RCF {
 
         RCF_VERIFY(
             pStoreCert, 
-            RCF::Exception(
-            _RcfError_CryptoApiError("CertFindCertificateInStore()"), 
-            dwErr, 
-            RCF::RcfSubsystem_Os));
+            RCF::Exception(RcfError_CryptoApiError, "CertFindCertificateInStore()", osError(dwErr)));
 
         mpCert = pStoreCert;
     }
@@ -536,10 +527,7 @@ namespace RCF {
 
             RCF_VERIFY(
                 ret, 
-                RCF::Exception(
-                    _RcfError_CryptoApiError("CertDeleteCertificateFromStore()"), 
-                    dwErr, 
-                    RCF::RcfSubsystem_Os));
+                RCF::Exception(RcfError_CryptoApiError, "CertDeleteCertificateFromStore()", osError(dwErr)));
 
             setHasBeenDeleted();
             mpCert = NULL;
@@ -559,7 +547,7 @@ namespace RCF {
         FILE * fp = fopen(pfxFilePath.c_str(), "wb");
         if (!fp)
         {
-            RCF_THROW( Exception(_RcfError_FileOpenWrite(pfxFilePath)) );
+            RCF_THROW( Exception(RcfError_FileOpenWrite, pfxFilePath) );
         }
         fwrite(pfxBuffer.getPtr(), sizeof(char), pfxBuffer.getLength(), fp);
         fclose(fp);
@@ -587,7 +575,7 @@ namespace RCF {
 
         RCF_VERIFY(
             hMemoryStore, 
-            Exception(_RcfError_ApiError("CertOpenStore()"), dwErr));
+            Exception(RcfError_ApiError, "CertOpenStore()", osError(dwErr)));
 
         // Add the certificate.
         BOOL ok = CertAddCertificateContextToStore(
@@ -600,7 +588,7 @@ namespace RCF {
 
         RCF_VERIFY(
             ok, 
-            Exception(_RcfError_ApiError("CertAddCertificateContextToStore()"), dwErr));
+            Exception(RcfError_ApiError, "CertAddCertificateContextToStore()", osError(dwErr)));
 
         // Export in-memory store.
         CRYPT_DATA_BLOB pfxBlob = {};
@@ -610,7 +598,7 @@ namespace RCF {
 
         RCF_VERIFY(
             exportOk, 
-            Exception(_RcfError_ApiError("PFXExportCertStore()"), dwErr));
+            Exception(RcfError_ApiError, "PFXExportCertStore()", osError(dwErr)));
 
         RCF::ByteBuffer pfxBuffer(pfxBlob.cbData);
         pfxBlob.pbData = (BYTE *) pfxBuffer.getPtr();
@@ -621,7 +609,7 @@ namespace RCF {
 
         RCF_VERIFY(
             exportOk, 
-            Exception(_RcfError_ApiError("PFXExportCertStore()"), dwErr));
+            Exception(RcfError_ApiError, "PFXExportCertStore()", osError(dwErr)));
 
         CertCloseStore(hMemoryStore, 0);
 
@@ -652,7 +640,7 @@ namespace RCF {
             case Cs_TrustedPeople:          strCertStore = L"TrustedPeople";    break;
             case Cs_TrustedPublisher:       strCertStore = L"TrustedPublisher"; break;
             default:
-                RCF_ASSERT(0 && "Invalid certificate store value.");
+                RCF_ASSERT_ALWAYS("Invalid certificate store value.");
         }
 
         DWORD dwStoreLocation = 0;
@@ -661,7 +649,7 @@ namespace RCF {
             case Cl_CurrentUser:            dwStoreLocation = CERT_SYSTEM_STORE_CURRENT_USER;   break;
             case Cl_LocalMachine:           dwStoreLocation = CERT_SYSTEM_STORE_LOCAL_MACHINE;  break;
             default:
-                RCF_ASSERT(0 && "Invalid certificate store location value.");
+                RCF_ASSERT_ALWAYS("Invalid certificate store location value.");
         }
         
         mhCertStore = CertOpenStore(
@@ -675,7 +663,7 @@ namespace RCF {
 
         RCF_VERIFY(
             mhCertStore, 
-            Exception(_RcfError_ApiError("CertOpenStore()"), dwErr));   
+            Exception(RcfError_ApiError, "CertOpenStore()", osError(dwErr)));
     }
 
     StoreCertificateIterator::~StoreCertificateIterator()

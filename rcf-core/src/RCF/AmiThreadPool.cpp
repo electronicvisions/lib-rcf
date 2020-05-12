@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -25,6 +25,7 @@
 #include <RCF/Exception.hpp>
 #include <RCF/InitDeinit.hpp>
 #include <RCF/IpAddress.hpp>
+#include <RCF/OverlappedAmi.hpp>
 #include <RCF/TcpEndpoint.hpp>
 #include <RCF/ThreadLocalData.hpp>
 #include <RCF/ThreadPool.hpp>
@@ -36,7 +37,7 @@ namespace RCF {
         LockPtr lockPtr, 
         MutexPtr mutexPtr)
     {
-        RCF_ASSERT(lockPtr.get() && lockPtr->locked() && mutexPtr.get());
+        RCF_ASSERT(lockPtr.get() && lockPtr->owns_lock() && mutexPtr.get());
         mCb = cb;
         mLockPtr = lockPtr;
         mMutexPtr = mutexPtr;
@@ -47,7 +48,7 @@ namespace RCF {
         if (mLockPtr)
         {
             Lock & lock = *mLockPtr;
-            RCF_ASSERT(lock.locked());
+            RCF_ASSERT(lock.owns_lock());
             lock.unlock();
             Cb cb = mCb;
             clear();
@@ -164,7 +165,7 @@ namespace RCF {
         return gEnableMultithreadedBlockingConnects;
     }
 
-#ifdef BOOST_WINDOWS
+#ifdef RCF_WINDOWS
 
     class Win32ThreadImpersonator
     {
@@ -175,9 +176,7 @@ namespace RCF {
             if (!ok)
             {
                 DWORD dwErr = GetLastError();
-                RCF_THROW( Exception( 
-                    _RcfError_Win32ApiError("SetThreadToken()"), 
-                    dwErr) ); 
+                RCF_THROW( Exception(RcfError_Win32ApiError, "SetThreadToken()", osError(dwErr)));
             }
         }
 
@@ -190,9 +189,7 @@ namespace RCF {
                 if ( !ok )
                 {
                     DWORD dwErr = GetLastError();
-                    RCF_THROW(Exception(
-                        _RcfError_Win32ApiError("SetThreadToken()"),
-                        dwErr));
+                    RCF_THROW(Exception(RcfError_Win32ApiError, "SetThreadToken()", osError(dwErr)));
                 }
             }
         }
@@ -210,6 +207,17 @@ namespace RCF {
     };
 
 #endif
+
+    OverlappedAmi::OverlappedAmi(ConnectedClientTransport *pTcpClientTransport) :
+        mpTransport(pTcpClientTransport),
+        mIndex(0),
+        mOpType(None)
+    {
+    }
+
+    OverlappedAmi::~OverlappedAmi()
+    {
+    }
 
     void OverlappedAmi::onCompletion(
         std::size_t index,
@@ -231,9 +239,9 @@ namespace RCF {
                 mpTransport->mAsioTimerPtr->cancel();
             }
 
-#ifdef BOOST_WINDOWS
+#ifdef RCF_WINDOWS
             // Do we need to impersonate?
-            boost::scoped_ptr<Win32ThreadImpersonator> impersonator;
+            std::unique_ptr<Win32ThreadImpersonator> impersonator;
             if (mpTransport->mpClientStub->isClientStub())
             {
                 ClientStub * pStub = static_cast<ClientStub *>(mpTransport->mpClientStub);
@@ -254,23 +262,23 @@ namespace RCF {
                     switch (mOpType)
                     {
                     case Wait:
-                        RCF_ASSERT(0);
+                        RCF_ASSERT_ALWAYS("");
                         break;
 
                     case Connect:
-                        e = RCF::Exception( _RcfError_ClientConnectFail(), ec.value());
+                        e = RCF::Exception(RcfError_ClientConnectFail, osError(ec.value()));
                         break;
 
                     case Write:
-                        e = RCF::Exception( _RcfError_ClientWriteFail(), ec.value());
+                        e = RCF::Exception(RcfError_ClientWriteFail, osError(ec.value()));
                         break;
 
                     case Read:
-                        e = RCF::Exception( _RcfError_ClientReadFail(), ec.value());
+                        e = RCF::Exception(RcfError_ClientReadFail, osError(ec.value()));
                         break;
 
                     default:
-                        RCF_ASSERT(0);
+                        RCF_ASSERT_ALWAYS("");
                     };
 
                     mOpType = None;
@@ -283,7 +291,7 @@ namespace RCF {
                 }
                 catch(...)
                 {
-                    RCF::Exception e( _RcfError_NonStdException() );
+                    RCF::Exception e( RcfError_NonStdException );
                     mpTransport->mpClientStub->onError(e);
                 }
             }
@@ -301,7 +309,7 @@ namespace RCF {
                 }
                 catch(...)
                 {
-                    RCF::Exception e( _RcfError_NonStdException() );
+                    RCF::Exception e( RcfError_NonStdException );
                     mpTransport->mpClientStub->onError(e);
                 }
             }
@@ -376,24 +384,5 @@ namespace RCF {
     {
         return *gpAmiThreadPool;
     }
-    /*
-    AsyncTimer::AsyncTimer() : mDummyPtr( new RcfClient<I_Null>( RCF::TcpEndpoint(0)))
-    {
-    }
-
-    AsyncTimer::~AsyncTimer()
-    {
-    }
-
-    void AsyncTimer::set(boost::function0<void> onTimer, boost::uint32_t timeoutMs)
-    {
-        mDummyPtr->getClientStub().wait(onTimer, timeoutMs);
-    }
-
-    void AsyncTimer::cancel()
-    {
-        mDummyPtr.reset( new RcfClient<I_Null>( RCF::TcpEndpoint(0)) );
-    }
-    */
 
 } // namespace RCF

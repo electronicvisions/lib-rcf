@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -27,40 +27,39 @@ namespace RCF {
 
     // Runtime versioning.
 
-    const boost::uint32_t gRuntimeVersionInherent = 12;
+    const std::uint32_t gRuntimeVersionInherent = 13;
 
-    boost::uint32_t gRuntimeVersionDefault = gRuntimeVersionInherent;
+    std::uint32_t gRuntimeVersionDefault = gRuntimeVersionInherent;
 
-    boost::uint32_t getLibraryVersion()
+    std::uint32_t getMaxSupportedRuntimeVersion()
     {
         return gRuntimeVersionInherent;
     }
 
-    boost::uint32_t getDefaultRuntimeVersion()
+    std::uint32_t getRuntimeVersion()
     {
         return gRuntimeVersionDefault;
     }
 
-    void setDefaultRuntimeVersion(boost::uint32_t version)
+    void setRuntimeVersion(std::uint32_t version)
     {
         RCF_VERIFY(
             1 <= version && version <= gRuntimeVersionInherent,
-            Exception(_RcfError_UnsupportedRuntimeVersion(version, gRuntimeVersionInherent)))
-            (version)(gRuntimeVersionInherent);
+            Exception(RcfError_UnsupportedRuntimeVersion, version, gRuntimeVersionInherent));
 
         gRuntimeVersionDefault = version;
     }
 
     // Archive versioning.
 
-    boost::uint32_t gArchiveVersion = 0;
+    std::uint32_t gArchiveVersion = 0;
 
-    boost::uint32_t getDefaultArchiveVersion()
+    std::uint32_t getArchiveVersion()
     {
         return gArchiveVersion;
     }
 
-    void setDefaultArchiveVersion(boost::uint32_t version)
+    void setArchiveVersion(std::uint32_t version)
     {
         gArchiveVersion = version;
     }

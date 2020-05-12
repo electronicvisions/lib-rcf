@@ -2,7 +2,7 @@
 // asio.hpp
 // ~~~~~~~~
 //
-// Copyright (c) 2003-2011 Christopher M. Kohlhoff (chris at kohlhoff dot com)
+// Copyright (c) 2003-2015 Christopher M. Kohlhoff (chris at kohlhoff dot com)
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -15,16 +15,20 @@
 # pragma once
 #endif // defined(_MSC_VER) && (_MSC_VER >= 1200)
 
+#include "RCF/external/asio/asio/async_result.hpp"
 #include "RCF/external/asio/asio/basic_datagram_socket.hpp"
 #include "RCF/external/asio/asio/basic_deadline_timer.hpp"
 #include "RCF/external/asio/asio/basic_io_object.hpp"
 #include "RCF/external/asio/asio/basic_raw_socket.hpp"
+#include "RCF/external/asio/asio/basic_seq_packet_socket.hpp"
 #include "RCF/external/asio/asio/basic_serial_port.hpp"
+#include "RCF/external/asio/asio/basic_signal_set.hpp"
 #include "RCF/external/asio/asio/basic_socket_acceptor.hpp"
 #include "RCF/external/asio/asio/basic_socket_iostream.hpp"
 #include "RCF/external/asio/asio/basic_socket_streambuf.hpp"
 #include "RCF/external/asio/asio/basic_stream_socket.hpp"
 #include "RCF/external/asio/asio/basic_streambuf.hpp"
+#include "RCF/external/asio/asio/basic_waitable_timer.hpp"
 #include "RCF/external/asio/asio/buffer.hpp"
 #include "RCF/external/asio/asio/buffered_read_stream_fwd.hpp"
 #include "RCF/external/asio/asio/buffered_read_stream.hpp"
@@ -34,13 +38,22 @@
 #include "RCF/external/asio/asio/buffered_write_stream.hpp"
 #include "RCF/external/asio/asio/buffers_iterator.hpp"
 #include "RCF/external/asio/asio/completion_condition.hpp"
+#include "RCF/external/asio/asio/connect.hpp"
+#include "RCF/external/asio/asio/coroutine.hpp"
 #include "RCF/external/asio/asio/datagram_socket_service.hpp"
 #include "RCF/external/asio/asio/deadline_timer_service.hpp"
 #include "RCF/external/asio/asio/deadline_timer.hpp"
 #include "RCF/external/asio/asio/error.hpp"
 #include "RCF/external/asio/asio/error_code.hpp"
+#include "RCF/external/asio/asio/generic/basic_endpoint.hpp"
+#include "RCF/external/asio/asio/generic/datagram_protocol.hpp"
+#include "RCF/external/asio/asio/generic/raw_protocol.hpp"
+#include "RCF/external/asio/asio/generic/seq_packet_protocol.hpp"
+#include "RCF/external/asio/asio/generic/stream_protocol.hpp"
 #include "RCF/external/asio/asio/handler_alloc_hook.hpp"
+#include "RCF/external/asio/asio/handler_continuation_hook.hpp"
 #include "RCF/external/asio/asio/handler_invoke_hook.hpp"
+#include "RCF/external/asio/asio/handler_type.hpp"
 #include "RCF/external/asio/asio/io_service.hpp"
 #include "RCF/external/asio/asio/ip/address.hpp"
 #include "RCF/external/asio/asio/ip/address_v4.hpp"
@@ -75,9 +88,12 @@
 #include "RCF/external/asio/asio/read.hpp"
 #include "RCF/external/asio/asio/read_at.hpp"
 #include "RCF/external/asio/asio/read_until.hpp"
+#include "RCF/external/asio/asio/seq_packet_socket_service.hpp"
 #include "RCF/external/asio/asio/serial_port.hpp"
 #include "RCF/external/asio/asio/serial_port_base.hpp"
 #include "RCF/external/asio/asio/serial_port_service.hpp"
+#include "RCF/external/asio/asio/signal_set.hpp"
+#include "RCF/external/asio/asio/signal_set_service.hpp"
 #include "RCF/external/asio/asio/socket_acceptor_service.hpp"
 #include "RCF/external/asio/asio/socket_base.hpp"
 #include "RCF/external/asio/asio/strand.hpp"
@@ -87,9 +103,14 @@
 #include "RCF/external/asio/asio/thread.hpp"
 #include "RCF/external/asio/asio/time_traits.hpp"
 #include "RCF/external/asio/asio/version.hpp"
+#include "RCF/external/asio/asio/wait_traits.hpp"
+#include "RCF/external/asio/asio/waitable_timer_service.hpp"
 #include "RCF/external/asio/asio/windows/basic_handle.hpp"
+#include "RCF/external/asio/asio/windows/basic_object_handle.hpp"
 #include "RCF/external/asio/asio/windows/basic_random_access_handle.hpp"
 #include "RCF/external/asio/asio/windows/basic_stream_handle.hpp"
+#include "RCF/external/asio/asio/windows/object_handle.hpp"
+#include "RCF/external/asio/asio/windows/object_handle_service.hpp"
 #include "RCF/external/asio/asio/windows/overlapped_ptr.hpp"
 #include "RCF/external/asio/asio/windows/random_access_handle.hpp"
 #include "RCF/external/asio/asio/windows/random_access_handle_service.hpp"

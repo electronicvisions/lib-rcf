@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -21,14 +21,21 @@
 
 #include <map>
 
-#include <boost/shared_ptr.hpp>
+#include <memory>
 
-#include <RCF/Filter.hpp>
 #include <RCF/ByteBuffer.hpp>
+#include <RCF/Filter.hpp>
+#include <RCF/RecursionLimiter.hpp>
 
 namespace RCF {
 
     class Exception;
+    class MemOstream;
+    class MemIstream;
+    class ReallocBuffer;
+
+    typedef std::shared_ptr<MemOstream> MemOstreamPtr;
+    typedef std::shared_ptr<ReallocBuffer> ReallocBufferPtr;
 
     void splitString(
         const std::string & stringToSplit,
@@ -63,11 +70,9 @@ namespace RCF {
         std::size_t                             mContentLen;
         std::size_t                             mFrameLen;
         std::string                             mHttpMessageHeader;
-        std::vector<std::string>                mHeaderLines;
+        std::vector<std::string>                mMessageLines;
         std::string                             mRequestLine;
         std::string                             mResponseLine;
-
-
     };
 
     class HttpFrameFilter : public Filter
@@ -102,18 +107,22 @@ namespace RCF {
         virtual std::size_t     getFrameSize();
 
         const std::string &     getHttpSessionId();
-        boost::uint32_t         getHttpSessionIndex();
+        std::uint32_t           getHttpSessionIndex();
         const std::string &     getConnectionHeader();
 
+        void                    sendHttpErrorResponse(MemOstreamPtr osPtr);
         void                    onError(const Exception& e);
 
         // If these are set, then we are doing a HTTP response with chunked transfer encoding.
         bool                    mChunkedResponseMode;
         std::size_t             mChunkedResponseCounter;
 
-        void                    tryParseHttpHeader();
-        void                    tryParseHttpChunkHeader();
+        bool                    tryParseHttpHeader();
+        bool                    tryParseHttpChunkHeader();
 
+        void                    getHttpFrameInfo(
+                                    std::string&                                            requestLine,
+                                    std::vector< std::pair<std::string, std::string> >&     headers);
 
 
     private:
@@ -122,36 +131,41 @@ namespace RCF {
 
         void                    resizeReadBuffer(std::size_t newSize);
 
-        std::string                             mServerAddr;
-        int                                     mServerPort;
+        std::string                         mServerAddr;
+        int                                 mServerPort;
 
-        bool                                    mClientSide;
-        std::string                             mHttpSessionId;
-        boost::uint32_t                         mHttpSessionIndex;
-        std::string                             mConnectionHeader;
-        std::string                             mTransferEncoding;
+        bool                                mClientSide;
+        std::string                         mHttpSessionId;
+        std::uint32_t                       mHttpSessionIndex;
+        std::string                         mConnectionHeader;
+        std::string                         mTransferEncoding;
 
-        MemOstreamPtr                           mOsPtr;
-        std::vector<ByteBuffer>                 mWriteBuffers;
-        std::size_t                             mWritePos;
+        MemOstreamPtr                       mOsPtr;
+        std::vector<ByteBuffer>             mWriteBuffers;
+        std::size_t                         mWritePos;
 
-        ByteBuffer                              mOrigReadBuffer;
-        std::size_t                             mOrigBytesRequested;
+        ByteBuffer                          mOrigReadBuffer;
+        std::size_t                         mOrigBytesRequested;
 
-        ReallocBufferPtr                        mReadBufferPtr;
-        std::size_t                             mBytesReceived;
-        std::size_t                             mReadPos;
+        ReallocBufferPtr                    mReadBufferPtr;
+        std::size_t                         mBytesReceived;
+        std::size_t                         mReadPos;
 
-        bool                                    mProtocolChecked;
-        std::size_t                             mChunkHeaderLen;
-        std::size_t                             mChunkLen;
-        std::size_t                             mMaxReadPos;
-        std::size_t                             mMaxMessageLength;
+        bool                                mProtocolChecked;
+        std::size_t                         mChunkHeaderLen;
+        std::size_t                         mChunkLen;
+        std::size_t                         mMaxReadPos;
+        std::size_t                         mMaxMessageLength;
+        bool                                mMaxMessageLengthSet;
 
-        std::string                             mPrevHttpSessionId;
-        boost::uint32_t                         mPrevHttpSessionIndex;
+        std::string                         mPrevHttpSessionId;
+        std::uint32_t                       mPrevHttpSessionIndex;
 
-        HttpMessage                             mHttpMessage;
+        HttpMessage                         mHttpMessage;
+
+        std::map<std::string, HttpCookie>   mCookies;
+
+        RecursionState<ByteBuffer, std::size_t>         mRecursionStateRead;
     };
 
 } // namespace RCF

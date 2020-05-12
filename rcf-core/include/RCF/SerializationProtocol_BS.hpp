@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -38,7 +38,7 @@ namespace RCF {
 #if RCF_FEATURE_BOOST_SERIALIZATION==1
 
     template<> 
-    class Protocol< boost::mpl::int_<BsBinary> > :
+    class Protocol< Int<Sp_BsBinary> > :
         public ProtocolImpl_BSer<boost::archive::binary_iarchive, boost::archive::binary_oarchive>
     {
     public:
@@ -49,7 +49,7 @@ namespace RCF {
     };
 
     template<> 
-    class Protocol< boost::mpl::int_<BsText> > :
+    class Protocol< Int<Sp_BsText> > :
         public ProtocolImpl_BSer<boost::archive::text_iarchive, boost::archive::text_oarchive>
     {
     public:

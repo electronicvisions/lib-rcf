@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -20,17 +20,21 @@
 
 #include <RCF/ByteOrdering.hpp>
 #include <RCF/Exception.hpp>
+#include <RCF/MemStream.hpp>
 #include <RCF/Tools.hpp>
 
-#include <sstream>
-
-#ifdef BOOST_WINDOWS
+#ifdef RCF_WINDOWS
 #include <WS2tcpip.h> // getaddrinfo()
 #endif
 
 namespace RCF {
 
-#ifdef BOOST_WINDOWS
+#ifdef RCF_WINDOWS
+
+#ifdef _MSC_VER
+#pragma warning( push )
+#pragma warning( disable : 4996 )  // warning C4996: 'ctime' was declared deprecated
+#endif
 
     // Windows only has inet_pton on later versions, so use WSAStringToAddress() instead.
     bool resolveNumericIp(const std::string & ip, int addrFamily)
@@ -52,6 +56,11 @@ namespace RCF {
 
         return false;
     }
+
+#ifdef _MSC_VER
+#pragma warning( pop )
+#endif
+
 
 #else
 
@@ -173,19 +182,19 @@ namespace RCF {
 
         if (type == V4)
         {
-            RCF_ASSERT_EQ(addrLen , sizeof(sockaddr_in));
+            RCF_ASSERT(addrLen == sizeof(sockaddr_in));
             sockaddr_in * pAddrV4 = (sockaddr_in *) &addr;
             memcpy(&mAddrV4, pAddrV4, sizeof(mAddrV4));
         }
         else if (type == V6)
         {
-            RCF_ASSERT_EQ(addrLen , sizeof(SockAddrIn6));
+            RCF_ASSERT(addrLen == sizeof(SockAddrIn6));
             SockAddrIn6 * pAddrV6 = (SockAddrIn6 *) &addr;
             memcpy(&mAddrV6, pAddrV6, sizeof(mAddrV6));
         }
         else
         {
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
         }
 
         extractIpAndPort();
@@ -204,23 +213,23 @@ namespace RCF {
         Platform::OS::BsdSockets::socklen_t addrLen = sizeof(addr);
         int ret = getsockname(fd, (sockaddr *) &addr, &addrLen);
         int err = Platform::OS::BsdSockets::GetLastError();
-        RCF_VERIFY(ret == 0, Exception(_RcfError_GetSockName(), err));
+        RCF_VERIFY(ret == 0, Exception(RcfError_GetSockName, osError(err)));
 
         if (type == V4)
         {
-            RCF_ASSERT_EQ(addrLen , sizeof(sockaddr_in));
+            RCF_ASSERT(addrLen == sizeof(sockaddr_in));
             sockaddr_in * pAddrV4 = (sockaddr_in *) &addr;
             memcpy(&mAddrV4, pAddrV4, sizeof(mAddrV4));
         }
         else if (type == V6)
         {
-            RCF_ASSERT_EQ(addrLen , sizeof(SockAddrIn6));
+            RCF_ASSERT(addrLen == sizeof(SockAddrIn6));
             SockAddrIn6 * pAddrV6 = (SockAddrIn6 *) &addr;
             memcpy(&mAddrV6, pAddrV6, sizeof(mAddrV6));
         }
         else
         {
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
         }
 
         extractIpAndPort();
@@ -238,8 +247,7 @@ namespace RCF {
 
         RCF_VERIFY(
             fd != -1,
-            Exception(
-            _RcfError_Socket("socket()"), err, RcfSubsystem_Os));
+            Exception(RcfError_Socket, "socket()", osError(err)));
 
         return fd;
     }
@@ -346,14 +354,11 @@ namespace RCF {
 
         if (ret != 0)
         {
-            e.reset( new Exception(_RcfError_DnsLookup(mIp), dwErr) );
+            e.reset( new Exception(RcfError_DnsLookup, mIp, osError(dwErr)) );
             return;
         }
 
-
-        using namespace boost::multi_index::detail;
-        scope_guard freeAddrInfoGuard = make_guard(&freeaddrinfo, pAddrInfoRet);
-        RCF_UNUSED_VARIABLE(freeAddrInfoGuard);
+        ScopeGuard guard([&]() { freeaddrinfo(pAddrInfoRet); });
 
         // Find first V4 and first V6 address that getaddrinfo() returned. 
         addrinfo * addrinfoVec[2] = {0};
@@ -445,7 +450,7 @@ namespace RCF {
 
         int err = Platform::OS::BsdSockets::GetLastError();
 
-        RCF_VERIFY(ret == 0, Exception(_RcfError_ParseSockAddr(), err));
+        RCF_VERIFY(ret == 0, Exception(RcfError_ParseSockAddr, osError(err)));
 
         mIp = Buffer;
 
@@ -487,7 +492,8 @@ namespace RCF {
             char *szIp = ::inet_ntoa( * (in_addr*) hostDesc->h_addr_list[0]);
             if (szIp == NULL)
             {
-                e.reset( new Exception(_RcfError_DnsLookup(mIp) ));
+                int dwErr = Platform::OS::BsdSockets::GetLastError();
+                e.reset( new Exception(RcfError_DnsLookup, mIp, osError(dwErr)) );
             }
             mAddrV4.sin_addr.s_addr = ::inet_addr(szIp);
             mAddrV4.sin_family = AF_INET;
@@ -497,18 +503,19 @@ namespace RCF {
         }
         else
         {
-            e.reset( new Exception(_RcfError_DnsLookup(mIp) ));
+            int dwErr = Platform::OS::BsdSockets::GetLastError();
+            e.reset( new Exception(RcfError_DnsLookup, mIp, osError(dwErr)) );
         }
     }
 
     void IpAddress::extractIpAndPort()
     {
         RCF_ASSERT(mResolved);
-        RCF_ASSERT_EQ( mType , V4 );
+        RCF_ASSERT( mType == V4 );
 
         char *szIp = ::inet_ntoa(mAddrV4.sin_addr);
         int err = Platform::OS::BsdSockets::GetLastError();
-        RCF_VERIFY(szIp, Exception(_RcfError_ParseSockAddr(), err));
+        RCF_VERIFY(szIp, Exception(RcfError_ParseSockAddr, osError(err)));
 
         mIp = szIp;
         mPort = ntohs(mAddrV4.sin_port);
@@ -565,7 +572,7 @@ namespace RCF {
             return false;
 
         default:
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
             return false;
         }
     }
@@ -587,7 +594,7 @@ namespace RCF {
 
 
         default:
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
             return false;
         }
     }
@@ -618,7 +625,7 @@ namespace RCF {
 
 
         default:
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
             return false;
         }
     }
@@ -648,7 +655,7 @@ namespace RCF {
                     bits = 32;
                 }
 
-                boost::uint32_t mask = 0;
+                std::uint32_t mask = 0;
                 if (bits == 0)
                 {
                     mask = 0;
@@ -657,11 +664,11 @@ namespace RCF {
                 {
                     if (isPlatformLittleEndian())
                     {
-                        mask = boost::uint32_t(-1) >> (32-bits);
+                        mask = std::uint32_t(-1) >> (32-bits);
                     }
                     else
                     {
-                        mask = boost::uint32_t(-1) << (32-bits);
+                        mask = std::uint32_t(-1) << (32-bits);
                     }
                 }
 
@@ -703,7 +710,7 @@ namespace RCF {
                     return true;
                 }
 #else
-                RCF_ASSERT(0);
+                RCF_ASSERT_ALWAYS("");
                 return true;
 #endif
             }
@@ -757,6 +764,32 @@ namespace RCF {
 
         return false;
     }
+
+    IpAddressV4::IpAddressV4() : IpAddress(V4)
+    {}
+
+    IpAddressV4::IpAddressV4(const std::string & ip) : IpAddress(ip, 0, V4)
+    {}
+
+    IpAddressV4::IpAddressV4(const std::string & ip, int port) : IpAddress(ip, port, V4)
+    {}
+
+    IpAddressV4::IpAddressV4(const sockaddr_in & addr) : IpAddress(addr)
+    {}
+
+
+
+    IpAddressV6::IpAddressV6() : IpAddress(V6)
+    {}
+
+    IpAddressV6::IpAddressV6(const std::string & ip) : IpAddress(ip, 0, V6)
+    {}
+
+    IpAddressV6::IpAddressV6(const std::string & ip, int port) : IpAddress(ip, port, V6)
+    {}
+
+    IpAddressV6::IpAddressV6(const SockAddrIn6 & addr) : IpAddress(addr)
+    {}
 
 } // namespace RCF
 

@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,41 +19,23 @@
 #ifndef INCLUDE_RCF_CONFIG_HPP
 #define INCLUDE_RCF_CONFIG_HPP
 
-#include <boost/config.hpp>
-#include <boost/mpl/int.hpp>
-
-#ifdef BOOST_NO_STD_WSTRING
-#error RCF requires compiler support for std::wstring.
-#endif
-
-#ifdef RCF_USE_BOOST_THREADS
-#error RCF_USE_BOOST_THREADS is no longer supported. RCF now uses an internal threading library.
-#endif
+#include <RCF/TypeTraits.hpp>
 
 #ifndef RCF_MAX_METHOD_COUNT
 #define RCF_MAX_METHOD_COUNT 100
 #endif
 
-// On Cygwin, need to compile against external Boost.Asio.
-#if defined(__CYGWIN__) && !defined(RCF_USE_BOOST_ASIO)
-#define RCF_USE_BOOST_ASIO
-#endif
-
-// C++11 requires us to mark some destructors as throwing. Boost.Config needs to 
-// be from a fairly recent version of Boost to detect whether the compiler has 
-// noexcept() support.
-#if BOOST_VERSION >= 104900
-
-#ifdef BOOST_NO_NOEXCEPT
-#define RCF_DTOR_THROWS
-#else
+// C++11 requires us to mark some destructors as throwing.
 #define RCF_DTOR_THROWS noexcept(false)
+
+#ifdef _WIN32
+#define RCF_WINDOWS
 #endif
 
+#ifdef RCF_USE_CONSTEXPR
+#define RCF_CONSTEXPR constexpr
 #else
-
-#define RCF_DTOR_THROWS
-
+#define RCF_CONSTEXPR
 #endif
 
 //------------------------------------------------------------------------------
@@ -63,40 +45,24 @@
 #define RCF_PRO 1
 #endif
 
-// For a minimum build.
-//#define RCF_FEATURE_ZLIB                0
-//#define RCF_FEATURE_OPENSSL             0
-//#define RCF_FEATURE_IPV6                0
-//#define RCF_FEATURE_PROTOBUF            0
-//#define RCF_FEATURE_FILETRANSFER        0
-//#define RCF_FEATURE_JSON                0
-//#define RCF_FEATURE_CUSTOM_ALLOCATOR    0
-//#define RCF_FEATURE_SSPI                0
-//#define RCF_FEATURE_SERVER              0
-//#define RCF_FEATURE_PUBSUB              0
-//#define RCF_FEATURE_LEGACY              0
-//#define RCF_FEATURE_HTTP                0
-//#define RCF_FEATURE_UDP                 0
-//#define RCF_FEATURE_NAMEDPIPE           0
-//#define RCF_FEATURE_LOCALSOCKET         0
-//#define RCF_FEATURE_TCP                 1
-//#define RCF_FEATURE_SF                  1
-//#define RCF_FEATURE_BOOST_SERIALIZATION 0
+#ifndef RCF_FEATURE_LEGACY
+#define RCF_FEATURE_LEGACY          0
+#endif
 
 // RCF_FEATURE_LOCALSOCKET not supported on Windows platforms.
-#if defined(RCF_FEATURE_LOCALSOCKET) && defined(BOOST_WINDOWS)
+#if defined(RCF_FEATURE_LOCALSOCKET) && defined(RCF_WINDOWS)
 #undef RCF_FEATURE_LOCALSOCKET
 #define RCF_FEATURE_LOCALSOCKET     0
 #endif
 
 // RCF_FEATURE_NAMEDPIPE not supported on non-Windows platforms.
-#if defined(RCF_FEATURE_NAMEDPIPE) && !defined(BOOST_WINDOWS)
+#if defined(RCF_FEATURE_NAMEDPIPE) && !defined(RCF_WINDOWS)
 #undef RCF_FEATURE_NAMEDPIPE
 #define RCF_FEATURE_NAMEDPIPE       0
 #endif
 
 // RCF_FEATURE_SSPI not supported on non-Windows platforms.
-#if defined(RCF_FEATURE_SSPI) && !defined(BOOST_WINDOWS)
+#if defined(RCF_FEATURE_SSPI) && !defined(RCF_WINDOWS)
 #undef RCF_FEATURE_SSPI
 #define RCF_FEATURE_SSPI            0
 #endif
@@ -124,20 +90,16 @@
 
 // SSPI feature.
 #ifndef RCF_FEATURE_SSPI
-#if defined(BOOST_WINDOWS) && RCF_PRO == 1
+#if defined(RCF_WINDOWS) && RCF_PRO == 1
 #define RCF_FEATURE_SSPI                1
 #else
 #define RCF_FEATURE_SSPI                0
 #endif
 #endif
 
-// File transfer feature
+// File transfer feature. Off by default as it requires C++17. 
 #ifndef RCF_FEATURE_FILETRANSFER
-#ifdef RCF_USE_BOOST_FILESYSTEM
-#define RCF_FEATURE_FILETRANSFER    1
-#else
 #define RCF_FEATURE_FILETRANSFER    0
-#endif
 #endif
 
 // Server feature
@@ -145,14 +107,14 @@
 #define RCF_FEATURE_SERVER          1
 #endif
 
+// Server feature
+#ifndef RCF_FEATURE_PROXYENDPOINT
+#define RCF_FEATURE_PROXYENDPOINT          1
+#endif
+
 // Publish/subscribe feature.
 #ifndef RCF_FEATURE_PUBSUB
 #define RCF_FEATURE_PUBSUB          1
-#endif
-
-// Legacy feature
-#ifndef RCF_FEATURE_LEGACY
-#define RCF_FEATURE_LEGACY          1
 #endif
 
 // HTTP/HTTPS feature.
@@ -167,7 +129,7 @@
 
 // Win32 named pipes feature.
 #ifndef RCF_FEATURE_NAMEDPIPE
-#ifdef BOOST_WINDOWS
+#ifdef RCF_WINDOWS
 #define RCF_FEATURE_NAMEDPIPE           1
 #else
 #define RCF_FEATURE_NAMEDPIPE           0
@@ -176,7 +138,7 @@
 
 // Unix local sockets feature.
 #ifndef RCF_FEATURE_LOCALSOCKET
-#ifdef BOOST_WINDOWS
+#ifdef RCF_WINDOWS
 #define RCF_FEATURE_LOCALSOCKET         0
 #else
 #define RCF_FEATURE_LOCALSOCKET         1
@@ -186,15 +148,6 @@
 // TCP feature.
 #ifndef RCF_FEATURE_TCP
 #define RCF_FEATURE_TCP             1
-#endif
-
-// JSON feature
-#ifndef RCF_FEATURE_JSON
-#ifdef RCF_USE_JSON
-#define RCF_FEATURE_JSON            1
-#else
-#define RCF_FEATURE_JSON            0
-#endif
 #endif
 
 // IPv6 feature
@@ -279,29 +232,10 @@
 
 namespace RCF {
 
-    #ifndef RCF_USE_SF_SERIALIZATION
-    typedef boost::mpl::int_<0> RcfConfig_SF;
-    #else
-    typedef boost::mpl::int_<1> RcfConfig_SF;
-    #endif
-
-    #ifndef RCF_USE_BOOST_SERIALIZATION
-    typedef boost::mpl::int_<0> RcfConfig_BSer;
-    #else
-    typedef boost::mpl::int_<1> RcfConfig_BSer;
-    #endif
-
-    #ifndef RCF_USE_BOOST_FILESYSTEM
-    typedef boost::mpl::int_<0> RcfConfig_BFs;
-    #else
-    typedef boost::mpl::int_<1> RcfConfig_BFs;
-    #endif
-
-    #if RCF_FEATURE_JSON==0
-    typedef boost::mpl::int_<0> RcfConfig_Json;
-    #else
-    typedef boost::mpl::int_<1> RcfConfig_Json;
-    #endif
+    typedef Int<RCF_FEATURE_SF>                         RcfConfig_SF;
+    typedef Int<RCF_FEATURE_BOOST_SERIALIZATION>        RcfConfig_BSer;
+    typedef Int<RCF_FEATURE_FILETRANSFER>               RcfConfig_FileTransfer;
+    typedef Int<RCF_FEATURE_PROTOBUF>                   RcfConfig_Protobufs;
 
     template<int N1, int N2, int N3, int N4>
     struct RcfConfigurationDetectMismatches
@@ -311,9 +245,50 @@ namespace RCF {
     typedef RcfConfigurationDetectMismatches<
         RcfConfig_SF::value, 
         RcfConfig_BSer::value, 
-        RcfConfig_BFs::value, 
-        RcfConfig_Json::value> RcfConfigT;
+        RcfConfig_FileTransfer::value,
+        RcfConfig_Protobufs::value>                     RcfConfigT;
 
 } // namespace RCF
+
+#ifdef _MSC_VER
+#ifndef _CPPRTTI
+  // RTTI support not detected!
+  // If you're using Visual C++, set "Enable Run-Time Type Info" to true,
+  // in the Project Properties | C/C++ | Language options,
+#error RCF requires Run-Time Type Info support to be enabled.
+#endif
+#endif
+
+// Borrowed from Boost, to determine which current function macro to use.
+#if defined(__GNUC__) || (defined(__MWERKS__) && (__MWERKS__ >= 0x3000)) || (defined(__ICC) && (__ICC >= 600)) || defined(__ghs__)
+# define RCF_CURRENT_FUNCTION __PRETTY_FUNCTION__
+#elif defined(__DMC__) && (__DMC__ >= 0x810)
+# define RCF_CURRENT_FUNCTION __PRETTY_FUNCTION__
+#elif defined(__FUNCSIG__)
+# define RCF_CURRENT_FUNCTION __FUNCSIG__
+#elif (defined(__INTEL_COMPILER) && (__INTEL_COMPILER >= 600)) || (defined(__IBMCPP__) && (__IBMCPP__ >= 500))
+# define RCF_CURRENT_FUNCTION __FUNCTION__
+#elif defined(__BORLANDC__) && (__BORLANDC__ >= 0x550)
+# define RCF_CURRENT_FUNCTION __FUNC__
+#elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 199901)
+# define RCF_CURRENT_FUNCTION __func__
+#elif defined(__cplusplus) && (__cplusplus >= 201103)
+# define RCF_CURRENT_FUNCTION __func__
+#else
+# define RCF_CURRENT_FUNCTION "(unknown)"
+#endif
+
+// Need these defines so asio doesn't pull in any Boost code.
+#ifndef RCF_USE_BOOST_ASIO
+
+#ifndef ASIO_STANDALONE
+#define ASIO_STANDALONE
+#endif
+
+#ifndef ASIO_HAS_STD_CHRONO
+#define ASIO_HAS_STD_CHRONO
+#endif
+
+#endif // ! RCF_USE_BOOST_ASIO
 
 #endif // ! INCLUDE_RCF_CONFIG_HPP

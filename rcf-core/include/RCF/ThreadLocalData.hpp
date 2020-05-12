@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,18 +19,20 @@
 #ifndef INCLUDE_RCF_THREADLOCALDATA_HPP
 #define INCLUDE_RCF_THREADLOCALDATA_HPP
 
-#include <boost/shared_ptr.hpp>
+#include <codecvt>
+#include <functional>
+#include <locale>
+#include <memory>
+#include <vector>
 
-#include <RCF/ByteBuffer.hpp>
+#include <RCF/Config.hpp>
 #include <RCF/Export.hpp>
-#include <RCF/RecursionLimiter.hpp>
-#include <RCF/ThreadLibrary.hpp>
 
-#ifdef BOOST_WINDOWS
+#ifdef RCF_WINDOWS
 #include <WinSock2.h>
 #endif
 
-#ifndef BOOST_WINDOWS
+#ifndef RCF_WINDOWS
 struct iovec;
 #endif
 
@@ -47,24 +49,26 @@ namespace RCF {
     class LogBuffers;
     class Filter;
     class FileUpload;
+    class ByteBuffer;
 
-    typedef boost::shared_ptr<ClientStub>       ClientStubPtr;
-    typedef boost::shared_ptr<RcfSession>       RcfSessionPtr;
-    typedef boost::shared_ptr<ThreadInfo>       ThreadInfoPtr;
-    typedef boost::shared_ptr<UdpNetworkSession>  UdpNetworkSessionPtr;   
-    typedef boost::shared_ptr<OverlappedAmi>    OverlappedAmiPtr;
-    typedef boost::shared_ptr<LogBuffers>       LogBuffersPtr;
-    typedef boost::function1<void, RcfSession&> RcfSessionCallback;
-    typedef boost::shared_ptr<Filter>           FilterPtr;
+    typedef std::shared_ptr<ClientStub>       ClientStubPtr;
+    typedef std::shared_ptr<RcfSession>       RcfSessionPtr;
+    typedef std::shared_ptr<ThreadInfo>       ThreadInfoPtr;
+    typedef std::shared_ptr<UdpNetworkSession>  UdpNetworkSessionPtr;   
+    typedef std::shared_ptr<OverlappedAmi>    OverlappedAmiPtr;
+    typedef std::shared_ptr<LogBuffers>       LogBuffersPtr;
+    typedef std::function<void(RcfSession&)> RcfSessionCallback;
+    typedef std::shared_ptr<Filter>           FilterPtr;
 
-#ifndef BOOST_WINDOWS
+    template<typename T1, typename T2>
+    class RecursionState;
+
+#ifndef RCF_WINDOWS
     typedef iovec WSABUF;
 #endif
 
     class ThreadLocalData;
     ThreadLocalData &               getThreadLocalData();
-
-    RCF_EXPORT void                 clearThreadLocalDataForThisThread();
 
     RCF_EXPORT ClientStub *         getTlsClientStubPtr();
     
@@ -91,7 +95,6 @@ namespace RCF {
     RCF_EXPORT void                 setTlsUdpNetworkSessionPtr(
                                         UdpNetworkSessionPtr udpNetworkSessionPtr);
 
-    RCF_EXPORT RcfSession &         getCurrentRcfSession();
     RCF_EXPORT RcfSession &         getTlsRcfSession();
 
     RecursionState<int, int> &      getTlsRcfSessionRecursionState();
@@ -117,6 +120,9 @@ namespace RCF {
 
     RCF_EXPORT std::vector< std::vector<FileUpload> * > &      
                                     getTlsCache(std::vector<FileUpload> *);
+
+    std::wstring_convert<std::codecvt_utf8<wchar_t> > &
+                                    getTlsUtf8Converter();
 
     template<typename T>
     class ThreadLocalCached
@@ -156,7 +162,6 @@ namespace RCF {
         T * mpt;
     };
 
-    void RCF_EXPORT addThreadExitHandler(boost::function<void()> func);
 
 } // namespace RCF
 

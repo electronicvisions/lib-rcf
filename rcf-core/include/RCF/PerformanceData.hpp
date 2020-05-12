@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -22,7 +22,7 @@
 #include <RCF/Export.hpp>
 #include <RCF/ThreadLibrary.hpp>
 
-#include <boost/cstdint.hpp>
+#include <cstdint>
 #include <vector>
 
 namespace RCF {
@@ -37,9 +37,9 @@ namespace RCF {
         void collect();
 
         Mutex           mMutex;
-        boost::uint32_t mRcfSessions;
-        boost::uint32_t mBufferCount;
-        boost::uint32_t mTotalBufferSize;
+        std::uint32_t mRcfSessions;
+        std::uint32_t mBufferCount;
+        std::uint32_t mTotalBufferSize;
 
     private:
 

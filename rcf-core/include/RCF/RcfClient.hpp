@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,42 +11,37 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
+/// @file
+
 #ifndef INCLUDE_RCF_RCFCLIENT_HPP
 #define INCLUDE_RCF_RCFCLIENT_HPP
 
-#include <boost/mpl/eval_if.hpp>
-#include <boost/mpl/bool_fwd.hpp>
-#include <boost/shared_ptr.hpp>
-#include <boost/utility/enable_if.hpp>
+#include <functional>
+#include <map>
+#include <memory>
 
-#include <RCF/CheckRtti.hpp>
-#include <RCF/ClientStub.hpp>
 #include <RCF/Export.hpp>
+#include <RCF/RcfFwd.hpp>
+#include <RCF/Exception.hpp>
 
 namespace RCF {
 
-    class ClientStub;
-    class ServerBinding;
-    class RcfSession;
-
-    typedef boost::shared_ptr<ClientStub> ClientStubPtr;
-    typedef boost::shared_ptr<ServerBinding> ServerBindingPtr;
-
-    typedef boost::function2<
-        void,
-        int,
-        RcfSession &> InvokeFunctor;
-
-    typedef std::map<std::string,  InvokeFunctor> InvokeFunctorMap;
 
     RCF_EXPORT void setCurrentCallDesc(std::string& desc, RCF::MethodInvocationRequest& request, const char * szFunc, const char * szArity);
 
-    // Base class of all RcfClient<> templates.
+    // Returns the runtime name of the given RCF interface.
+    template<typename Interface>
+    inline std::string getInterfaceName(Interface * = 0)
+    {
+        return Interface::getInterfaceName();
+    }
+
+    /// Base class of all RcfClient<> templates.
     class RCF_EXPORT I_RcfClient
     {
     public:
@@ -62,17 +57,19 @@ namespace RCF {
         I_RcfClient(
             const std::string &     interfaceName, 
             const Endpoint &        endpoint, 
-            const std::string &     targetName_ = "");
+            const std::string &     serverBindingName = "");
 
         I_RcfClient(
             const std::string &     interfaceName, 
-            ClientTransportAutoPtr  clientTransportAutoPtr, 
-            const std::string &     targetName_ = "");
+            ClientTransportUniquePtr  clientTransportUniquePtr, 
+            const std::string &     serverBindingName = "");
 
         I_RcfClient(
             const std::string &     interfaceName, 
             const ClientStub &      clientStub, 
-            const std::string &     targetName_ = "");
+            const std::string &     serverBindingName = "");
+
+        // Copy construction/assignment.
 
         I_RcfClient(
             const std::string &     interfaceName, 
@@ -80,26 +77,43 @@ namespace RCF {
 
         I_RcfClient & operator=(const I_RcfClient & rhs);
 
+        // Move construction/assignment.
+
+        I_RcfClient(
+            const std::string &     interfaceName,
+            I_RcfClient &&     rhs);
+
+        I_RcfClient & operator=(I_RcfClient && rhs);
+
         void                swap(I_RcfClient & rhs);
 
         void                setClientStubPtr(ClientStubPtr clientStubPtr);
 
+        /// Returns the ClientStub of this RcfClient.
         ClientStub &        getClientStub();
+
+        /// Returns the ClientStub of this RcfClient.
         const ClientStub &  getClientStub() const;
+
         ClientStubPtr       getClientStubPtr() const;
         ServerBindingPtr    getServerStubPtr() const;
         ServerBinding &     getServerStub();
 
     protected:
 
+        void checkClientInitialized();
+
         ClientStubPtr                   mClientStubPtr;
         ServerBindingPtr                mServerStubPtr;
+
+        // These are preserved even when swapping or moving.
         std::string                     mInterfaceName;
+        mutable std::string             mServerBindingName;
 
         typedef Void                    V;
     };
 
-    typedef boost::shared_ptr<I_RcfClient> RcfClientPtr;
+    typedef std::shared_ptr<I_RcfClient> RcfClientPtr;
 
     // some meta-programming functionality needed by the macros in IDL.hpp
 
@@ -125,8 +139,8 @@ namespace RCF {
     struct GetInterface
     {
         // tried eval_if here, but got some weird errors with vc71
-        typedef typename boost::mpl::if_c<
-            sizeof(yes_type) == sizeof(RCF_hasRcfClientTypedef<T>(0)),
+        typedef typename If<
+            Bool< sizeof(yes_type) == sizeof(RCF_hasRcfClientTypedef<T>(0)) >,
             GetRcfClient<T>,
             Identity<T> >::type type0;
 

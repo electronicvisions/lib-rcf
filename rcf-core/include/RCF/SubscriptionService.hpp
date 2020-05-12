@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,62 +19,36 @@
 #ifndef INCLUDE_RCF_SUBSCRIPTIONSERVICE_HPP
 #define INCLUDE_RCF_SUBSCRIPTIONSERVICE_HPP
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
 #include <string>
 #include <utility>
 
-#include <boost/shared_ptr.hpp>
+#include <RCF/ClientStub.hpp>
 #include <RCF/Export.hpp>
-#include <RCF/GetInterfaceName.hpp>
+#include <RCF/RcfClient.hpp>
+#include <RCF/RcfFwd.hpp>
 #include <RCF/PeriodicTimer.hpp>
 #include <RCF/ServerStub.hpp>
 #include <RCF/Service.hpp>
-#include <RCF/Timer.hpp>
 
 namespace RCF {
 
-    class RcfServer;
-    class RcfSession;
-    class ClientTransport;
-    class ServerTransport;
-    class Endpoint;
-    class I_RcfClient;
-
-    typedef boost::shared_ptr<I_RcfClient>          RcfClientPtr;
-    typedef std::auto_ptr<ClientTransport>          ClientTransportAutoPtr;
-    typedef boost::shared_ptr<RcfSession>           RcfSessionPtr;
-    typedef boost::weak_ptr<RcfSession>             RcfSessionWeakPtr;
-    typedef boost::shared_ptr<ServerTransport>      ServerTransportPtr;
-
-    template<typename T> class RcfClient;
-    class I_RequestSubscription;
-    class I_Null;
-
-    class SubscriptionService;
-
-    class Subscription;
-    typedef boost::shared_ptr<Subscription>         SubscriptionPtr;
-    typedef boost::weak_ptr<Subscription>           SubscriptionWeakPtr;
-
-    typedef boost::function1<void, RcfSession &>    OnSubscriptionDisconnect;
-
-    template<typename T>
-    class Future;
-
-    class RCF_EXPORT Subscription : boost::noncopyable
+    /// Represents a subscription to a RCF publisher. To create a subscription, use RcfServer::createSubscription().
+    class RCF_EXPORT Subscription : Noncopyable
     {
     private:
 
         Subscription(
-            SubscriptionService &   subscriptionService,
-            ClientTransportAutoPtr  clientTransportAutoPtr,
-            RcfSessionWeakPtr       rcfSessionWeakPtr,
-            boost::uint32_t         incomingPingIntervalMs,
-            const std::string &     publisherUrl,
-            const std::string &     topic,
-            OnSubscriptionDisconnect onDisconnect);
+            SubscriptionService &       subscriptionService,
+            ClientTransportUniquePtr    clientTransportUniquePtr,
+            RcfSessionWeakPtr           rcfSessionWeakPtr,
+            std::uint32_t               incomingPingIntervalMs,
+            const std::string &         publisherUrl,
+            const std::string &         topic,
+            OnSubscriptionDisconnect    onDisconnect);
 
         void setWeakThisPtr(SubscriptionWeakPtr thisWeakPtr);
 
@@ -83,9 +57,13 @@ namespace RCF {
         ~Subscription();
 
         unsigned int    getPingTimestamp();
-        bool            isConnected();
-        void            close();
         RcfSessionPtr   getRcfSessionPtr();
+
+        /// Checks if the subscriber has a valid network connection handle to the publisher.
+        bool            isConnected();
+
+        /// Closes the subscription and disconnects from the publisher.
+        void            close();
 
     private:
         friend class SubscriptionService;
@@ -98,32 +76,39 @@ namespace RCF {
         RecursiveMutex              mMutex;
         RcfSessionWeakPtr           mRcfSessionWeakPtr;
         
-        boost::shared_ptr<I_RcfClient>  mConnectionPtr;
+        RcfClientPtr                mConnectionPtr;
 
-        boost::uint32_t             mPingIntervalMs;
-        bool                        mPingsEnabled;
+        std::uint32_t               mPubToSubPingIntervalMs = 0;
+        bool                        mPublisherSupportsPubSubPings = true;
         std::string                 mPublisherUrl;
         std::string                 mTopic;
 
         OnSubscriptionDisconnect    mOnDisconnect;
-        bool                        mClosed;
+        bool                        mClosed = false;
     };
 
-    typedef boost::shared_ptr<Subscription> SubscriptionPtr;
-    typedef boost::weak_ptr<Subscription> SubscriptionWeakPtr;
-
-    typedef boost::function2<void, SubscriptionPtr, ExceptionPtr> OnAsyncSubscribeCompleted;
-
+    /// General configuration of a subscription.
     class RCF_EXPORT SubscriptionParms
     {
     public:
         SubscriptionParms();
 
+        /// Sets the topic name of the subscription. The default topic name is the name of the RCF interface of the subscription.
         void        setTopicName(const std::string & publisherName);
+
+        /// Gets the topic name of the subscription. The default topic name is the name of the RCF interface of the subscription.
         std::string getTopicName() const;
+
+        /// Sets the network endpoint of the publishing server.
         void        setPublisherEndpoint(const Endpoint & publisherEp);
+
+        /// Sets the network endpoint of the publishing server.
         void        setPublisherEndpoint(I_RcfClient & rcfClient);
+
+        /// Configures a callback to be called whenever the subscriber is disconnected from the publisher.
         void        setOnSubscriptionDisconnect(OnSubscriptionDisconnect onSubscriptionDisconnect);
+
+        /// Configures a callback to be called when an asynchronous subscription connection is established.
         void        setOnAsyncSubscribeCompleted(OnAsyncSubscribeCompleted onAsyncSubscribeCompleted);
 
     private:
@@ -138,11 +123,11 @@ namespace RCF {
 
     class RCF_EXPORT SubscriptionService :
         public I_Service,
-        boost::noncopyable
+        Noncopyable
     {
     public:
 
-        SubscriptionService(boost::uint32_t pingIntervalMs = 0);
+        SubscriptionService(std::uint32_t pingIntervalMs = 0);
 
         ~SubscriptionService();
 
@@ -153,11 +138,10 @@ namespace RCF {
         {
             std::string defaultPublisherName = getInterfaceName((Interface *) NULL);
 
-            boost::shared_ptr< I_Deref<T> > derefPtr(
-                new DerefObj<T>(t));
+            std::reference_wrapper<T> refWrapper(t);
 
             RcfClientPtr rcfClientPtr(
-                createServerStub((Interface *) 0, (T *) 0, derefPtr));
+                createServerStub((Interface *) 0, (T *) 0, refWrapper));
 
             return createSubscriptionImpl(rcfClientPtr, parms, defaultPublisherName);
         }
@@ -185,18 +169,18 @@ namespace RCF {
         void createSubscriptionImplEnd(
             ExceptionPtr                            ePtr,
             ClientStubPtr                           clientStubPtr,
-            boost::int32_t                          ret,
+            std::int32_t                          ret,
             const std::string &                     publisherName,
             RcfClientPtr                            rcfClientPtr,
             OnSubscriptionDisconnect                onDisconnect,
             OnAsyncSubscribeCompleted               onCompletion,
-            boost::uint32_t                         pubToSubPingIntervalMs,
+            std::uint32_t                         pubToSubPingIntervalMs,
             bool                                    pingsEnabled);
 
         void closeSubscription(SubscriptionWeakPtr subscriptionPtr);
 
-        void setPingIntervalMs(boost::uint32_t pingIntervalMs);
-        boost::uint32_t getPingIntervalMs() const;
+        void setPingIntervalMs(std::uint32_t pingIntervalMs);
+        std::uint32_t getPingIntervalMs() const;
         
     private:
 
@@ -209,7 +193,7 @@ namespace RCF {
         typedef std::set<SubscriptionWeakPtr> Subscriptions;
         Subscriptions                   mSubscriptions;
 
-        boost::uint32_t                 mPingIntervalMs;
+        std::uint32_t                   mPingIntervalMs;
         PeriodicTimer                   mPeriodicTimer;
 
         virtual void onTimer();
@@ -221,21 +205,21 @@ namespace RCF {
     public:
 
         SubscriptionPtr onRequestSubscriptionCompleted(
-            boost::int32_t                          ret,
+            std::int32_t                            ret,
             const std::string &                     publisherName,
             ClientStub &                            clientStub,
             RcfClientPtr                            rcfClientPtr,
             OnSubscriptionDisconnect                onDisconnect,
-            boost::uint32_t                         pubToSubPingIntervalMs,
+            std::uint32_t                           pubToSubPingIntervalMs,
             bool                                    pingsEnabled);
 
     private:
 
-        boost::int32_t doRequestSubscription(
+        std::int32_t doRequestSubscription(
             ClientStub &                    clientStubOrig, 
             const std::string &             publisherName,
-            boost::uint32_t                 subToPubPingIntervalMs, 
-            boost::uint32_t &               pubToSubPingIntervalMs,
+            std::uint32_t                   subToPubPingIntervalMs, 
+            std::uint32_t &                 pubToSubPingIntervalMs,
             bool &                          pingsEnabled);
 
         void doRequestSubscriptionAsync(
@@ -254,32 +238,33 @@ namespace RCF {
 
         // Legacy subscription requests.
 
-        boost::int32_t doRequestSubscription_Legacy(
-            ClientStub &                    clientStubOrig, 
+        std::int32_t doRequestSubscription_Legacy(
+            ClientStub &                    clientStubOrig,
             const std::string &             publisherName,
-            boost::uint32_t                 subToPubPingIntervalMs, 
-            boost::uint32_t &               pubToSubPingIntervalMs,
+            std::uint32_t                   subToPubPingIntervalMs,
+            std::uint32_t &                 pubToSubPingIntervalMs,
             bool &                          pingsEnabled);
 
         void doRequestSubscriptionAsync_Legacy(
-            ClientStub &                    clientStubOrig, 
+            ClientStub &                    clientStubOrig,
             const std::string &             publisherName,
             RcfClientPtr                    rcfClientPtr,
             const SubscriptionParms &       parms);
 
         void doRequestSubscriptionAsync_Legacy_Complete(
             ClientStubPtr                   clientStubPtr,
-            Future<boost::int32_t>          fRet,
+            Future<std::int32_t>            fRet,
             const std::string &             publisherName,
             RcfClientPtr                    rcfClientPtr,
             OnSubscriptionDisconnect        onDisconnect,
             OnAsyncSubscribeCompleted       onCompletion,
-            Future<boost::uint32_t>         pubToSubPingIntervalMs,
+            Future<std::uint32_t>           pubToSubPingIntervalMs,
             bool                            pingsEnabled);
+
 
     };
 
-    typedef boost::shared_ptr<SubscriptionService> SubscriptionServicePtr;
+    typedef std::shared_ptr<SubscriptionService> SubscriptionServicePtr;
 
 } // namespace RCF
 

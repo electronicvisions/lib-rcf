@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -21,12 +21,8 @@
 
 #include <RCF/Config.hpp>
 
-#include <boost/shared_ptr.hpp>
-
-#if defined(__CYGWIN__) && !defined(RCF_USE_BOOST_ASIO)
-#error RCF_USE_BOOST_ASIO must be defined when building on Cygwin.
-#endif
-
+#include <memory>
+#include <system_error>
 
 namespace boost {
     namespace posix_time {
@@ -74,7 +70,7 @@ namespace RCF {
 namespace asio {
 
     class io_service;
-    class error_code;
+    typedef std::error_code error_code;
 
     namespace windows {
         template<typename T> class basic_stream_handle;
@@ -95,16 +91,16 @@ namespace RCF {
 namespace RCF {
 
     typedef ASIO_NS::io_service                         AsioIoService;
-    typedef boost::shared_ptr<AsioIoService>            AsioIoServicePtr;
+    typedef std::shared_ptr<AsioIoService>            AsioIoServicePtr;
 
     typedef ASIO_NS::windows::stream_handle             AsioPipeHandle;
-    typedef boost::shared_ptr<AsioPipeHandle>           AsioPipeHandlePtr;
+    typedef std::shared_ptr<AsioPipeHandle>           AsioPipeHandlePtr;
 
     class AsioTimer;
-    typedef boost::shared_ptr<AsioTimer>                AsioTimerPtr;
+    typedef std::shared_ptr<AsioTimer>                AsioTimerPtr;
 
     class                                               AsioBuffers;
-    typedef boost::shared_ptr<AsioBuffers>              AsioBuffersPtr;
+    typedef std::shared_ptr<AsioBuffers>              AsioBuffersPtr;
 
 } // namespace RCF
 

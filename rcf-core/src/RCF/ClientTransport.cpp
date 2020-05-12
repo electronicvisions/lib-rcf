@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,6 +19,7 @@
 #include <RCF/ClientTransport.hpp>
 
 #include <RCF/Asio.hpp>
+#include <RCF/ClientProgress.hpp>
 #include <RCF/ClientStub.hpp>
 #include <RCF/Exception.hpp>
 #include <RCF/ServerTransport.hpp>
@@ -27,6 +28,7 @@ namespace RCF {
 
     ClientTransport::ClientTransport() :
         mMaxMessageLength(getDefaultMaxMessageLength()),
+        mMaxOutgoingMessageLength(0),
         mLastRequestSize(0),
         mLastResponseSize(0),
         mRunningTotalBytesSent(0),
@@ -36,6 +38,7 @@ namespace RCF {
 
     ClientTransport::ClientTransport(const ClientTransport & rhs) :
         mMaxMessageLength(rhs.mMaxMessageLength),
+        mMaxOutgoingMessageLength(rhs.mMaxOutgoingMessageLength),
         mLastRequestSize(),
         mLastResponseSize(0),
         mRunningTotalBytesSent(0),
@@ -44,19 +47,14 @@ namespace RCF {
     {
     }
 
+    void ClientTransport::setClientProgressPtr(ClientProgressPtr clientProgressPtr)
+    {
+        mClientProgressPtr = clientProgressPtr;
+    }
+
     bool ClientTransport::isConnected()
     {
         return true;
-    }
-
-    void ClientTransport::setMaxMessageLength(std::size_t maxMessageLength)
-    {
-        setMaxIncomingMessageLength(maxMessageLength);
-    }
-
-    std::size_t ClientTransport::getMaxMessageLength() const
-    {
-        return getMaxIncomingMessageLength();
     }
 
     void ClientTransport::setMaxIncomingMessageLength(
@@ -68,6 +66,17 @@ namespace RCF {
     std::size_t ClientTransport::getMaxIncomingMessageLength() const
     {
         return mMaxMessageLength;
+    }
+
+    void ClientTransport::setMaxOutgoingMessageLength(
+        std::size_t maxMessageLength)
+    {
+        mMaxOutgoingMessageLength = maxMessageLength;
+    }
+
+    std::size_t ClientTransport::getMaxOutgoingMessageLength() const
+    {
+        return mMaxOutgoingMessageLength;
     }
 
     RcfSessionWeakPtr ClientTransport::getRcfSession()
@@ -90,12 +99,12 @@ namespace RCF {
         return mLastResponseSize;
     }
 
-    boost::uint64_t ClientTransport::getRunningTotalBytesSent()
+    std::uint64_t ClientTransport::getRunningTotalBytesSent()
     {
         return mRunningTotalBytesSent;
     }
 
-    boost::uint64_t ClientTransport::getRunningTotalBytesReceived()
+    std::uint64_t ClientTransport::getRunningTotalBytesReceived()
     {
         return mRunningTotalBytesReceived;
     }
@@ -104,6 +113,12 @@ namespace RCF {
     {
         mRunningTotalBytesSent = 0;
         mRunningTotalBytesReceived = 0;
+    }
+
+    void ClientTransport::getWireFilters(
+        std::vector<FilterPtr> &        filters)
+    {
+        filters.clear();
     }
 
     void ClientTransportCallback::setAsyncDispatcher(RcfServer & server)
@@ -125,7 +140,7 @@ namespace RCF {
     void ClientTransport::associateWithIoService(AsioIoService & ioService)
     {
         RCF_UNUSED_VARIABLE(ioService);
-        RCF_ASSERT(0 && "Asynchronous operations not implemented for this transport.");
+        RCF_ASSERT_ALWAYS("Asynchronous operations not implemented for this transport.");
     }
 
     bool ClientTransport::isAssociatedWithIoService()
@@ -135,7 +150,7 @@ namespace RCF {
 
     void ClientTransport::cancel()
     {
-        RCF_ASSERT(0 && "cancel() not implemented for this transport");
+        RCF_ASSERT_ALWAYS("cancel() not implemented for this transport");
     }
 
 } // namespace RCF

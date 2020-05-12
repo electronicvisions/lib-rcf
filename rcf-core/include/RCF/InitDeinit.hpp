@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,39 +19,35 @@
 #ifndef INCLUDE_RCF_INITDEINIT_HPP
 #define INCLUDE_RCF_INITDEINIT_HPP
 
+/// \file
+
 #include <RCF/Export.hpp>
-
 #include <RCF/Config.hpp>
-
-#include <boost/mpl/int.hpp>
-#include <boost/mpl/list.hpp>
 
 namespace RCF {
 
-    // For debug use.
+    /// Returns the number of outstanding RCF::init() calls.
     RCF_EXPORT std::size_t getInitRefCount();
 
-    /// Reference-counted initialization of RCF framework. May be called multiple
-    /// times (see deinit()).
-    RCF_EXPORT bool init(RcfConfigT * = NULL);
+    /// Reference-counted initialization of RCF library. May be called multiple times (see deinit()).
+    RCF_EXPORT bool init(RcfConfigT * = nullptr);
 
-    /// Reference-counted deinitialization of RCF framework. For actual deinitialization
-    /// to take place, deinit() must be called as many times as init() has been
-    /// called.
+    /// Reference-counted deinitialization of RCF library. For actual deinitialization to take place, deinit() must be called as many times as init() has been called.
     RCF_EXPORT bool deinit();
 
-    // Initialization sentry. Ctor calls RCF::init(), dtor calls RCF::deinit().
-    class RCF_EXPORT RcfInitDeinit
+    /// RCF initialization sentry class. Internally reference counted. Constructor calls RCF::init(). Destructor calls RCF::deinit().
+    class RCF_EXPORT RcfInit
     {
     public:
-        RcfInitDeinit(RcfConfigT * = NULL);
-        ~RcfInitDeinit();
 
-        // Returns true if this instance initialized RCF.
-        bool isRootInstance();
+        /// Calls RCF::init(). Uses an anonymous default parameter to detect build configuration mismatches.
+        RcfInit(RcfConfigT * = nullptr);
+
+        /// Calls RCF::deinit().
+        ~RcfInit();
 
     private:
-        bool mIsRootInstance;
+        bool mIsRootInstance = false;
     };
 
 } // namespace RCF

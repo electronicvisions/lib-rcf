@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,10 +19,12 @@
 #include <RCF/Win32NamedPipeServerTransport.hpp>
 
 #include <RCF/Asio.hpp>
+#include <RCF/Enums.hpp>
 #include <RCF/RcfSession.hpp>
 #include <RCF/ThreadLocalData.hpp>
 #include <RCF/Win32NamedPipeClientTransport.hpp>
 #include <RCF/Win32NamedPipeEndpoint.hpp>
+#include <RCF/Log.hpp>
 
 namespace RCF {
 
@@ -50,13 +52,14 @@ namespace RCF {
 
         DWORD dwErr = GetLastError();
 
-        RCF_VERIFY(hPipe != INVALID_HANDLE_VALUE, Exception(_RcfError_Pipe(), dwErr));
+        RCF_VERIFY(hPipe != INVALID_HANDLE_VALUE, Exception(RcfError_Pipe, osError(dwErr)));
 
         mSocketPtr.reset( new AsioPipeHandle(ioService, hPipe) );
     }
 
     Win32NamedPipeNetworkSession::~Win32NamedPipeNetworkSession()
     {
+        runOnDestroyCallbacks();
     }
 
     const RemoteAddress & Win32NamedPipeNetworkSession::implGetRemoteAddress()
@@ -187,13 +190,16 @@ namespace RCF {
 
     void Win32NamedPipeNetworkSession::implWrite(AsioNetworkSession &toBeNotified, const char * buffer, std::size_t bufferLen)
     {
+        using std::placeholders::_1;
+        using std::placeholders::_2;
+
         ASIO_NS::windows::overlapped_ptr overlapped(
-            mSocketPtr->get_io_service(), 
-            boost::bind(
+            mSocketPtr->get_io_service(),
+            std::bind(
                 &AsioNetworkSession::onNetworkWriteCompleted,
                 toBeNotified.sharedFromThis(),
-                ASIO_NS::placeholders::error,
-                ASIO_NS::placeholders::bytes_transferred));
+                _1,//ASIO_NS::placeholders::error,
+                _2)); //ASIO_NS::placeholders::bytes_transferred));
 
         DWORD dwBytesWritten = 0;
 
@@ -239,12 +245,14 @@ namespace RCF {
     {
         RCF_LOG_4()<< "Win32NamedPipeNetworkSession - calling ConnectNamedPipe().";
 
+        using std::placeholders::_1;
+
         ASIO_NS::windows::overlapped_ptr overlapped(
             mSocketPtr->get_io_service(), 
-            boost::bind(
+            std::bind(
                 &AsioNetworkSession::onAcceptCompleted,
                 sharedFromThis(),
-                ASIO_NS::placeholders::error));
+                _1));// ASIO_NS::placeholders::error));
 
         HANDLE hPipe = mSocketPtr->native();
         BOOL ok = ConnectNamedPipe(hPipe, overlapped.get());
@@ -293,12 +301,12 @@ namespace RCF {
         mSocketPtr.reset();
     }
 
-    ClientTransportAutoPtr Win32NamedPipeNetworkSession::implCreateClientTransport()
+    ClientTransportUniquePtr Win32NamedPipeNetworkSession::implCreateClientTransport()
     {
-        std::auto_ptr<Win32NamedPipeClientTransport> pipeClientTransportPtr(
+        std::unique_ptr<Win32NamedPipeClientTransport> pipeClientTransportPtr(
             new Win32NamedPipeClientTransport(mSocketPtr, mRemotePipeName));
 
-        return ClientTransportAutoPtr(pipeClientTransportPtr.release());
+        return ClientTransportUniquePtr(pipeClientTransportPtr.release());
     }
 
     void Win32NamedPipeNetworkSession::implTransferNativeFrom(ClientTransport & clientTransport)
@@ -310,7 +318,7 @@ namespace RCF {
         if (pPipeClientTransport == NULL)
         {
             Exception e("incompatible client transport");
-            RCF_THROW(e)(typeid(clientTransport));
+            RCF_THROW(e);
         }
 
         Win32NamedPipeClientTransport & pipeClientTransport = *pPipeClientTransport;
@@ -392,7 +400,7 @@ namespace RCF {
     {
     }
 
-    ClientTransportAutoPtr Win32NamedPipeServerTransport::implCreateClientTransport(
+    ClientTransportUniquePtr Win32NamedPipeServerTransport::implCreateClientTransport(
         const Endpoint &endpoint)
     {
         const Win32NamedPipeEndpoint & pipeEndpoint = 
@@ -427,9 +435,9 @@ namespace RCF {
         mpSec = pSec;
     }
 
-    Win32NamedPipeImpersonator::Win32NamedPipeImpersonator() :
+    Win32NamedPipeImpersonator::Win32NamedPipeImpersonator(RcfSession& session) :
         mPipeSession( dynamic_cast<Win32NamedPipeNetworkSession &>(
-            RCF::getTlsRcfSessionPtr()->getNetworkSession()))
+            session.getNetworkSession()))
     {
         impersonate();
     }
@@ -452,14 +460,14 @@ namespace RCF {
         HANDLE hPipe = mPipeSession.mSocketPtr->native();
         BOOL ok = ImpersonateNamedPipeClient(hPipe);
         DWORD dwErr = GetLastError();
-        RCF_VERIFY(ok, RCF::Exception(_RcfError_Pipe(), dwErr));
+        RCF_VERIFY(ok, RCF::Exception(RcfError_Pipe, osError(dwErr)));
     }
 
     void Win32NamedPipeImpersonator::revertToSelf() const
     {
         BOOL ok = RevertToSelf();
         DWORD dwErr = GetLastError();
-        RCF_VERIFY(ok, RCF::Exception(_RcfError_Pipe(), dwErr));
+        RCF_VERIFY(ok, RCF::Exception(RcfError_Pipe, osError(dwErr)));
     }
 
     NullDacl::NullDacl()
@@ -470,7 +478,7 @@ namespace RCF {
 
         BOOL ok = InitializeSecurityDescriptor( &mSd, SECURITY_DESCRIPTOR_REVISION );
         DWORD dwErr = GetLastError();
-        RCF_VERIFY(ok, Exception(_RcfError_Win32ApiError("InitializeSecurityDescriptor()"), dwErr));
+        RCF_VERIFY(ok, Exception(RcfError_Win32ApiError, "InitializeSecurityDescriptor()", osError(dwErr)));
 
 #pragma warning(push)
 #pragma warning(disable: 6248) // C6248:  Setting a SECURITY_DESCRIPTOR's DACL to NULL will result in an unprotected object.
@@ -484,7 +492,7 @@ namespace RCF {
 #pragma warning(pop)
 
         dwErr = GetLastError();
-        RCF_VERIFY(ok, Exception(_RcfError_Win32ApiError("SetSecurityDescriptorDacl()"), dwErr));
+        RCF_VERIFY(ok, Exception(RcfError_Win32ApiError, "SetSecurityDescriptorDacl()", osError(dwErr)));
 
         mSa.lpSecurityDescriptor = &mSd;
     }

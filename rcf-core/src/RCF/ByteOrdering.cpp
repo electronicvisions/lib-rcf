@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,12 +11,10 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
-
-#include <boost/type_traits/is_same.hpp>
 
 #include <RCF/ByteOrdering.hpp>
 #include <RCF/Exception.hpp>
@@ -30,43 +28,30 @@ namespace RCF {
         BigEndian
     };
 
-    // Compiler defines tell us what the local byte ordering is.
+    // Compiler defines tell us what the machine byte ordering is.
 
-#if defined(__sparc__) || defined(__sparc)
+#if     defined(__BYTE_ORDER) && __BYTE_ORDER == __BIG_ENDIAN                       \
+    ||  defined(__BIG_ENDIAN__)                                                     \
+    ||  defined(__ARMEB__)                                                          \
+    ||  defined(__THUMBEB__)                                                        \
+    ||  defined(__AARCH64EB__)                                                      \
+    ||  defined(_MIBSEB) || defined(__MIBSEB) || defined(__MIBSEB__)                \
+    ||  defined( __ppc__ ) || defined( __powerpc__ )                                \
+    ||  defined(__sparc__) || defined(__sparc)                                      \
+    ||  defined( __mips__ ) || defined(__mips64__)                                  \
+    ||  defined(_M_PPC)
 
-    const ByteOrder MachineByteOrder = BigEndian;
+        const ByteOrder MachineByteOrder = BigEndian;
 
-#elif defined( __ppc__ )
+#elif   defined(__BYTE_ORDER) && __BYTE_ORDER == __LITTLE_ENDIAN                    \
+    ||  defined(__LITTLE_ENDIAN__)                                                  \
+    ||  defined(__ARMEL__)                                                          \
+    ||  defined(__THUMBEL__)                                                        \
+    ||  defined(__AARCH64EL__)                                                      \
+    ||  defined(_MIPSEL) || defined(__MIPSEL) || defined(__MIPSEL__)                \
+    ||  defined(_M_IX86) || defined(_M_X64) || defined(_M_IA64) || defined(_M_ARM)
 
-    const ByteOrder MachineByteOrder = BigEndian;
-
-#elif defined(__x86__) || defined(_M_IX86)
-
-    const ByteOrder MachineByteOrder = LittleEndian;
-
-#elif defined(__i386__) || defined(__i386) || defined(i386)
-
-    const ByteOrder MachineByteOrder = LittleEndian;
-
-#elif defined(__x86_64) || defined(__x86_64__)
-
-    const ByteOrder MachineByteOrder = LittleEndian;
-
-#elif defined(__amd64) || defined(__amd64__)
-
-    const ByteOrder MachineByteOrder = LittleEndian;
-
-#elif defined(_M_IA64) || defined(_M_AMD64) || defined(_M_X64)
-
-    const ByteOrder MachineByteOrder = LittleEndian;
-
-#elif defined(__arm__)
-
-    const ByteOrder MachineByteOrder = LittleEndian;
-
-#elif defined(__bfin__)
-
-    const ByteOrder MachineByteOrder = LittleEndian;
+        const ByteOrder MachineByteOrder = LittleEndian;
 
 #else
 
@@ -82,10 +67,6 @@ namespace RCF {
 
     void swapBytes(char *b1, char *b2)
     {
-        //*b2 ^= *b1;
-        //*b1 ^= *b2;
-        //*b2 ^= *b1;
-
         char temp = *b1;
         *b1 = *b2;
         *b2 = temp;
@@ -93,11 +74,10 @@ namespace RCF {
 
     void reverseByteOrder(void *buffer, int width, int count)
     {
-        RCF_ASSERT_GT(width , 0);
-        RCF_ASSERT_GT(count , 0);
+        RCF_ASSERT(width > 0);
+        RCF_ASSERT(count > 0);
         if (width == 1) return;
 
-        BOOST_STATIC_ASSERT( sizeof(char) == 1 );   
         char *chBuffer = static_cast<char *>(buffer);
         for (int i=0; i<count; i++)
         {
@@ -112,7 +92,7 @@ namespace RCF {
 
     void machineToNetworkOrder(void *buffer, int width, int count)
     {
-        if (MachineByteOrder != NetworkByteOrder)
+        if RCF_CONSTEXPR(MachineByteOrder != NetworkByteOrder)
         {
             reverseByteOrder(buffer, width, count);
         }
@@ -120,7 +100,7 @@ namespace RCF {
 
     void networkToMachineOrder(void *buffer, int width, int count)
     {
-        if (MachineByteOrder != NetworkByteOrder)
+        if RCF_CONSTEXPR(MachineByteOrder != NetworkByteOrder)
         {
             reverseByteOrder(buffer, width, count);
         }

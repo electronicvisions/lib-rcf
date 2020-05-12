@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,29 +11,22 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
 #include <RCF/UdpClientTransport.hpp>
+
+#include <RCF/ByteOrdering.hpp>
+#include <RCF/Enums.hpp>
+#include <RCF/Exception.hpp>
 #include <RCF/UdpEndpoint.hpp>
-
-#include <boost/static_assert.hpp>
-
 #include <RCF/Tools.hpp>
-
-#include <RCF/util/Platform/OS/BsdSockets.hpp>
-
-// missing stuff in mingw headers
-#ifdef __MINGW32__
-#ifndef SIO_UDP_CONNRESET
-#define SIO_UDP_CONNRESET           _WSAIOW(IOC_VENDOR,12)
-#endif
-#endif
+#include <RCF/BsdSockets.hpp>
+#include <RCF/Log.hpp>
 
 namespace RCF {
-
 
     UdpClientTransport::UdpClientTransport(const IpAddress & ipAddress) :
         mDestIp(ipAddress),
@@ -62,9 +55,9 @@ namespace RCF {
         return Tt_Udp;
     }
 
-    ClientTransportAutoPtr UdpClientTransport::clone() const
+    ClientTransportUniquePtr UdpClientTransport::clone() const
     {
-        return ClientTransportAutoPtr( new UdpClientTransport(*this));
+        return ClientTransportUniquePtr( new UdpClientTransport(*this));
     }
 
     EndpointPtr UdpClientTransport::getEndpointPtr() const
@@ -73,7 +66,7 @@ namespace RCF {
     }
 
     void UdpClientTransport::setTimer(
-        boost::uint32_t timeoutMs,
+        std::uint32_t timeoutMs,
         ClientTransportCallback *pClientStub)
     {
         RCF_UNUSED_VARIABLE(timeoutMs);
@@ -126,12 +119,11 @@ namespace RCF {
 
             RCF_VERIFY(
                 ret == 0,
-                Exception(
-                    _RcfError_Socket("bind()"), err, RcfSubsystem_Os));
+                Exception(RcfError_Socket, "bind()", osError(err)));
 
             mAssignedLocalIp = IpAddress(mSock, mSrcIp.getType());
 
-#if defined(BOOST_WINDOWS) && defined(SIO_UDP_CONNRESET)
+#if defined(RCF_WINDOWS) && defined(SIO_UDP_CONNRESET)
 
             // On Windows XP and later, disable the SIO_UDP_CONNRESET socket option.
             BOOL enable = FALSE;
@@ -141,12 +133,9 @@ namespace RCF {
 
             RCF_VERIFY(
                 dwStatus == 0,
-                Exception(
-                    _RcfError_Socket("WSAIoctl() with SIO_UDP_CONNRESET"),
-                    err,
-                    RcfSubsystem_Os));
+                Exception(RcfError_Socket, "WSAIoctl() with SIO_UDP_CONNRESET", osError(err)));
 
-#endif // BOOST_WINDOWS
+#endif // RCF_WINDOWS
 
             if (mDestIp.isBroadcast())
             {
@@ -157,10 +146,7 @@ namespace RCF {
 
                 RCF_VERIFY(
                     ret ==  0,
-                    Exception(
-                        _RcfError_Socket("setsockopt() with SO_BROADCAST"),
-                        err,
-                        RcfSubsystem_Os));
+                    Exception(RcfError_Socket, "setsockopt() with SO_BROADCAST", osError(err)));
             }
 
             if (mDestIp.isMulticast())
@@ -176,10 +162,7 @@ namespace RCF {
 
                 RCF_VERIFY(
                     ret ==  0,
-                    Exception(
-                        _RcfError_Socket("setsockopt() with IPPROTO_IP/IP_MULTICAST_TTL"),
-                        err,
-                        RcfSubsystem_Os))(hops);
+                    Exception(RcfError_Socket, "setsockopt() with IPPROTO_IP/IP_MULTICAST_TTL", osError(err)));
             }
         }
 
@@ -196,6 +179,16 @@ namespace RCF {
         RCF_UNUSED_VARIABLE(timeoutMs);
 
         RCF_ASSERT(!mAsync);
+
+        std::size_t maxOutgoingLen = getMaxOutgoingMessageLength();
+        if (maxOutgoingLen > 0)
+        {
+            std::size_t messageLen = lengthByteBuffers(data);
+
+            RCF_VERIFY(
+                0 < messageLen && messageLen <= maxOutgoingLen,
+                Exception(RcfError_OutgoingMessageLen, messageLen, maxOutgoingLen));
+        }
 
         // TODO: optimize for case of single byte buffer with left margin
 
@@ -227,10 +220,7 @@ namespace RCF {
         int err = Platform::OS::BsdSockets::GetLastError();
         RCF_VERIFY(
             len > 0,
-            Exception(
-                _RcfError_Socket("sendto()"),
-                err,
-                RcfSubsystem_Os));
+            Exception(RcfError_Socket, "sendto()", osError(err)));
 
         clientStub.onSendCompleted();
 
@@ -269,22 +259,18 @@ namespace RCF {
 
             int err = Platform::OS::BsdSockets::GetLastError();
 
-            RCF_ASSERT(-1 <= ret && ret <= 1)(ret);
+            RCF_ASSERT(-1 <= ret && ret <= 1);
             if (ret == -1)
             {
-                Exception e(
-                    _RcfError_Socket("select()"),
-                    err,
-                    RcfSubsystem_Os);
-
+                Exception e(RcfError_Socket, "select()", osError(err));
                 RCF_THROW(e);
             }   
             else if (ret == 0)
             {
-                Exception e( _RcfError_ClientReadTimeout() );
+                Exception e( RcfError_ClientReadTimeout );
                 RCF_THROW(e);
             }
-            RCF_ASSERT_EQ(ret , 1);
+            RCF_ASSERT(ret == 1);
 
             if (mReadVecPtr.get() == NULL || !mReadVecPtr.unique())
             {
@@ -319,15 +305,15 @@ namespace RCF {
                 mFromIp.init( (sockaddr&) fromAddr, fromAddrLen, mDestIp.getType());
                 if (mDestIp.matches(mFromIp))
                 {
-                    boost::uint32_t dataLength = 0;
+                    std::uint32_t dataLength = 0;
                     memcpy( &dataLength, &buffer[0], 4);
                     RCF::networkToMachineOrder(&dataLength, 4, 1);
 
-                    if (getMaxMessageLength())
+                    if ( getMaxIncomingMessageLength())
                     {
                         RCF_VERIFY(
-                            0 < dataLength && dataLength <= getMaxMessageLength(),
-                            Exception(_RcfError_ClientMessageLength()));
+                            0 < dataLength && dataLength <= getMaxIncomingMessageLength(),
+                            Exception(RcfError_ClientMessageLength));
                     }
 
                     buffer.resize(4+dataLength);
@@ -376,7 +362,7 @@ namespace RCF {
             }
             else
             {
-                RCF_THROW( Exception( _RcfError_ClientReadFail() ) )(len)(err);
+                RCF_THROW( Exception( RcfError_ClientReadFail, osError(err) ) );
             }
         }
     }
@@ -387,9 +373,10 @@ namespace RCF {
         {
             int ret = Platform::OS::BsdSockets::closesocket(mSock);
             int err = Platform::OS::BsdSockets::GetLastError();
+            RCF_UNUSED_VARIABLE(err);
             if (ret < 0)
             {
-                RCF_ASSERT(0)(mSock)(ret)(err);
+                RCF_ASSERT_ALWAYS("");
             }
             mSock = -1;
         }
@@ -411,7 +398,7 @@ namespace RCF {
     {
         if (!filters.empty())
         {
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
         }
     }
 

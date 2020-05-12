@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,15 +11,13 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
 #ifndef INCLUDE_SF_NODE_HPP
 #define INCLUDE_SF_NODE_HPP
-
-#include <boost/noncopyable.hpp>
 
 #include <SF/DataPtr.hpp>
 #include <SF/PortableTypes.hpp>
@@ -30,7 +28,7 @@ namespace SF {
     // Node class represents a node in the serialized hierarchy of objects
     // (eg XML streams would translate it to an element in a DOM tree)
 
-    class Node : boost::noncopyable
+    class Node : Noncopyable
     {
     public:
         Node() :

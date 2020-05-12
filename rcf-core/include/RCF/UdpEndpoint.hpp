@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -22,14 +22,9 @@
 #include <memory>
 #include <string>
 
-#include <boost/shared_ptr.hpp>
-
 #include <RCF/Endpoint.hpp>
 #include <RCF/Export.hpp>
-#include <RCF/InitDeinit.hpp>
 #include <RCF/IpAddress.hpp>
-#include <RCF/SerializationProtocol.hpp>
-#include <RCF/TypeTraits.hpp>
 
 namespace RCF {
 
@@ -53,9 +48,14 @@ namespace RCF {
         int                 getPort() const;
         std::string         asString() const;
 
-        UdpEndpoint &       enableSharedAddressBinding(bool enable = true);
-        UdpEndpoint &       listenOnMulticast(const IpAddress & multicastIp);
-        UdpEndpoint &       listenOnMulticast(const std::string & multicastIp);
+        /// Enables shared address binding. Uses SO_REUSEPORT socket option to allow multiple servers (even in different processes), to listen to broadcast messages on the same port.
+        void                enableSharedAddressBinding(bool enable = true);
+
+        /// Listen for multicast messages on the given IP address.
+        void                listenOnMulticast(const IpAddress & multicastIp);
+
+        /// Listen for multicast messages on the given IP address.
+        void                listenOnMulticast(const std::string & multicastIp);
 
         // *** SWIG END ***
 
@@ -63,8 +63,8 @@ namespace RCF {
         UdpEndpoint(const IpAddress & ipAddress);
         UdpEndpoint(const UdpEndpoint &rhs);
        
-        std::auto_ptr<ServerTransport>    createServerTransport() const;
-        std::auto_ptr<ClientTransport>    createClientTransport() const;
+        std::unique_ptr<ServerTransport>    createServerTransport() const;
+        std::unique_ptr<ClientTransport>    createClientTransport() const;
         EndpointPtr                         clone() const;
        
     private:

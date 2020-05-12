@@ -1,10 +1,16 @@
 
-Copyright (C) 2006-2014 Delta V Software. All rights reserved.
+================================================================================
+
+Remote Call Framework 3.1
+
+Copyright (C) 2006-2019 Delta V Software. All rights reserved.
+
+================================================================================
 
 RCF is distributed under a dual licensing model. For commercial licensing conditions, please see our website:
 
-http://www.deltavsoft.com/RCF_License_Agreement.pdf
+http://www.deltavsoft.com/licensing.html
 
-For open source applications, RCF is distributed under the GPL v2 license, with specific exceptions for OpenSSL. For more details, please see our website:
+For open source applications, RCF is also distributed under the GPL v2 license, with specific exceptions for OpenSSL. For more details, please see our website:
 
-http://www.deltavsoft.com/RCF_Open_Source_License.txt
+http://www.deltavsoft.com/licensing.html

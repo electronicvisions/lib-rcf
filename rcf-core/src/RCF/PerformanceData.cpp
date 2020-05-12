@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -56,10 +56,10 @@ namespace RCF {
 
         Lock lock(mMutex);
         
-        mBufferCount = static_cast<boost::uint32_t>(
+        mBufferCount = static_cast<std::uint32_t>(
             mInBufferSizes.size() + mOutBufferSizes.size());
 
-        mTotalBufferSize = static_cast<boost::uint32_t>(
+        mTotalBufferSize = static_cast<std::uint32_t>(
             inBufferSize + outBufferSize);
     }
 

@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,13 +11,14 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
 
 #include <RCF/ServerTransport.hpp>
 
+#include <RCF/Enums.hpp>
 #include <RCF/Service.hpp>
 
 namespace RCF {
@@ -25,27 +26,16 @@ namespace RCF {
     ServerTransport::ServerTransport() :
         mRpcProtocol(Rp_Rcf),
         mCustomFraming(false),
-        mReadWriteMutex(WriterPriority),
+        mReadWriteMutex(),
         mMaxMessageLength(getDefaultMaxMessageLength()),
         mConnectionLimit(0),
         mInitialNumberOfConnections(1)
     {}
 
-    ServerTransport & ServerTransport::setMaxMessageLength(std::size_t maxMessageLength)
-    {
-        return setMaxIncomingMessageLength(maxMessageLength);
-    }
-
-    std::size_t ServerTransport::getMaxMessageLength() const
-    {
-        return getMaxIncomingMessageLength();
-    }
-
-    ServerTransport & ServerTransport::setMaxIncomingMessageLength(std::size_t maxMessageLength)
+    void ServerTransport::setMaxIncomingMessageLength(std::size_t maxMessageLength)
     {
         WriteLock writeLock(mReadWriteMutex);
         mMaxMessageLength = maxMessageLength;
-        return *this;
     }
 
     std::size_t ServerTransport::getMaxIncomingMessageLength() const
@@ -60,13 +50,11 @@ namespace RCF {
         return mConnectionLimit;
     }
 
-    ServerTransport & ServerTransport::setConnectionLimit(
+    void ServerTransport::setConnectionLimit(
         std::size_t connectionLimit)
     {
         WriteLock writeLock(mReadWriteMutex);
         mConnectionLimit = connectionLimit;
-
-        return *this;
     }
 
     std::size_t ServerTransport::getInitialNumberOfConnections() const
@@ -75,13 +63,11 @@ namespace RCF {
         return mInitialNumberOfConnections;
     }
 
-    ServerTransport & ServerTransport::setInitialNumberOfConnections(
+    void ServerTransport::setInitialNumberOfConnections(
         std::size_t initialNumberOfConnections)
     {
         WriteLock writeLock(mReadWriteMutex);
         mInitialNumberOfConnections = initialNumberOfConnections;
-
-        return *this;
     }
 
     void ServerTransport::setRpcProtocol(RpcProtocol rpcProtocol)
@@ -104,18 +90,16 @@ namespace RCF {
         return mRpcProtocol;
     }
 
-    ServerTransport & ServerTransport::setThreadPool(
+    void ServerTransport::setThreadPool(
         ThreadPoolPtr threadPoolPtr)
     {
         I_Service & svc = dynamic_cast<I_Service &>(*this);
         svc.setThreadPool(threadPoolPtr);
-        return *this;
     }
 
-    ServerTransport & ServerTransport::setSupportedProtocols(const std::vector<TransportProtocol> & protocols)
+    void ServerTransport::setSupportedProtocols(const std::vector<TransportProtocol> & protocols)
     {
         mSupportedProtocols = protocols;
-        return *this;
     }
 
     const std::vector<TransportProtocol> & ServerTransport::getSupportedProtocols() const
@@ -147,6 +131,11 @@ namespace RCF {
     {
     }
 
+    void NetworkSession::getWireFilters(std::vector<FilterPtr> &filters)
+    {
+        filters.clear();
+    }
+
     void NetworkSession::setEnableReconnect(bool enableReconnect)
     {
         mEnableReconnect = enableReconnect;
@@ -157,12 +146,12 @@ namespace RCF {
         return mEnableReconnect;
     }
 
-    boost::uint64_t NetworkSession::getTotalBytesReceived() const
+    std::uint64_t NetworkSession::getTotalBytesReceived() const
     {
         return mBytesReceivedCounter;
     }
 
-    boost::uint64_t NetworkSession::getTotalBytesSent() const
+    std::uint64_t NetworkSession::getTotalBytesSent() const
     {
         return mBytesSentCounter;
     }
@@ -172,7 +161,7 @@ namespace RCF {
         return mRcfSessionPtr;
     }
 
-    boost::uint32_t NetworkSession::getLastActivityTimestamp() const
+    std::uint32_t NetworkSession::getLastActivityTimestamp() const
     {
         return mLastActivityTimestampMs;
     }

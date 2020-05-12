@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -32,16 +32,6 @@
 #include <RCF/TypeTraits.hpp>
 #include <RCF/Version.hpp>
 
-#include <boost/mpl/and.hpp>
-#include <boost/mpl/assert.hpp>
-#include <boost/mpl/and.hpp>
-#include <boost/mpl/if.hpp>
-#include <boost/mpl/not.hpp>
-#include <boost/mpl/or.hpp>
-#include <boost/scoped_ptr.hpp>
-#include <boost/static_assert.hpp>
-#include <boost/type_traits.hpp>
-
 #if RCF_FEATURE_SF==1
 #include <SF/memory.hpp>
 #endif
@@ -51,7 +41,10 @@
 #include <boost/serialization/binary_object.hpp>
 #endif
 
-#include <SF/Tools.hpp>
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4127) // warning C4127: conditional expression is constant
+#endif
 
 namespace RCF {
 
@@ -131,12 +124,10 @@ namespace RCF {
 
     // Boost.Serialization handles smart pointers very clumsily, so we do those ourselves
 
-#define RefCountSmartPtr boost::shared_ptr
-
     template<typename T>
     inline void serializeImpl(
         SerializationProtocolOut &out,
-        const RefCountSmartPtr<T> *spt,
+        const std::shared_ptr<T> *spt,
         int)
     {
         serialize(out, *spt);
@@ -145,7 +136,7 @@ namespace RCF {
     template<typename T>
     inline void serializeImpl(
         SerializationProtocolOut &out,
-        RefCountSmartPtr<T> *const spt,
+        std::shared_ptr<T> *const spt,
         int)
     {
         serialize(out, *spt);
@@ -154,17 +145,17 @@ namespace RCF {
     template<typename T>
     inline void deserializeImpl(
         SerializationProtocolIn &in,
-        RefCountSmartPtr<T> *&spt,
+        std::shared_ptr<T> *&spt,
         int)
     {
-        spt = new RefCountSmartPtr<T>();
+        spt = new std::shared_ptr<T>();
         deserialize(in, *spt);
     }
 
     template<typename T>
     inline void serializeImpl(
         SerializationProtocolOut &out,
-        const RefCountSmartPtr<T> &spt,
+        const std::shared_ptr<T> &spt,
         int)
     {
         serialize(out, spt.get());
@@ -173,15 +164,13 @@ namespace RCF {
     template<typename T>
     inline void deserializeImpl(
         SerializationProtocolIn &in,
-        RefCountSmartPtr<T> &spt,
+        std::shared_ptr<T> &spt,
         int)
     {
         T *pt = NULL;
         deserialize(in, pt);
-        spt = RefCountSmartPtr<T>(pt);
+        spt = std::shared_ptr<T>(pt);
     }
-
-#undef RefCountSmartPtr
 
 #if RCF_FEATURE_BOOST_SERIALIZATION==1
 } // namespace RCF
@@ -194,7 +183,7 @@ namespace boost { namespace serialization {
         // We have to copy the buffer - can't do efficient zero-copy transmission 
         // of ByteBuffer, with B.Ser.
 
-        boost::uint32_t len = byteBuffer.getLength();
+        std::uint32_t len = byteBuffer.getLength();
         ar & len;
         ar & make_binary_object(byteBuffer.getPtr(), len);
         
@@ -206,7 +195,7 @@ namespace boost { namespace serialization {
         // We have to copy the buffer - can't do efficient zero-copy transmission 
         // of ByteBuffer, with B.Ser.
 
-        boost::uint32_t len = 0;
+        std::uint32_t len = 0;
         ar & len;
 
         RCF::ReallocBufferPtr bufferPtr = RCF::getObjectPool().getReallocBufferPtr();
@@ -251,10 +240,6 @@ namespace RCF {
 
     RCF_EXPORT bool deserializeOverride(SerializationProtocolIn &in, ByteBuffer & u);
 
-    // For vc6, manual zero-initialization of integral types.
-
-    template<typename T> void vc6DefaultInit(T *) {}
-
     // -------------------------------------------------------------------------
     // Parameter store.
 
@@ -296,8 +281,6 @@ namespace RCF {
 
                 new (mpT) T();
 
-                vc6DefaultInit(mpT);
-
 #ifdef _MSC_VER
 #pragma warning( pop )
 #endif
@@ -334,7 +317,7 @@ namespace RCF {
             return mpT;
         }
 
-        boost::shared_ptr<T> mptPtr;
+        std::shared_ptr<T> mptPtr;
         T * mpT;
     };
 
@@ -372,8 +355,8 @@ namespace RCF {
     {
     public:
 
-        BOOST_MPL_ASSERT(( boost::mpl::not_< IsPointer<T> > ));
-        BOOST_MPL_ASSERT(( boost::mpl::not_< IsReference<T> > ));
+        static_assert( !IsPointer<T>::value, "Incorrect marshaling code." );
+        static_assert( !IsReference<T>::value, "Incorrect marshaling code." );
 
         Sm_Value(std::vector<char> & vec) : mPs(vec)
         { 
@@ -410,7 +393,7 @@ namespace RCF {
 
         void write(SerializationProtocolOut &) 
         { 
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
         }
 
     private:
@@ -432,29 +415,29 @@ namespace RCF {
 
         Void &get() 
         { 
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
             static Void v;
             return v;
         }
 
         void set(bool , const Void &) 
         {
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
         }
 
         void set(const Void &) 
         { 
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
         }
 
         void read(SerializationProtocolIn &) 
         { 
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
         }
 
         void write(SerializationProtocolOut &) 
         { 
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
         }
     };
 
@@ -463,8 +446,8 @@ namespace RCF {
     {
     public:
 
-        BOOST_MPL_ASSERT(( boost::mpl::not_< IsPointer<T> > ));
-        BOOST_MPL_ASSERT(( boost::mpl::not_< IsReference<T> > ));
+        static_assert(!IsPointer<T>::value, "Incorrect marshaling code.");
+        static_assert(!IsReference<T>::value, "Incorrect marshaling code.");
 
         Sm_Ret(std::vector<char> & vec) : mPs(vec)
         { 
@@ -490,7 +473,7 @@ namespace RCF {
         
         void read(SerializationProtocolIn &) 
         { 
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
         }
 
         void write(SerializationProtocolOut &out) 
@@ -512,11 +495,9 @@ namespace RCF {
 
         typedef typename RemoveReference<CRefT>::type CT;
         typedef typename RemoveCv<CT>::type T;
-        BOOST_MPL_ASSERT(( IsReference<CRefT> ));
-
-        BOOST_MPL_ASSERT(( IsConst<CT> ));
-
-        BOOST_MPL_ASSERT(( boost::mpl::not_< IsPointer<T> > ));
+        static_assert(IsReference<CRefT>::value, "Incorrect marshaling code.");
+        static_assert(IsConst<CT>::value, "Incorrect marshaling code.");
+        static_assert(!IsPointer<T>::value, "Incorrect marshaling code.");
 
         Sm_CRef(std::vector<char> & vec) : mPs(), mVec(vec) 
         {}
@@ -581,7 +562,7 @@ namespace RCF {
                         deserialize(in, pt);
                         if (!pt)
                         {
-                            RCF::Exception e(RCF::_RcfError_DeserializationNullPointer());
+                            RCF::Exception e(RCF::RcfError_DeserializationNullPointer);
                             RCF_THROW(e);
                         }
                         deleter.dismiss();
@@ -597,7 +578,7 @@ namespace RCF {
 
         void write(SerializationProtocolOut &) 
         { 
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
         }
 
     private:
@@ -612,8 +593,8 @@ namespace RCF {
 
         typedef typename RemoveReference<RefT>::type T;
         typedef typename RemoveCv<T>::type U;
-        BOOST_MPL_ASSERT(( IsReference<RefT> ));
-        BOOST_MPL_ASSERT(( boost::mpl::not_< IsPointer<T> > ));
+        static_assert(IsReference<RefT>::value, "Incorrect marshaling code.");
+        static_assert(!IsPointer<T>::value, "Incorrect marshaling code.");
 
         Sm_Ref(std::vector<char> & vec) : mVec(vec)
         {}
@@ -679,7 +660,7 @@ namespace RCF {
                         deserialize(in, pt);
                         if (!pt)
                         {
-                            RCF::Exception e(RCF::_RcfError_DeserializationNullPointer());
+                            RCF::Exception e(RCF::RcfError_DeserializationNullPointer);
                             RCF_THROW(e);
                         }
                         deleter.dismiss();
@@ -720,8 +701,8 @@ namespace RCF {
         typedef typename RemoveOut<OutRefT>::type RefT;
         typedef typename RemoveReference<RefT>::type T;
         typedef typename RemoveCv<T>::type U;
-        BOOST_MPL_ASSERT(( IsReference<RefT> ));
-        BOOST_MPL_ASSERT(( boost::mpl::not_< IsPointer<T> > ));
+        static_assert(IsReference<RefT>::value, "Incorrect marshaling code.");
+        static_assert(!IsPointer<T>::value, "Incorrect marshaling code.");
 
         Sm_OutRef(std::vector<char> & vec) : mPs(vec)
         {
@@ -747,7 +728,7 @@ namespace RCF {
 
         void read(SerializationProtocolIn &) 
         { 
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
         }
 
         void write(SerializationProtocolOut &out) 
@@ -773,8 +754,8 @@ namespace RCF {
 
         typedef typename RemovePointer<PtrT>::type T;
         typedef typename RemoveCv<T>::type U;
-        BOOST_MPL_ASSERT(( IsPointer<PtrT> ));
-        BOOST_MPL_ASSERT(( boost::mpl::not_< IsPointer<T> > ));
+        static_assert(IsPointer<PtrT>::value, "Incorrect marshaling code.");
+        static_assert(!IsPointer<T>::value, "Incorrect marshaling code.");
 
         Sm_Ptr(std::vector<char> &)
         {}
@@ -811,7 +792,7 @@ namespace RCF {
 
         void write(SerializationProtocolOut &) 
         { 
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
         }
 
     private:
@@ -826,8 +807,8 @@ namespace RCF {
     {
     public:
 
-        BOOST_MPL_ASSERT(( boost::mpl::not_< IsPointer<T> > ));
-        BOOST_MPL_ASSERT(( boost::mpl::not_< IsReference<T> > ));
+        static_assert(!IsPointer<T>::value, "Incorrect marshaling code.");
+        static_assert(!IsReference<T>::value, "Incorrect marshaling code.");
 
         Cm_Ret()
         { 
@@ -867,7 +848,7 @@ namespace RCF {
 
         void write(SerializationProtocolOut &) 
         { 
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
         }
 
     private:
@@ -879,11 +860,11 @@ namespace RCF {
     {
     public:
 
-        BOOST_MPL_ASSERT(( boost::mpl::not_< IsPointer<T> > ));
-        BOOST_MPL_ASSERT(( boost::mpl::not_< IsReference<T> > ));
+        static_assert(!IsPointer<T>::value, "Incorrect marshaling code.");
+        static_assert(!IsReference<T>::value, "Incorrect marshaling code.");
 
         // We use const_cast here, in case T's copy constructor is non-const.
-        // E.g. if T is a std::auto_ptr.
+        // E.g. if T is a std::unique_ptr.
         Cm_Value(const T &t) : mT( const_cast<T &>(t) ) 
         {
         }
@@ -917,12 +898,11 @@ namespace RCF {
 
         typedef typename RemovePointer<PtrT>::type T;
 
-        BOOST_MPL_ASSERT(( IsPointer<PtrT> ));
-
-        BOOST_MPL_ASSERT(( boost::mpl::not_< IsPointer<T> > ));
+        static_assert(IsPointer<PtrT>::value, "Incorrect marshaling code.");
+        static_assert(!IsPointer<T>::value, "Incorrect marshaling code.");
 
         // We use const_cast here, in case T's copy constructor is non-const.
-        // E.g. if T is a std::auto_ptr.
+        // E.g. if T is a std::unique_ptr.
         //Proxy_Ptr(const T &t) : mT( const_cast<T &>(t) ) 
         Cm_Ptr(T * pt) : mpT(pt) 
         {
@@ -954,11 +934,9 @@ namespace RCF {
 
         typedef typename RemoveReference<CRefT>::type CT;
         typedef typename RemoveCv<CT>::type T;
-        BOOST_MPL_ASSERT(( IsReference<CRefT> ));
-
-        BOOST_MPL_ASSERT(( IsConst<CT> ));
-
-        BOOST_MPL_ASSERT(( boost::mpl::not_< IsPointer<T> > ));
+        static_assert(IsReference<CRefT>::value, "Incorrect marshaling code.");
+        static_assert(IsConst<CT>::value, "Incorrect marshaling code.");
+        static_assert(!IsPointer<T>::value, "Incorrect marshaling code.");
 
         Cm_CRef(const T &t) : mT(t) 
         {}
@@ -1000,9 +978,9 @@ namespace RCF {
     public:
 
         typedef typename RemoveReference<RefT>::type T;
-        BOOST_MPL_ASSERT(( IsReference<RefT> ));
-        BOOST_MPL_ASSERT(( boost::mpl::not_< IsConst<RefT> > ));
-        BOOST_MPL_ASSERT(( boost::mpl::not_< IsPointer<T> > ));
+        static_assert(IsReference<RefT>::value, "Incorrect marshaling code.");
+        static_assert(!IsConst<RefT>::value, "Incorrect marshaling code.");
+        static_assert(!IsPointer<T>::value, "Incorrect marshaling code.");
 
         Cm_Ref(T &t) : mT(t) 
         {}
@@ -1051,9 +1029,9 @@ namespace RCF {
 
         typedef typename RemoveOut<OutRefT>::type RefT;
         typedef typename RemoveReference<RefT>::type T;
-        BOOST_MPL_ASSERT(( IsReference<RefT> ));
-        BOOST_MPL_ASSERT(( boost::mpl::not_< IsConst<RefT> > ));
-        BOOST_MPL_ASSERT(( boost::mpl::not_< IsPointer<T> > ));
+        static_assert(IsReference<RefT>::value, "Incorrect marshaling code.");
+        static_assert(!IsConst<RefT>::value, "Incorrect marshaling code.");
+        static_assert(!IsPointer<T>::value, "Incorrect marshaling code.");
 
         Cm_OutRef(T &t) : mT(t) 
         {}
@@ -1076,7 +1054,7 @@ namespace RCF {
 
         void write(SerializationProtocolOut &) 
         { 
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
         }
 
     private:
@@ -1087,7 +1065,7 @@ namespace RCF {
     struct IsConstReference
     {
         typedef typename
-            boost::mpl::and_<
+            And<
                 IsReference<T>,
                 IsConst< typename RemoveReference<T>::type >
             >::type type;
@@ -1099,8 +1077,8 @@ namespace RCF {
     struct ServerMarshalRet
     {
         typedef typename
-        boost::mpl::if_<
-            boost::is_same<void, T>,
+        If<
+            std::is_same<void, T>,
             Sm_Ret<Void>,
             Sm_Ret<T> >::type type;
     };
@@ -1109,16 +1087,16 @@ namespace RCF {
     struct ServerMarshal
     {
         typedef typename
-        boost::mpl::if_<
+        RCF::If<
             IsPointer<T>,
             Sm_Ptr<T>,
-            typename boost::mpl::if_<
+            typename RCF::If<
                 IsConstReference<T>,
                 Sm_CRef<T>,
-                typename boost::mpl::if_<
+                typename RCF::If<
                     IsReference<T>,
                     Sm_Ref<T>,
-                    typename boost::mpl::if_<
+                    typename RCF::If<
                         IsOut<T>,
                         Sm_OutRef<T>,
                         Sm_Value<T>
@@ -1135,16 +1113,16 @@ namespace RCF {
     struct ClientMarshal
     {
         typedef typename
-        boost::mpl::if_<
+        RCF::If<
             IsPointer<T>,
             Cm_Ptr<T>,
-            typename boost::mpl::if_<
+            typename RCF::If<
                 IsConstReference<T>,
                 Cm_CRef<T>,
-                typename boost::mpl::if_<
+                typename RCF::If<
                     IsReference<T>,
                     Cm_Ref<T>,
-                    typename boost::mpl::if_<
+                    typename RCF::If<
                         IsOut<T>,
                         Cm_OutRef<T>,
                         Cm_Value<T>
@@ -1164,14 +1142,14 @@ namespace RCF {
     struct ReferenceTo
     {
         typedef typename
-        boost::mpl::if_<
+        RCF::If<
             IsReference<T>,
             T,
-            typename boost::mpl::if_<
+            typename RCF::If<
                 RCF::IsConst<T>,
-                typename boost::add_reference<T>::type,
-                typename boost::add_reference<
-                    typename boost::add_const<T>::type
+                typename std::add_lvalue_reference<T>::type,
+                typename std::add_lvalue_reference<
+                    typename std::add_const<T>::type
                 >::type
             >::type
         >::type type;
@@ -1189,10 +1167,10 @@ namespace RCF {
     template<typename T>
     struct IsInParameter
     {
-        typedef typename boost::mpl::not_< boost::is_same<T,Void> >::type   NotVoid;
-        typedef typename boost::mpl::not_< IsOut<T> >::type                 NotExplicitOutParameter;
+        typedef typename Not< std::is_same<T,Void> >::type   NotVoid;
+        typedef typename Not< IsOut<T> >::type                 NotExplicitOutParameter;
 
-        typedef typename boost::mpl::and_<
+        typedef typename And<
             NotVoid,
             NotExplicitOutParameter
         >::type type;
@@ -1204,10 +1182,10 @@ namespace RCF {
     struct IsOutParameter
     {
         typedef typename
-        boost::mpl::and_<
+        And<
             IsReference<T>,
-            boost::mpl::not_< 
-                boost::is_const< 
+            Not< 
+                std::is_const< 
                     typename RemoveReference<T>::type
                 > 
             > 
@@ -1215,20 +1193,13 @@ namespace RCF {
 
         typedef typename IsOut<T>::type ExplicitOutParameter;
 
-        // Following construction doesn't compile with VC6 for some reason.
-
-        //typedef typename boost::mpl::or_<
-        //  NonConstRef,
-        //  ExplicitOutParameter
-        //>::type type;
-
         enum { value = NonConstRef_::value || ExplicitOutParameter::value };
     };
 
     template<typename T>
     struct IsReturnValue
     {
-        typedef typename boost::mpl::not_< boost::is_same<T, Void> >::type type;
+        typedef typename Not< std::is_same<T, Void> >::type type;
         enum { value = type::value };
     };
 
@@ -1259,7 +1230,7 @@ namespace RCF {
                     return;
                 }
             }
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
         }
 
         void add(const void * pv, I_Future * pFuture)
@@ -1280,8 +1251,6 @@ namespace RCF {
         typedef std::vector< std::pair<const void *, I_Future *> > CandidateList;
         CandidateList mCandidateList;
     };
-
-    //typedef std::vector< std::pair<const void *, I_Future *> > Candidates;
 
     RCF_EXPORT Mutex & gCandidatesMutex();
     RCF_EXPORT Candidates & gCandidates();
@@ -1350,41 +1319,41 @@ namespace RCF {
 
         void read(SerializationProtocolIn &in)
         {
-            if (IsReturnValue<R>::value)        r.read(in);
-            if (IsOutParameter<A1 >::value)     a1.read(in);
-            if (IsOutParameter<A2 >::value)     a2.read(in);
-            if (IsOutParameter<A3 >::value)     a3.read(in);
-            if (IsOutParameter<A4 >::value)     a4.read(in);
-            if (IsOutParameter<A5 >::value)     a5.read(in);
-            if (IsOutParameter<A6 >::value)     a6.read(in);
-            if (IsOutParameter<A7 >::value)     a7.read(in);
-            if (IsOutParameter<A8 >::value)     a8.read(in);
-            if (IsOutParameter<A9 >::value)     a9.read(in);
-            if (IsOutParameter<A10>::value)     a10.read(in);
-            if (IsOutParameter<A11>::value)     a11.read(in);
-            if (IsOutParameter<A12>::value)     a12.read(in);
-            if (IsOutParameter<A13>::value)     a13.read(in);
-            if (IsOutParameter<A14>::value)     a14.read(in);
-            if (IsOutParameter<A15>::value)     a15.read(in);
+            if RCF_CONSTEXPR(IsReturnValue<R>::value)        r.read(in);
+            if RCF_CONSTEXPR(IsOutParameter<A1 >::value)     a1.read(in);
+            if RCF_CONSTEXPR(IsOutParameter<A2 >::value)     a2.read(in);
+            if RCF_CONSTEXPR(IsOutParameter<A3 >::value)     a3.read(in);
+            if RCF_CONSTEXPR(IsOutParameter<A4 >::value)     a4.read(in);
+            if RCF_CONSTEXPR(IsOutParameter<A5 >::value)     a5.read(in);
+            if RCF_CONSTEXPR(IsOutParameter<A6 >::value)     a6.read(in);
+            if RCF_CONSTEXPR(IsOutParameter<A7 >::value)     a7.read(in);
+            if RCF_CONSTEXPR(IsOutParameter<A8 >::value)     a8.read(in);
+            if RCF_CONSTEXPR(IsOutParameter<A9 >::value)     a9.read(in);
+            if RCF_CONSTEXPR(IsOutParameter<A10>::value)     a10.read(in);
+            if RCF_CONSTEXPR(IsOutParameter<A11>::value)     a11.read(in);
+            if RCF_CONSTEXPR(IsOutParameter<A12>::value)     a12.read(in);
+            if RCF_CONSTEXPR(IsOutParameter<A13>::value)     a13.read(in);
+            if RCF_CONSTEXPR(IsOutParameter<A14>::value)     a14.read(in);
+            if RCF_CONSTEXPR(IsOutParameter<A15>::value)     a15.read(in);
         }
 
         void write(SerializationProtocolOut &out)
         {
-            if (IsInParameter<A1 >::value)      a1.write(out);
-            if (IsInParameter<A2 >::value)      a2.write(out);
-            if (IsInParameter<A3 >::value)      a3.write(out);
-            if (IsInParameter<A4 >::value)      a4.write(out);
-            if (IsInParameter<A5 >::value)      a5.write(out);
-            if (IsInParameter<A6 >::value)      a6.write(out);
-            if (IsInParameter<A7 >::value)      a7.write(out);
-            if (IsInParameter<A8 >::value)      a8.write(out);
-            if (IsInParameter<A9 >::value)      a9.write(out);
-            if (IsInParameter<A10>::value)      a10.write(out);
-            if (IsInParameter<A11>::value)      a11.write(out);
-            if (IsInParameter<A12>::value)      a12.write(out);
-            if (IsInParameter<A13>::value)      a13.write(out);
-            if (IsInParameter<A14>::value)      a14.write(out);
-            if (IsInParameter<A15>::value)      a15.write(out);
+            if RCF_CONSTEXPR(IsInParameter<A1 >::value)      a1.write(out);
+            if RCF_CONSTEXPR(IsInParameter<A2 >::value)      a2.write(out);
+            if RCF_CONSTEXPR(IsInParameter<A3 >::value)      a3.write(out);
+            if RCF_CONSTEXPR(IsInParameter<A4 >::value)      a4.write(out);
+            if RCF_CONSTEXPR(IsInParameter<A5 >::value)      a5.write(out);
+            if RCF_CONSTEXPR(IsInParameter<A6 >::value)      a6.write(out);
+            if RCF_CONSTEXPR(IsInParameter<A7 >::value)      a7.write(out);
+            if RCF_CONSTEXPR(IsInParameter<A8 >::value)      a8.write(out);
+            if RCF_CONSTEXPR(IsInParameter<A9 >::value)      a9.write(out);
+            if RCF_CONSTEXPR(IsInParameter<A10>::value)      a10.write(out);
+            if RCF_CONSTEXPR(IsInParameter<A11>::value)      a11.write(out);
+            if RCF_CONSTEXPR(IsInParameter<A12>::value)      a12.write(out);
+            if RCF_CONSTEXPR(IsInParameter<A13>::value)      a13.write(out);
+            if RCF_CONSTEXPR(IsInParameter<A14>::value)      a14.write(out);
+            if RCF_CONSTEXPR(IsInParameter<A15>::value)      a15.write(out);
         }
 
         bool enrolFutures(RCF::ClientStub *pClientStub)
@@ -1541,7 +1510,7 @@ namespace RCF {
 
             if (!clientStub.mpParameters)
             {
-                Exception e(_RcfError_ClientStubParms());
+                Exception e(RcfError_ClientStubParms);
                 RCF_THROW(e);
             }
 
@@ -1593,47 +1562,47 @@ namespace RCF {
 
         void read(SerializationProtocolIn &in)
         {
-            if (IsInParameter<A1 >::value)      a1.read(in);
-            if (IsInParameter<A2 >::value)      a2.read(in);
-            if (IsInParameter<A3 >::value)      a3.read(in);
-            if (IsInParameter<A4 >::value)      a4.read(in);
-            if (IsInParameter<A5 >::value)      a5.read(in);
-            if (IsInParameter<A6 >::value)      a6.read(in);
-            if (IsInParameter<A7 >::value)      a7.read(in);
-            if (IsInParameter<A8 >::value)      a8.read(in);
-            if (IsInParameter<A9 >::value)      a9.read(in);
-            if (IsInParameter<A10>::value)      a10.read(in);
-            if (IsInParameter<A11>::value)      a11.read(in);
-            if (IsInParameter<A12>::value)      a12.read(in);
-            if (IsInParameter<A13>::value)      a13.read(in);
-            if (IsInParameter<A14>::value)      a14.read(in);
-            if (IsInParameter<A15>::value)      a15.read(in);
+            if RCF_CONSTEXPR(IsInParameter<A1 >::value)      a1.read(in);
+            if RCF_CONSTEXPR(IsInParameter<A2 >::value)      a2.read(in);
+            if RCF_CONSTEXPR(IsInParameter<A3 >::value)      a3.read(in);
+            if RCF_CONSTEXPR(IsInParameter<A4 >::value)      a4.read(in);
+            if RCF_CONSTEXPR(IsInParameter<A5 >::value)      a5.read(in);
+            if RCF_CONSTEXPR(IsInParameter<A6 >::value)      a6.read(in);
+            if RCF_CONSTEXPR(IsInParameter<A7 >::value)      a7.read(in);
+            if RCF_CONSTEXPR(IsInParameter<A8 >::value)      a8.read(in);
+            if RCF_CONSTEXPR(IsInParameter<A9 >::value)      a9.read(in);
+            if RCF_CONSTEXPR(IsInParameter<A10>::value)      a10.read(in);
+            if RCF_CONSTEXPR(IsInParameter<A11>::value)      a11.read(in);
+            if RCF_CONSTEXPR(IsInParameter<A12>::value)      a12.read(in);
+            if RCF_CONSTEXPR(IsInParameter<A13>::value)      a13.read(in);
+            if RCF_CONSTEXPR(IsInParameter<A14>::value)      a14.read(in);
+            if RCF_CONSTEXPR(IsInParameter<A15>::value)      a15.read(in);
         }
 
         void write(SerializationProtocolOut &out)
         {
-            if (IsReturnValue<R>::value)        r.write(out);
-            if (IsOutParameter<A1>::value)      a1.write(out);
-            if (IsOutParameter<A2>::value)      a2.write(out);
-            if (IsOutParameter<A3>::value)      a3.write(out);
-            if (IsOutParameter<A4>::value)      a4.write(out);
-            if (IsOutParameter<A5>::value)      a5.write(out);
-            if (IsOutParameter<A6>::value)      a6.write(out);
-            if (IsOutParameter<A7>::value)      a7.write(out);
-            if (IsOutParameter<A8>::value)      a8.write(out);
-            if (IsOutParameter<A9>::value)      a9.write(out);
-            if (IsOutParameter<A10>::value)     a10.write(out);
-            if (IsOutParameter<A11>::value)     a11.write(out);
-            if (IsOutParameter<A12>::value)     a12.write(out);
-            if (IsOutParameter<A13>::value)     a13.write(out);
-            if (IsOutParameter<A14>::value)     a14.write(out);
-            if (IsOutParameter<A15>::value)     a15.write(out);
+            if RCF_CONSTEXPR(IsReturnValue<R>::value)        r.write(out);
+            if RCF_CONSTEXPR(IsOutParameter<A1>::value)      a1.write(out);
+            if RCF_CONSTEXPR(IsOutParameter<A2>::value)      a2.write(out);
+            if RCF_CONSTEXPR(IsOutParameter<A3>::value)      a3.write(out);
+            if RCF_CONSTEXPR(IsOutParameter<A4>::value)      a4.write(out);
+            if RCF_CONSTEXPR(IsOutParameter<A5>::value)      a5.write(out);
+            if RCF_CONSTEXPR(IsOutParameter<A6>::value)      a6.write(out);
+            if RCF_CONSTEXPR(IsOutParameter<A7>::value)      a7.write(out);
+            if RCF_CONSTEXPR(IsOutParameter<A8>::value)      a8.write(out);
+            if RCF_CONSTEXPR(IsOutParameter<A9>::value)      a9.write(out);
+            if RCF_CONSTEXPR(IsOutParameter<A10>::value)     a10.write(out);
+            if RCF_CONSTEXPR(IsOutParameter<A11>::value)     a11.write(out);
+            if RCF_CONSTEXPR(IsOutParameter<A12>::value)     a12.write(out);
+            if RCF_CONSTEXPR(IsOutParameter<A13>::value)     a13.write(out);
+            if RCF_CONSTEXPR(IsOutParameter<A14>::value)     a14.write(out);
+            if RCF_CONSTEXPR(IsOutParameter<A15>::value)     a15.write(out);
         }
 
         // TODO: we shouldn't need this here
         bool enrolFutures(RCF::ClientStub *)
         {
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
             return false;
         }
 
@@ -1655,7 +1624,7 @@ namespace RCF {
         typename ServerMarshal<A15>::type       a15;
     };
 
-    typedef boost::shared_ptr<I_Parameters> ParametersPtr;
+    typedef std::shared_ptr<I_Parameters> ParametersPtr;
 
     template<
         typename R, 
@@ -1694,7 +1663,7 @@ namespace RCF {
 
             if (!session.mpParameters)
             {
-                Exception e(_RcfError_ServerStubParms());
+                Exception e(RcfError_ServerStubParms);
                 RCF_THROW(e);
             }
 
@@ -1706,7 +1675,7 @@ namespace RCF {
 
     RCF_EXPORT void convertRcfSessionToRcfClient(
         OnCallbackConnectionCreated func,
-        RemoteCallSemantics rcs = RCF::Twoway);
+        RemoteCallMode rcs = RCF::Twoway);
 
 
     RCF_EXPORT RcfSessionPtr convertRcfClientToRcfSession(
@@ -1750,10 +1719,6 @@ namespace RCF {
         ClientStub & client, 
         ServerTransport & callbackServer);
 
-    RCF_EXPORT void createCallbackConnectionImpl_Legacy(
-        ClientStub & client, 
-        ServerTransport & callbackServer);
-
     RCF_EXPORT void createCallbackConnectionImpl(
         ClientStub & client, 
         RcfServer & callbackServer);
@@ -1781,5 +1746,9 @@ namespace RCF {
     }
 
 } // namespace RCF
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 #endif // ! INCLUDE_RCF_MARSHAL_HPP

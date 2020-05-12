@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -25,12 +25,7 @@
 #include <RCF/Filter.hpp>
 #include <RCF/Globals.hpp>
 
-// std::size_t
 #include <cstdlib>
-
-// std::size_t for vc6
-#include <boost/config.hpp>
-
 #include <csignal>
 
 namespace RCF {
@@ -104,13 +99,13 @@ namespace RCF {
 #endif
 
 
-#ifdef BOOST_WINDOWS
+#ifdef RCF_WINDOWS
             initWinsock();
             initPfnGetUserName();
 #endif
 
 
-#ifndef BOOST_WINDOWS
+#ifndef RCF_WINDOWS
             // Disable broken pipe signals on non-Windows platforms.
             std::signal(SIGPIPE, SIG_IGN);
 #endif
@@ -154,7 +149,7 @@ namespace RCF {
 #endif
             
 
-#ifdef BOOST_WINDOWS
+#ifdef RCF_WINDOWS
             deinitPfnGetUserName();
             deinitWinsock();
 #endif
@@ -175,9 +170,10 @@ namespace RCF {
             deinitObjectPool();
             deinitAmiHandlerCache();
             deinitPerformanceData();
-            deinitThreadLocalData();
             deinitTpHandlerCache();
             deinitLogManager();  
+
+            deinitThreadLocalData();
 
             delete gpGlobals;
             gpGlobals = NULL;
@@ -185,23 +181,14 @@ namespace RCF {
         return gInitRefCount == 0;
     }
 
-    RcfInitDeinit::RcfInitDeinit(RcfConfigT *) : mIsRootInstance(false)
+    RcfInit::RcfInit(RcfConfigT *)
     {
-        mIsRootInstance = init();
+        init();
     }
 
-    RcfInitDeinit::~RcfInitDeinit()
+    RcfInit::~RcfInit()
     {
         deinit();
     }
-
-    bool RcfInitDeinit::isRootInstance()
-    {
-        return mIsRootInstance;
-    }
-
-#ifdef RCF_AUTO_INIT_DEINIT
-    RcfInitDeinit gRcfAutoInit;
-#endif
 
 } // namespace RCF

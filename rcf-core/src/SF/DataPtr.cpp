@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2013, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 2.0
+// Version: 3.1
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -20,7 +20,9 @@
 
 #include <RCF/Exception.hpp>
 
-#include <SF/Tools.hpp>
+#include <RCF/Tools.hpp>
+
+#include <string.h> // memmove
 
 namespace SF {
 
@@ -115,7 +117,7 @@ namespace SF {
             pfn_deleter_(ptr_);
             break;
         default:
-            RCF_ASSERT(0);
+            RCF_ASSERT_ALWAYS("");
         }
         ptr_ = NULL;
         length_ = 0;
@@ -146,21 +148,6 @@ namespace SF {
             pfn_deleter_ = NULL;
         }
         return length;
-    }
-
-    void DataPtr::terminatebufferwithzero() const
-    {
-        if (ptr_ && ptr_[length_] != 0)
-        {
-            RCF_ASSERT_GT(allocatedLength_ , length_);
-            ptr_[length_] = 0;
-        }
-    }
-
-    void DataPtr::update_length()
-    {
-        if (ptr_)
-            length_ = length(ptr_);
     }
 
     DataPtr::T *DataPtr::get() const
