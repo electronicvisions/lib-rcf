@@ -25,12 +25,12 @@ RoundRobinScheduler<W, R>::RoundRobinScheduler(
 
 	// set up worker
 	m_worker_thread.reset(
-	    new RCF::Thread(boost::bind(&RoundRobinScheduler<W, R>::worker_main_thread, this)));
+	    new RCF::Thread(std::bind(&RoundRobinScheduler<W, R>::worker_main_thread, this)));
 
 	// set up output threads
 	m_threads_output.resize(num_threads_post);
 	for (auto& t : m_threads_output) {
-		t.reset(new RCF::Thread(boost::bind(&RoundRobinScheduler<W, R>::output_main_thread, this)));
+		t.reset(new RCF::Thread(std::bind(&RoundRobinScheduler<W, R>::output_main_thread, this)));
 	}
 }
 
@@ -69,7 +69,7 @@ void RoundRobinScheduler<W, R>::shutdown()
 	{
 		RCF::Mutex mutex;
 		RCF::Lock lock(mutex);
-		m_cond_timeout.notify_all(lock);
+		m_cond_timeout.notify_all();
 	}
 
 	LOG4CXX_DEBUG(log, "Resetting server");
@@ -117,8 +117,9 @@ void RoundRobinScheduler<W, R>::server_idle_timeout()
 
 			// sleep at least a second before checking for timeout again
 			auto duration_sleep_ms = duration_till_timeout.count() + 1;
-			m_cond_timeout.timed_wait(
-			    lock_timeout, std::max(duration_sleep_ms, (decltype(duration_sleep_ms)) 1000));
+			m_cond_timeout.wait_for(
+			    lock_timeout, std::chrono::milliseconds(
+			                      std::max(duration_sleep_ms, (decltype(duration_sleep_ms)) 1000)));
 
 			{
 				RCF::Lock input_lock(m_mutex_input_queue);
@@ -186,21 +187,21 @@ template <typename W, typename R>
 void RoundRobinScheduler<W, R>::notify_worker()
 {
 	RCF::Lock lock(m_mutex_notify_worker);
-	m_cond_worker.signal_one(lock);
+	m_cond_worker.notify_one();
 }
 
 template <typename W, typename R>
 void RoundRobinScheduler<W, R>::notify_output()
 {
 	RCF::Lock lock(m_mutex_notify_output_queue);
-	m_cond_output_queue.signal_one(lock);
+	m_cond_output_queue.notify_one();
 }
 
 template <typename W, typename R>
 void RoundRobinScheduler<W, R>::notify_output_all()
 {
 	RCF::Lock lock(m_mutex_notify_output_queue);
-	m_cond_output_queue.signal_all(lock);
+	m_cond_output_queue.notify_all();
 }
 
 template <typename W, typename R>
@@ -218,7 +219,7 @@ void RoundRobinScheduler<W, R>::worker_main_thread()
 		if (!is_work_left(lock_input_queue)) {
 			if (m_worker_is_set_up) {
 				// worker is still set up so we can only sleep until the next release
-				m_cond_worker.timed_wait(lock_input_queue, get_time_till_next_teardown().count());
+				m_cond_worker.wait_for(lock_input_queue, get_time_till_next_teardown());
 			} else {
 				// note that the worker went idle without any resources
 				m_worker_last_idle = std::chrono::system_clock::now();
@@ -259,7 +260,7 @@ typename RoundRobinScheduler<W, R>::work_context_t RoundRobinScheduler<W, R>::wo
 {
 	// lock argument is merely to indicate, that this method should only be
 	// called when the input queue is locked
-	BOOST_ASSERT(lock_input_queue.locked());
+	BOOST_ASSERT(lock_input_queue.owns_lock());
 
 	// there should always be work to retrieve, because otherwise we do not
 	// leave the while loop in worker_main_thread()
@@ -326,7 +327,7 @@ bool RoundRobinScheduler<W, R>::is_teardown_needed(RCF::Lock const& lock_input_q
 
 	// lock argument is merely to indicate, that this method should only be
 	// called when the input queue is locked
-	BOOST_ASSERT(lock_input_queue.locked());
+	BOOST_ASSERT(lock_input_queue.owns_lock());
 
 	// there are two conditions for tearing down the worker
 	// 1. we have reached the end of the current period
@@ -359,7 +360,7 @@ std::chrono::milliseconds RoundRobinScheduler<W, R>::get_time_till_timeout()
 template <typename W, typename R>
 bool RoundRobinScheduler<W, R>::is_work_left(RCF::Lock const& lock_input_queue)
 {
-	BOOST_ASSERT(lock_input_queue.locked());
+	BOOST_ASSERT(lock_input_queue.owns_lock());
 	return m_users.size() > 0;
 }
 

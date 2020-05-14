@@ -39,7 +39,7 @@ int main(int argc, const char* argv[])
 	}
 	po::notify(vm);
 
-	RCF::RcfInitDeinit rcfInit;
+	RCF::RcfInit rcfInit;
 
 	if (!silent) {
 		std::cout << "Calling with " << user << "/" << work_unit.runtime << "/" << work_unit.message
