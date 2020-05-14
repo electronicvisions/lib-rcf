@@ -22,17 +22,18 @@
 #include <memory>
 
 #include <RCF/Asio.hpp>
-#include <RCF/Filter.hpp>
+#include <RCF/ByteOrdering.hpp>
 #include <RCF/ConnectedClientTransport.hpp>
 #include <RCF/CurrentSession.hpp>
+#include <RCF/Filter.hpp>
 #include <RCF/HttpFrameFilter.hpp>
 #include <RCF/HttpSessionFilter.hpp>
+#include <RCF/Log.hpp>
 #include <RCF/MethodInvocation.hpp>
 #include <RCF/ObjectPool.hpp>
 #include <RCF/RcfServer.hpp>
 #include <RCF/RcfSession.hpp>
 #include <RCF/TimedBsdSockets.hpp>
-#include <RCF/Log.hpp>
 
 namespace RCF {    
 

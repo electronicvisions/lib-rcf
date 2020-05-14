@@ -281,10 +281,12 @@ namespace RCF {
     class LegacyError
     {
     public:
+#if RCF_FEATURE_SF==1
         void serialize(SF::Archive& ar)
         {
             ar & mErrorId & mArgs;
         }
+#endif
         int                             mErrorId = 0;
         std::vector<std::string>        mArgs;
     };

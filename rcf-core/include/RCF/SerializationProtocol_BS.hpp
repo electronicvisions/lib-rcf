@@ -32,6 +32,7 @@
 #include <boost/serialization/level.hpp>
 #include <boost/serialization/string.hpp>
 #include <boost/serialization/utility.hpp>
+#include <boost/serialization/vector.hpp>
 
 namespace RCF {   
 
