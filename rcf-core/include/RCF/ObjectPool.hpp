@@ -19,6 +19,7 @@
 #ifndef INCLUDE_RCF_OBJECTPOOL_HPP
 #define INCLUDE_RCF_OBJECTPOOL_HPP
 
+#include <memory>
 #include <vector>
 
 #include <boost/bind.hpp>
@@ -74,7 +75,7 @@ namespace RCF {
 
         pointer allocate(
             size_type cnt, 
-            typename std::allocator<void>::const_pointer = 0)
+            typename std::allocator<void>::value_type const* = 0)
         {
             BOOST_STATIC_ASSERT( sizeof(T) <= CbSize );
             RCF_ASSERT_EQ(cnt , 1);
