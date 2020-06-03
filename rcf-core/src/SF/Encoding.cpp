@@ -87,10 +87,7 @@ namespace SF {
         std::size_t &               pos)
     {
         int len = static_cast<int>(value.getLength());
-        if (value.getPtr() == nullptr) {
-            if (len == 0) {
-                return;
-            }
+        if ((value.getPtr() == nullptr) && (len != 0)) {
             throw std::runtime_error("Trying to read non-zero bytes from nullptr.");
         }
         SF::encodeInt(len, vec, pos);
