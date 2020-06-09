@@ -36,6 +36,7 @@
 #include <RCF/RecursionLimiter.hpp>
 #include <RCF/SerializationProtocol.hpp>
 #include <RCF/Tchar.hpp>
+#include <RCF/ThreadLibrary.hpp>
 
 #if RCF_FEATURE_FILETRANSFER==1
 #include <RCF/FileDownload.hpp>
