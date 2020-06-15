@@ -13,6 +13,7 @@
 
 #include "log4cxx/logger.h"
 #include "rcf-extensions/detail/round-robin.h"
+#include "rcf-extensions/common.h"
 
 /*
  * Wrap a worker-object in a RCF-server that uses round-robin scheduling to do
@@ -81,12 +82,6 @@
 using namespace std::literals::chrono_literals;
 
 namespace rcf_extensions {
-
-class UserNotAuthorized : public std::exception
-{
-public:
-	const char* what() const noexcept { return "User is not authorized."; }
-};
 
 template <typename Worker, typename RCFInterface>
 class RoundRobinScheduler
