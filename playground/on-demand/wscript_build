@@ -1,0 +1,24 @@
+#!/usr/bin/env python
+# encoding: utf-8
+
+targets = []
+
+for binary in ["client", "server"]:
+    targets.append("on-demand-reload-" + binary)
+    bld(
+        target=targets[-1],
+        features="cxx cxxprogram",
+        cxxflags=[],
+        source=[binary + ".cpp",],
+        use=["rcf-sf-only", "rcf_extensions", "DL4RCF", "BOOST_PO"],
+        install_path="${PREFIX}/bin",
+    )
+
+bld(
+    name="test_on_demand_reload",
+    features="use shelltest",
+    use=targets,
+    run_after=set(targets),
+    source="tests/simple_functionality.sh",
+    test_timeout=45,
+)
