@@ -6,13 +6,14 @@
 #include <boost/function_types/result_type.hpp>
 #include <boost/typeof/typeof.hpp>
 
+#include <optional>
+
 #include "hate/iterator_traits.h"
 
-namespace rcf_extensions {
-namespace detail {
+namespace rcf_extensions::detail::round_robin_scheduler {
 
 template <typename Worker>
-struct infer_work_method_traits
+struct work_methods
 {
 	using method_work_t = BOOST_TYPEOF(&Worker::work);
 	using method_verify_user_t = BOOST_TYPEOF(&Worker::verify_user);
@@ -41,5 +42,5 @@ struct infer_work_method_traits
 	    hate::is_specialization_of<optional_user_id_t, std::optional>::value,
 	    "verify_user-method has to return an std::optional value!");
 };
-}
-}
+
+} // namespace rcf_extensions::detail::round_robin_scheduler

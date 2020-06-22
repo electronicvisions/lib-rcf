@@ -13,7 +13,7 @@
 
 #include "log4cxx/logger.h"
 #include "rcf-extensions/common.h"
-#include "rcf-extensions/detail/round-robin.h"
+#include "rcf-extensions/detail/round-robin-scheduler/work-methods.h"
 
 /*
  * Wrap a worker-object in a RCF-server that uses round-robin scheduling to do
@@ -88,11 +88,12 @@ class RoundRobinScheduler
 {
 public:
 	using worker_t = Worker;
+	using work_methods = detail::round_robin_scheduler::work_methods<Worker>;
 
 	// inference done in extra helper struct for RR_GENERATE macro
-	using work_argument_t = typename detail::infer_work_method_traits<Worker>::work_argument_t;
-	using work_return_t = typename detail::infer_work_method_traits<Worker>::work_return_t;
-	using user_id_t = typename detail::infer_work_method_traits<Worker>::user_id_t;
+	using work_argument_t = typename work_methods::work_argument_t;
+	using work_return_t = typename work_methods::work_return_t;
+	using user_id_t = typename work_methods::user_id_t;
 
 	RoundRobinScheduler() = delete;
 	RoundRobinScheduler(const RoundRobinScheduler&) = delete;
@@ -206,7 +207,7 @@ private:
 
 } // namespace rcf_extensions
 
-#include "round-robin.tcc"
+#include "rcf-extensions/round-robin-scheduler.tcc"
 
 // The only symbol that should be used externally:
 // Given a worker-type and and a desired alias for the RCF-server-wrapper, the
@@ -219,9 +220,11 @@ private:
 #define RR_GENERATE(WORKER_TYPE, ALIAS_SCHEDULER)                                                  \
 	RCF_BEGIN(I_##ALIAS_SCHEDULER, "I_" #ALIAS_SCHEDULER)                                          \
 	RCF_METHOD_R1(                                                                                 \
-	    typename rcf_extensions::detail::infer_work_method_traits<WORKER_TYPE>::work_return_t,     \
+	    typename rcf_extensions::detail::round_robin_scheduler::work_methods<                      \
+	        WORKER_TYPE>::work_return_t,                                                           \
 	    submit_work,                                                                               \
-	    typename rcf_extensions::detail::infer_work_method_traits<WORKER_TYPE>::work_argument_t)   \
+	    typename rcf_extensions::detail::round_robin_scheduler::work_methods<                      \
+	        WORKER_TYPE>::work_argument_t)                                                         \
 	RCF_END(I_##ALIAS_SCHEDULER)                                                                   \
                                                                                                    \
 	using ALIAS_SCHEDULER##_t = rcf_extensions::RoundRobinScheduler<WORKER_TYPE>;                  \

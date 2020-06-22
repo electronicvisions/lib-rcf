@@ -1,6 +1,6 @@
 #pragma once
 
-#include "rcf-extensions/round-robin.h"
+#include "rcf-extensions/round-robin-scheduler.h"
 
 struct WorkUnit
 {
