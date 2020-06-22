@@ -1,23 +1,26 @@
 #pragma once
 
-template <typename W, typename R>
-RoundRobinScheduler<W, R>::RoundRobinScheduler(
+#include "rcf-extensions/round-robin.h"
+
+namespace rcf_extensions {
+
+template <typename W>
+RoundRobinScheduler<W>::RoundRobinScheduler(
     RCF::TcpEndpoint const& endpoint,
     worker_t&& worker,
     size_t num_threads_pre,
-    size_t num_threads_post)
-    : m_worker(std::move(worker)),
-      m_worker_is_set_up(false),
-      m_worker_last_release(std::chrono::system_clock::time_point::min()),
-      m_worker_last_idle(std::chrono::system_clock::now()),
-      m_teardown_period(0)
+    size_t num_threads_post) :
+    m_worker(std::move(worker)),
+    m_worker_is_set_up(false),
+    m_worker_last_release(std::chrono::system_clock::time_point::min()),
+    m_worker_last_idle(std::chrono::system_clock::now()),
+    m_teardown_period(0)
 {
 	m_stop_flag = false; // no other threads running
 
 	RCF::init();
 
 	m_server.reset(new RCF::RcfServer(endpoint));
-	m_server->bind<rcf_interface_t>(*this);
 
 	// Thread pool with fixed number of threads
 	RCF::ThreadPoolPtr tpPtr(new RCF::ThreadPool(num_threads_pre));
@@ -25,25 +28,25 @@ RoundRobinScheduler<W, R>::RoundRobinScheduler(
 
 	// set up worker
 	m_worker_thread.reset(
-	    new RCF::Thread(std::bind(&RoundRobinScheduler<W, R>::worker_main_thread, this)));
+	    new RCF::Thread(std::bind(&RoundRobinScheduler<W>::worker_main_thread, this)));
 
 	// set up output threads
 	m_threads_output.resize(num_threads_post);
 	for (auto& t : m_threads_output) {
-		t.reset(new RCF::Thread(std::bind(&RoundRobinScheduler<W, R>::output_main_thread, this)));
+		t.reset(new RCF::Thread(std::bind(&RoundRobinScheduler<W>::output_main_thread, this)));
 	}
 }
 
-template <typename W, typename R>
-RoundRobinScheduler<W, R>::~RoundRobinScheduler()
+template <typename W>
+RoundRobinScheduler<W>::~RoundRobinScheduler()
 {
 	if (!m_stop_flag) {
 		shutdown();
 	}
 }
 
-template <typename W, typename R>
-void RoundRobinScheduler<W, R>::shutdown()
+template <typename W>
+void RoundRobinScheduler<W>::shutdown()
 {
 	auto log = log4cxx::Logger::getLogger(__func__);
 	LOG4CXX_DEBUG(log, "Preparing to shut down!");
@@ -80,8 +83,8 @@ void RoundRobinScheduler<W, R>::shutdown()
 	LOG4CXX_DEBUG(log, "Shutdown finished");
 }
 
-template <typename W, typename R>
-void RoundRobinScheduler<W, R>::start_server(std::chrono::seconds const& timeout)
+template <typename W>
+void RoundRobinScheduler<W>::start_server(std::chrono::seconds const& timeout)
 {
 	m_timeout = timeout;
 	m_server->start();
@@ -90,8 +93,8 @@ void RoundRobinScheduler<W, R>::start_server(std::chrono::seconds const& timeout
 }
 
 
-template <typename W, typename R>
-void RoundRobinScheduler<W, R>::server_idle_timeout()
+template <typename W>
+void RoundRobinScheduler<W>::server_idle_timeout()
 {
 	using namespace std::chrono_literals;
 
@@ -142,8 +145,8 @@ void RoundRobinScheduler<W, R>::server_idle_timeout()
 	notify_output_all();
 }
 
-template <typename W, typename R>
-typename RoundRobinScheduler<W, R>::work_return_t RoundRobinScheduler<W, R>::submit_work(
+template <typename W>
+typename RoundRobinScheduler<W>::work_return_t RoundRobinScheduler<W>::submit_work(
     work_argument_t work)
 {
 	{
@@ -157,7 +160,7 @@ typename RoundRobinScheduler<W, R>::work_return_t RoundRobinScheduler<W, R>::sub
 		if (!user_id) {
 			context.commit(UserNotAuthorized());
 			// dummy data not passed to client
-			return RoundRobinScheduler<W, R>::work_return_t();
+			return RoundRobinScheduler<W>::work_return_t();
 		}
 
 		RCF::Lock lock_input_queue(m_mutex_input_queue);
@@ -180,32 +183,32 @@ typename RoundRobinScheduler<W, R>::work_return_t RoundRobinScheduler<W, R>::sub
 	// notify the worker thread of work
 	notify_worker();
 
-	return RoundRobinScheduler<W, R>::work_return_t(); // not passed to client
+	return RoundRobinScheduler<W>::work_return_t(); // not passed to client
 }
 
-template <typename W, typename R>
-void RoundRobinScheduler<W, R>::notify_worker()
+template <typename W>
+void RoundRobinScheduler<W>::notify_worker()
 {
 	RCF::Lock lock(m_mutex_notify_worker);
 	m_cond_worker.notify_one();
 }
 
-template <typename W, typename R>
-void RoundRobinScheduler<W, R>::notify_output()
+template <typename W>
+void RoundRobinScheduler<W>::notify_output()
 {
 	RCF::Lock lock(m_mutex_notify_output_queue);
 	m_cond_output_queue.notify_one();
 }
 
-template <typename W, typename R>
-void RoundRobinScheduler<W, R>::notify_output_all()
+template <typename W>
+void RoundRobinScheduler<W>::notify_output_all()
 {
 	RCF::Lock lock(m_mutex_notify_output_queue);
 	m_cond_output_queue.notify_all();
 }
 
-template <typename W, typename R>
-void RoundRobinScheduler<W, R>::worker_main_thread()
+template <typename W>
+void RoundRobinScheduler<W>::worker_main_thread()
 {
 	RCF::Lock lock_input_queue(m_mutex_input_queue);
 	while (true) {
@@ -254,8 +257,8 @@ void RoundRobinScheduler<W, R>::worker_main_thread()
 	}
 }
 
-template <typename W, typename R>
-typename RoundRobinScheduler<W, R>::work_context_t RoundRobinScheduler<W, R>::worker_retrieve_work(
+template <typename W>
+typename RoundRobinScheduler<W>::work_context_t RoundRobinScheduler<W>::worker_retrieve_work(
     RCF::Lock const& lock_input_queue)
 {
 	// lock argument is merely to indicate, that this method should only be
@@ -285,8 +288,8 @@ typename RoundRobinScheduler<W, R>::work_context_t RoundRobinScheduler<W, R>::wo
 	return context;
 }
 
-template <typename W, typename R>
-void RoundRobinScheduler<W, R>::output_main_thread()
+template <typename W>
+void RoundRobinScheduler<W>::output_main_thread()
 {
 	RCF::Lock lock_output_queue(m_mutex_output_queue);
 	while (true) {
@@ -312,16 +315,16 @@ void RoundRobinScheduler<W, R>::output_main_thread()
 	}
 }
 
-template <typename W, typename R>
-void RoundRobinScheduler<W, R>::push_to_output_queue(work_context_t&& work)
+template <typename W>
+void RoundRobinScheduler<W>::push_to_output_queue(work_context_t&& work)
 {
 	RCF::Lock lock(m_mutex_output_queue);
 	m_output_queue.push_back(std::move(work));
 	notify_output();
 }
 
-template <typename W, typename R>
-bool RoundRobinScheduler<W, R>::is_teardown_needed(RCF::Lock const& lock_input_queue)
+template <typename W>
+bool RoundRobinScheduler<W>::is_teardown_needed(RCF::Lock const& lock_input_queue)
 {
 	using namespace std::chrono_literals;
 
@@ -341,31 +344,33 @@ bool RoundRobinScheduler<W, R>::is_teardown_needed(RCF::Lock const& lock_input_q
 	}
 }
 
-template <typename W, typename R>
-std::chrono::milliseconds RoundRobinScheduler<W, R>::get_time_till_next_teardown()
+template <typename W>
+std::chrono::milliseconds RoundRobinScheduler<W>::get_time_till_next_teardown()
 {
 	auto now = std::chrono::system_clock::now();
 	return m_teardown_period -
 	       std::chrono::duration_cast<std::chrono::milliseconds>(now - m_worker_last_release);
 }
 
-template <typename W, typename R>
-std::chrono::milliseconds RoundRobinScheduler<W, R>::get_time_till_timeout()
+template <typename W>
+std::chrono::milliseconds RoundRobinScheduler<W>::get_time_till_timeout()
 {
 	auto now = std::chrono::system_clock::now();
 	return m_timeout -
 	       std::chrono::duration_cast<std::chrono::milliseconds>(now - m_worker_last_idle);
 }
 
-template <typename W, typename R>
-bool RoundRobinScheduler<W, R>::is_work_left(RCF::Lock const& lock_input_queue)
+template <typename W>
+bool RoundRobinScheduler<W>::is_work_left(RCF::Lock const& lock_input_queue)
 {
 	BOOST_ASSERT(lock_input_queue.owns_lock());
 	return m_users.size() > 0;
 }
 
-template <typename W, typename R>
-void RoundRobinScheduler<W, R>::reset_idle_timeout()
+template <typename W>
+void RoundRobinScheduler<W>::reset_idle_timeout()
 {
 	m_worker_last_idle = std::chrono::system_clock::now();
 }
+
+} // namespace rcf_extensions

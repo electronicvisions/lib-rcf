@@ -1,3 +1,5 @@
+#pragma once
+
 #include "rcf-extensions/round-robin.h"
 
 struct WorkUnit
@@ -5,7 +7,10 @@ struct WorkUnit
 	size_t runtime;
 	std::string message;
 
-	void serialize(SF::Archive& ar) { ar& runtime& message; }
+	void serialize(SF::Archive& ar)
+	{
+		ar& runtime& message;
+	}
 };
 
 
@@ -14,21 +19,24 @@ class Worker
 public:
 	Worker() : m_job_count(0) {}
 
-	void setup() { std::cout << "Setting up waiting worker " << std::endl; }
+	void setup()
+	{
+		std::cout << "Setting up waiting worker " << std::endl;
+	}
 
 	std::optional<std::string> verify_user(std::string const& user_data)
 	{
 		if (user_data != "mueller") {
 			std::stringstream msg;
 			msg << "Waiting Worker: [" << user_data << "] "
-				<< "(verified) " << std::endl;
+			    << "(verified) " << std::endl;
 			std::cout << msg.str();
 			return std::make_optional(user_data);
 		} else {
 			// mueller darf nicht
 			std::stringstream msg;
 			msg << "Waiting Worker: [" << user_data << "] "
-				<< "NEIN! " << std::endl;
+			    << "NEIN! " << std::endl;
 			std::cout << msg.str();
 			return std::nullopt;
 		}
@@ -39,7 +47,7 @@ public:
 		size_t job_id = m_job_count++;
 
 		std::cout << "Waiting Worker: [#" << job_id << "] "
-				  << "(started) " << work.runtime << " ms" << std::endl;
+		          << "(started) " << work.runtime << " ms" << std::endl;
 
 		RCF::sleepMs(work.runtime);
 
@@ -48,13 +56,16 @@ public:
 		return job_id;
 	}
 
-	void teardown() { std::cout << "Tearing down waiting worker " << std::endl; }
+	void teardown()
+	{
+		std::cout << "Tearing down waiting worker " << std::endl;
+	}
 
 private:
 	size_t m_job_count;
 };
 
-RR_GENERATE(Worker, rr_waiter_t)
+RR_GENERATE(Worker, rr_waiter)
 
 // Without macro:
 /*

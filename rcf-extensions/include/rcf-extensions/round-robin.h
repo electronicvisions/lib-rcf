@@ -12,8 +12,8 @@
 #include <RCF/RCF.hpp>
 
 #include "log4cxx/logger.h"
-#include "rcf-extensions/detail/round-robin.h"
 #include "rcf-extensions/common.h"
+#include "rcf-extensions/detail/round-robin.h"
 
 /*
  * Wrap a worker-object in a RCF-server that uses round-robin scheduling to do
@@ -83,18 +83,19 @@ using namespace std::literals::chrono_literals;
 
 namespace rcf_extensions {
 
-template <typename Worker, typename RCFInterface>
+template <typename Worker>
 class RoundRobinScheduler
 {
 public:
-	typedef Worker worker_t;
+	using worker_t = Worker;
 
 	// inference done in extra helper struct for RR_GENERATE macro
 	using work_argument_t = typename detail::infer_work_method_traits<Worker>::work_argument_t;
 	using work_return_t = typename detail::infer_work_method_traits<Worker>::work_return_t;
 	using user_id_t = typename detail::infer_work_method_traits<Worker>::user_id_t;
 
-	using rcf_interface_t = RCFInterface;
+	RoundRobinScheduler() = delete;
+	RoundRobinScheduler(const RoundRobinScheduler&) = delete;
 
 	RoundRobinScheduler(
 	    RCF::TcpEndpoint const& endpoint,
@@ -103,6 +104,18 @@ public:
 	    size_t num_threads_post = 1);
 	~RoundRobinScheduler();
 
+	/**
+	 * Bind scheduler to rcf interface.
+	 *
+	 * Needs to be called after creating scheduler. _construct-helper takes
+	 * care of it.
+	 */
+	template <typename RcfInterface>
+	void bind_to_interface()
+	{
+		m_server->bind<RcfInterface>(*this);
+	}
+
 	// start server and shut down server after a given timeout of being idle
 	void start_server(std::chrono::seconds const& timeout = 0s);
 
@@ -110,15 +123,27 @@ public:
 	// (this should be done as to not brick the FPGAs)
 	void shutdown();
 
-	RCF::RcfServer& get_server() { return *m_server; }
-	worker_t& get_worker() { return m_worker; }
+	RCF::RcfServer& get_server()
+	{
+		return *m_server;
+	}
+	worker_t& get_worker()
+	{
+		return m_worker;
+	}
 
 	work_return_t submit_work(work_argument_t);
 
 	// Set and retrieve the period after which the teardown()-method is called.
 	// If there is still work left to do, setup() will be called immediately.
-	void set_release_interval(std::chrono::seconds const& s) { m_teardown_period = s; }
-	std::chrono::seconds get_release_interval() { return m_teardown_period; }
+	void set_release_interval(std::chrono::seconds const& s)
+	{
+		m_teardown_period = s;
+	}
+	std::chrono::seconds get_release_interval()
+	{
+		return m_teardown_period;
+	}
 
 	// reset the counter governing the idle timeout
 	void reset_idle_timeout();
@@ -179,19 +204,34 @@ private:
 	void push_to_output_queue(work_context_t&&);
 };
 
+} // namespace rcf_extensions
+
 #include "round-robin.tcc"
-}
 
 // The only symbol that should be used externally:
 // Given a worker-type and and a desired alias for the RCF-server-wrapper, the
 // correct rcf-interface will be instantiated under the specified alias (with
 // an "I_"-prefix).
 //
-#define RR_GENERATE(WORKERTYPE, DESIRED_ALIAS)                                                     \
-	RCF_BEGIN(I_##DESIRED_ALIAS, "I_" #DESIRED_ALIAS)                                              \
+// The marcro also creates a construction helper `<specified-alias>_construct`
+// that automatically forwards the correct RCF-Interface to the constructor.
+//
+#define RR_GENERATE(WORKER_TYPE, ALIAS_SCHEDULER)                                                  \
+	RCF_BEGIN(I_##ALIAS_SCHEDULER, "I_" #ALIAS_SCHEDULER)                                          \
 	RCF_METHOD_R1(                                                                                 \
-	    typename rcf_extensions::detail::infer_work_method_traits<WORKERTYPE>::work_return_t,      \
+	    typename rcf_extensions::detail::infer_work_method_traits<WORKER_TYPE>::work_return_t,     \
 	    submit_work,                                                                               \
-	    typename rcf_extensions::detail::infer_work_method_traits<WORKERTYPE>::work_argument_t)    \
-	RCF_END(I_##DESIRED_ALIAS)                                                                     \
-	typedef rcf_extensions::RoundRobinScheduler<WORKERTYPE, I_##DESIRED_ALIAS> DESIRED_ALIAS;
+	    typename rcf_extensions::detail::infer_work_method_traits<WORKER_TYPE>::work_argument_t)   \
+	RCF_END(I_##ALIAS_SCHEDULER)                                                                   \
+                                                                                                   \
+	using ALIAS_SCHEDULER##_t = rcf_extensions::RoundRobinScheduler<WORKER_TYPE>;                  \
+	using ALIAS_SCHEDULER##_client_t = RcfClient<I_##ALIAS_SCHEDULER>;                             \
+	using ALIAS_SCHEDULER##_rcf_interface_t = I_##ALIAS_SCHEDULER;                                 \
+                                                                                                   \
+	template <typename... Args>                                                                    \
+	std::unique_ptr<ALIAS_SCHEDULER##_t> ALIAS_SCHEDULER##_construct(Args&&... args)               \
+	{                                                                                              \
+		auto scheduler = std::make_unique<ALIAS_SCHEDULER##_t>(std::forward<Args>(args)...);       \
+		scheduler->template bind_to_interface<ALIAS_SCHEDULER##_rcf_interface_t>();                \
+		return scheduler;                                                                          \
+	}

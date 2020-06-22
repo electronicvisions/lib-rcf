@@ -15,14 +15,14 @@ int main(int argc, const char* argv[])
 
 	po::options_description desc("Allowed options");
 	desc.add_options()("help,h", "produce help message")(
-		"ip,i", po::value<std::string>(&ip)->default_value("0.0.0.0"), "specify listening IP")(
-		"port,p", po::value<uint16_t>(&port)->required(), "specify listening port")(
-		"num_threads_pre,n", po::value<size_t>(&num_threads_pre)->default_value(4),
-		"number of threads for accepting work")(
-		"num_threads_post,m", po::value<size_t>(&num_threads_post)->default_value(4),
-		"number of threads for distributing work")(
-		"timeout,t", po::value<size_t>(&timeout_seconds)->default_value(0),
-		"timeout in seconds till shutdown after idle");
+	    "ip,i", po::value<std::string>(&ip)->default_value("0.0.0.0"), "specify listening IP")(
+	    "port,p", po::value<uint16_t>(&port)->required(), "specify listening port")(
+	    "num_threads_pre,n", po::value<size_t>(&num_threads_pre)->default_value(4),
+	    "number of threads for accepting work")(
+	    "num_threads_post,m", po::value<size_t>(&num_threads_post)->default_value(4),
+	    "number of threads for distributing work")(
+	    "timeout,t", po::value<size_t>(&timeout_seconds)->default_value(0),
+	    "timeout in seconds till shutdown after idle");
 
 	// populate vm variable
 	po::variables_map vm;
@@ -34,13 +34,14 @@ int main(int argc, const char* argv[])
 	}
 	po::notify(vm);
 
-	rr_waiter_t server(RCF::TcpEndpoint(ip, port), Worker(), num_threads_pre, num_threads_post);
-	server.get_server().getServerTransport().setMaxIncomingMessageLength(1280 * 1024 * 1024);
+	auto server = rr_waiter_construct(
+	    RCF::TcpEndpoint(ip, port), Worker(), num_threads_pre, num_threads_post);
+	server->get_server().getServerTransport().setMaxIncomingMessageLength(1280 * 1024 * 1024);
 
 	std::cout << "Started up (" << num_threads_pre << "/" << num_threads_post << " threads)..."
-			  << std::endl;
+	          << std::endl;
 
-	server.start_server(std::chrono::seconds(timeout_seconds));
+	server->start_server(std::chrono::seconds(timeout_seconds));
 
 	std::cout << "Server shutting down due to being idle for too long.." << std::endl;
 
