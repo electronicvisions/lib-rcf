@@ -19,6 +19,7 @@ int main(int argc, const char* argv[])
 	size_t num_threads_input, num_threads_output;
 	size_t timeout_seconds;
 	size_t release_interval;
+	size_t user_period_ms;
 #ifdef RCF_LOG_THRESHOLD
 	size_t loglevel = RCF_LOG_THRESHOLD;
 #else
@@ -36,9 +37,11 @@ int main(int argc, const char* argv[])
 	    "num-threads-output,m", po::value<size_t>(&num_threads_output)->default_value(4),
 	    "number of threads for distributing work")(
 	    "release-interval,r", po::value<size_t>(&release_interval)->default_value(0),
-	    "Release interval of the server")(
+	    "Release interval of the server in seconds.")(
 	    "timeout,t", po::value<size_t>(&timeout_seconds)->default_value(0),
-	    "timeout in seconds till shutdown after idle");
+	    "timeout in seconds till shutdown after idle")(
+	    "user-period-ms,u", po::value<size_t>(&user_period_ms)->default_value(500),
+	    "Time in between user switches in milliseconds.");
 
 	// populate vm variable
 	po::variables_map vm;
@@ -65,6 +68,7 @@ int main(int argc, const char* argv[])
 	server->get_server().getServerTransport().setMaxIncomingMessageLength(1280 * 1024 * 1024);
 
 	server->set_release_interval(std::chrono::seconds(release_interval));
+	server->set_period_per_user(std::chrono::milliseconds(user_period_ms));
 
 	RCF_LOG_INFO(
 	    log, "Started up (" << num_threads_input << "/" << num_threads_output << " threads)...");

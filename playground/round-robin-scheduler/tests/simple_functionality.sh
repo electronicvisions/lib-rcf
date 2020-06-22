@@ -30,6 +30,7 @@ for try in $(seq 10); do
         --num-threads-input 4 \
         --num-threads-output 1 \
         --release-interval 5 \
+        --user-period-ms 250 \
         &
     pid_server="$!"
     sleep 1

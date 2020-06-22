@@ -12,7 +12,10 @@
 #include <RCF/RCF.hpp>
 #include <log4cxx/logger.h>
 
+#include "rcf-extensions/common.h"
+#include "rcf-extensions/detail/round-robin-scheduler/input-queue.h"
 #include "rcf-extensions/detail/round-robin-scheduler/work-methods.h"
+#include "rcf-extensions/sequence-number.h"
 
 /*
  * Wrap a worker-object in a RCF-server that uses round-robin scheduling to do
@@ -92,6 +95,8 @@ public:
 	// inference done in extra helper struct for RR_GENERATE macro
 	using work_argument_t = typename work_methods::work_argument_t;
 	using work_return_t = typename work_methods::work_return_t;
+	using work_context_t = typename work_methods::work_context_t;
+	using work_package_t = typename work_methods::work_package_t;
 	using user_id_t = typename work_methods::user_id_t;
 
 	RoundRobinScheduler() = delete;
@@ -122,16 +127,20 @@ public:
 	 */
 	void start_server(std::chrono::seconds const& timeout = 0s);
 
+	/**
+	 * Indicate whether scheduler has work left.
+	 */
+	bool has_work_left() const
+	{
+		return !m_input_queue->is_empty();
+	}
+
 	RCF::RcfServer& get_server()
 	{
 		return *m_server;
 	}
-	worker_t& get_worker()
-	{
-		return m_worker;
-	}
 
-	work_return_t submit_work(work_argument_t);
+	work_return_t submit_work(work_argument_t, SequenceNumber);
 
 	/**
 	 *  Set and retrieve the period after which the teardown()-method is called.
@@ -147,16 +156,33 @@ public:
 		return m_teardown_period;
 	}
 
-	// reset the counter governing the idle timeout
-	void reset_idle_timeout();
+	/**
+	 * Set time period after which the user is forcibly switched even if there
+	 * are jobs remaining.
+	 *
+	 * @param period Time after which the user is forcibly switched. If it is
+	 * 0ms the user will not be switched.
+	 */
+	void set_period_per_user(std::chrono::milliseconds period)
+	{
+		m_input_queue->set_period_per_user(period);
+	}
+
+	/**
+	 * Get the time period after which the user is forcibly switched even if
+	 * there are jobs remaining for the current user.
+	 */
+	std::chrono::milliseconds get_period_per_user() const
+	{
+		return m_input_queue->get_period_per_user();
+	}
 
 private:
-	typedef RCF::RemoteCallContext<work_return_t, work_argument_t> work_context_t;
-
-	// members
+	log4cxx::Logger* m_log;
 	std::unique_ptr<RCF::RcfServer> m_server;
 
-	log4cxx::Logger* m_log;
+	using input_queue_t = rcf_extensions::detail::round_robin_scheduler::InputQueue<worker_t>;
+	std::unique_ptr<input_queue_t> m_input_queue;
 
 	RCF::Condition m_cond_worker;
 	RCF::Condition m_cond_timeout;
@@ -165,35 +191,22 @@ private:
 	// variable indicating worker doing work or not
 	bool m_worker_is_set_up;
 	std::chrono::system_clock::time_point m_worker_last_release;
-	std::chrono::system_clock::time_point m_worker_last_idle; // protected by m_mutex_input_queue
+	std::chrono::system_clock::time_point m_worker_last_idle; // protected by locked input_queue
 	std::chrono::seconds m_teardown_period;
 	std::chrono::seconds m_timeout;
 	RCF::Mutex m_mutex_notify_worker;
 	RCF::Mutex m_mutex_notify_output_queue;
 
-	// locked via m_mutex_input_queue
 	bool m_stop_flag;
-
-	RCF::Mutex m_mutex_input_queue;
-	typedef std::map<user_id_t, std::deque<work_context_t> > user_to_inputqueue_t;
-	user_to_inputqueue_t m_user_to_input_queue;
 
 	std::deque<work_context_t> m_output_queue;
 	std::vector<RCF::ThreadPtr> m_threads_output;
 	RCF::Mutex m_mutex_output_queue;
 	RCF::Condition m_cond_output_queue;
 
-	using users_t = typename std::list<user_id_t>;
-	using users_citer_t = typename users_t::const_iterator;
-	users_t m_users;
-	users_citer_t m_it_current_user;
-
 	// methods
 	void worker_main_thread();
-	work_context_t worker_retrieve_work(RCF::Lock const& lock_input_queue);
-	void worker_perform_work(work_context_t&);
-	bool is_teardown_needed(RCF::Lock const& lock_input_queue);
-	bool is_work_left(RCF::Lock const& lock_input_queue);
+	bool is_teardown_needed(RCF::Lock& lock_input_queue);
 	std::chrono::milliseconds get_time_till_next_teardown();
 	std::chrono::milliseconds get_time_till_timeout();
 
@@ -222,12 +235,13 @@ private:
 //
 #define RR_GENERATE(WORKER_TYPE, ALIAS_SCHEDULER)                                                  \
 	RCF_BEGIN(I_##ALIAS_SCHEDULER, "I_" #ALIAS_SCHEDULER)                                          \
-	RCF_METHOD_R1(                                                                                 \
+	RCF_METHOD_R2(                                                                                 \
 	    typename rcf_extensions::detail::round_robin_scheduler::work_methods<                      \
 	        WORKER_TYPE>::work_return_t,                                                           \
 	    submit_work,                                                                               \
 	    typename rcf_extensions::detail::round_robin_scheduler::work_methods<                      \
-	        WORKER_TYPE>::work_argument_t)                                                         \
+	        WORKER_TYPE>::work_argument_t,                                                         \
+	    ::rcf_extensions::SequenceNumber)                                                          \
 	RCF_END(I_##ALIAS_SCHEDULER)                                                                   \
                                                                                                    \
 	using ALIAS_SCHEDULER##_t = rcf_extensions::RoundRobinScheduler<WORKER_TYPE>;                  \

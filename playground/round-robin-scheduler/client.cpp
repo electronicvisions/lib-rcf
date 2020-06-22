@@ -70,7 +70,7 @@ int main(int argc, const char* argv[])
 		client.getClientStub().setRequestUserData(user);
 		client.getClientStub().getTransport().setMaxIncomingMessageLength(1280 * 1024 * 1024);
 
-		RCF::Future<typename rr_waiter_t::work_return_t> future = client.submit_work(work_unit);
+		RCF::Future<typename rr_waiter_t::work_return_t> future = client.submit_work(work_unit, i);
 		futures.push_back(std::make_pair(std::move(client), std::move(future)));
 	}
 
