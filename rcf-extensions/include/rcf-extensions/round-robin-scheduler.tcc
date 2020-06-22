@@ -14,6 +14,7 @@ RoundRobinScheduler<W>::RoundRobinScheduler(
     size_t num_threads_post) :
     m_log(log4cxx::Logger::getLogger("lib-rcf.RoundRobinScheduler")),
     m_input_queue{new input_queue_t},
+    m_output_queue{new output_queue_t{num_threads_post}},
     m_worker(std::move(worker)),
     m_worker_is_set_up(false),
     m_worker_last_release(std::chrono::system_clock::time_point::min()),
@@ -33,12 +34,6 @@ RoundRobinScheduler<W>::RoundRobinScheduler(
 	// set up worker
 	m_worker_thread.reset(
 	    new RCF::Thread(std::bind(&RoundRobinScheduler<W>::worker_main_thread, this)));
-
-	// set up output threads
-	m_threads_output.resize(num_threads_post);
-	for (auto& t : m_threads_output) {
-		t.reset(new RCF::Thread(std::bind(&RoundRobinScheduler<W>::output_main_thread, this)));
-	}
 }
 
 template <typename W>
@@ -49,8 +44,6 @@ RoundRobinScheduler<W>::~RoundRobinScheduler()
 		m_stop_flag = true;
 		RCF_LOG_DEBUG(m_log, "Notifying worker..");
 		notify_worker();
-		RCF_LOG_DEBUG(m_log, "Notifying output threads..");
-		notify_output_all();
 		RCF_LOG_DEBUG(m_log, "Joining worker thread..");
 		m_worker_thread->join();
 		{
@@ -60,10 +53,7 @@ RoundRobinScheduler<W>::~RoundRobinScheduler()
 			m_worker.teardown();
 			RCF_LOG_DEBUG(m_log, "Teardown finished");
 		}
-		RCF_LOG_DEBUG(m_log, "Joining output threads");
-		for (auto& thread : m_threads_output) {
-			thread->join();
-		}
+		m_output_queue.reset();
 		LOG4CXX_DEBUG(m_log, "Notifying timeout thread");
 		{
 			RCF::Mutex mutex;
@@ -170,20 +160,6 @@ void RoundRobinScheduler<W>::notify_worker()
 }
 
 template <typename W>
-void RoundRobinScheduler<W>::notify_output()
-{
-	RCF::Lock lock(m_mutex_notify_output_queue);
-	m_cond_output_queue.notify_one();
-}
-
-template <typename W>
-void RoundRobinScheduler<W>::notify_output_all()
-{
-	RCF::Lock lock(m_mutex_notify_output_queue);
-	m_cond_output_queue.notify_all();
-}
-
-template <typename W>
 void RoundRobinScheduler<W>::worker_main_thread()
 {
 	using namespace std::chrono_literals;
@@ -231,45 +207,10 @@ void RoundRobinScheduler<W>::worker_main_thread()
 		work_return_t retval = m_worker.work(work);
 		context.parameters().r.set(retval);
 
-		push_to_output_queue(std::move(context));
+		m_output_queue->push_back(std::move(context));
 
 		lock_input_queue.lock();
 	}
-}
-
-template <typename W>
-void RoundRobinScheduler<W>::output_main_thread()
-{
-	RCF::Lock lock_output_queue(m_mutex_output_queue);
-	while (true) {
-		while ((m_output_queue.size() == 0) && !m_stop_flag) {
-			m_cond_output_queue.wait(lock_output_queue);
-		}
-		if (m_stop_flag) {
-			break;
-		}
-		// wrap in brackets to make sure that context gets deleted after we
-		// have committed
-		{
-			// retrieve the oldest output to deliver
-			work_context_t context = m_output_queue.front();
-			m_output_queue.pop_front();
-			lock_output_queue.unlock();
-
-			// send the result to the caller
-			context.commit();
-
-			lock_output_queue.lock();
-		}
-	}
-}
-
-template <typename W>
-void RoundRobinScheduler<W>::push_to_output_queue(work_context_t&& work)
-{
-	RCF::Lock lock(m_mutex_output_queue);
-	m_output_queue.push_back(std::move(work));
-	notify_output();
 }
 
 template <typename W>

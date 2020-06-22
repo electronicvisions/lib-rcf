@@ -14,6 +14,7 @@
 
 #include "rcf-extensions/common.h"
 #include "rcf-extensions/detail/round-robin-scheduler/input-queue.h"
+#include "rcf-extensions/detail/round-robin-scheduler/output-queue.h"
 #include "rcf-extensions/detail/round-robin-scheduler/work-methods.h"
 #include "rcf-extensions/sequence-number.h"
 
@@ -184,6 +185,9 @@ private:
 	using input_queue_t = rcf_extensions::detail::round_robin_scheduler::InputQueue<worker_t>;
 	std::unique_ptr<input_queue_t> m_input_queue;
 
+	using output_queue_t = detail::round_robin_scheduler::OutputQueue<worker_t>;
+	std::unique_ptr<output_queue_t> m_output_queue;
+
 	RCF::Condition m_cond_worker;
 	RCF::Condition m_cond_timeout;
 	RCF::ThreadPtr m_worker_thread;
@@ -195,14 +199,8 @@ private:
 	std::chrono::seconds m_teardown_period;
 	std::chrono::seconds m_timeout;
 	RCF::Mutex m_mutex_notify_worker;
-	RCF::Mutex m_mutex_notify_output_queue;
 
 	bool m_stop_flag;
-
-	std::deque<work_context_t> m_output_queue;
-	std::vector<RCF::ThreadPtr> m_threads_output;
-	RCF::Mutex m_mutex_output_queue;
-	RCF::Condition m_cond_output_queue;
 
 	// methods
 	void worker_main_thread();
@@ -212,13 +210,7 @@ private:
 
 	void notify_worker();
 
-	void notify_output();
-	void notify_output_all();
-
 	void server_idle_timeout();
-
-	void output_main_thread();
-	void push_to_output_queue(work_context_t&&);
 };
 
 } // namespace rcf_extensions
