@@ -1,12 +1,12 @@
 #include "waiting-worker.h"
 
-#include "logger.h"
-#include "logging_ctrl.h"
+#include "rcf-extensions/logging.h"
+
+#include <boost/program_options.hpp>
 
 #include <chrono>
 #include <iostream>
 #include <string>
-#include <boost/program_options.hpp>
 
 namespace po = boost::program_options;
 
@@ -48,11 +48,11 @@ int main(int argc, const char* argv[])
 
 	auto log = log4cxx::Logger::getLogger(__func__);
 
-	LOG4CXX_ERROR(log, "Error level enabled");
-	LOG4CXX_WARN(log, "Warn level enabled");
-	LOG4CXX_INFO(log, "Info level enabled");
-	LOG4CXX_DEBUG(log, "Debug level enabled");
-	LOG4CXX_TRACE(log, "Trace level enabled");
+	RCF_LOG_ERROR(log, "Error level enabled");
+	RCF_LOG_WARN(log, "Warn level enabled");
+	RCF_LOG_INFO(log, "Info level enabled");
+	RCF_LOG_DEBUG(log, "Debug level enabled");
+	RCF_LOG_TRACE(log, "Trace level enabled");
 
 	auto server = rr_waiter_construct(
 	    RCF::TcpEndpoint(ip, port), Worker(), num_threads_pre, num_threads_post);

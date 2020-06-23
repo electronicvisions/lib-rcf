@@ -16,6 +16,11 @@ def options(opt):
             action='store_true', default=False,
             help='RCF produces a lot of warnings that are disabled by default.')
 
+    hopts.add_option("--rcf-extensions-loglevel",
+                     choices=["trace", "debug", "info", "warning", "error", "fatal"],
+                     default="warning",
+                     help="Maximal loglevel to compile in rcf-extensions with.")
+
 
 def configure(cfg):
     cfg.check_waf_version(mini='1.6.10') # ECM: bleeding EDGE!!1! (needed for multiple boost checks below)
@@ -59,6 +64,16 @@ def configure(cfg):
                   uselib_store="rcf_includes")
 
     cfg.env.INCLUDES_RCF_EXTENSIONS = cfg.path.find_dir('rcf-extensions/include').abspath()
+
+    cfg.define(
+        "RCF_LOG_THRESHOLD",
+        {'trace':   0,
+         'debug':   1,
+         'info':    2,
+         'warning': 3,
+         'error':   4,
+         'fatal':   5}[cfg.options.rcf_extensions_loglevel]
+    )
 
 
 def build(bld):

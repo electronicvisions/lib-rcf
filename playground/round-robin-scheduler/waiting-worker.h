@@ -1,5 +1,6 @@
 #pragma once
 
+#include "rcf-extensions/logging.h"
 #include "rcf-extensions/round-robin-scheduler.h"
 
 struct WorkUnit
@@ -17,27 +18,26 @@ struct WorkUnit
 class Worker
 {
 public:
-	Worker() : m_job_count(0) {}
+	Worker() : m_log(log4cxx::Logger::getLogger("WaitingWorker")), m_job_count(0) {}
 
 	void setup()
 	{
-		std::cout << "Setting up waiting worker " << std::endl;
+		RCF_LOG_INFO(m_log, "Setting up..");
 	}
 
 	std::optional<std::string> verify_user(std::string const& user_data)
 	{
 		if (user_data != "mueller") {
 			std::stringstream msg;
-			msg << "Waiting Worker: [" << user_data << "] "
-			    << "(verified) " << std::endl;
-			std::cout << msg.str();
+			RCF_LOG_INFO(
+			    m_log, "[" << user_data << "] "
+			               << "(verified)");
 			return std::make_optional(user_data);
 		} else {
 			// mueller darf nicht
-			std::stringstream msg;
-			msg << "Waiting Worker: [" << user_data << "] "
-			    << "NEIN! " << std::endl;
-			std::cout << msg.str();
+			RCF_LOG_WARN(
+			    m_log, "[" << user_data << "] "
+			               << "NEIN!");
 			return std::nullopt;
 		}
 	}
@@ -46,22 +46,24 @@ public:
 	{
 		size_t job_id = m_job_count++;
 
-		std::cout << "Waiting Worker: [#" << job_id << "] "
-		          << "(started) " << work.runtime << " ms" << std::endl;
+		RCF_LOG_INFO(
+		    m_log, "[#" << job_id << "] "
+		                << "(started) " << work.runtime << " ms");
 
 		RCF::sleepMs(work.runtime);
 
-		std::cout << "Waiting Worker: [#" << job_id << "] (finished) " << work.message << std::endl;
+		RCF_LOG_INFO(m_log, "[#" << job_id << "] (finished) " << work.message);
 
 		return job_id;
 	}
 
 	void teardown()
 	{
-		std::cout << "Tearing down waiting worker " << std::endl;
+		RCF_LOG_INFO(m_log, "Tearing down..");
 	}
 
 private:
+	log4cxx::Logger* m_log;
 	size_t m_job_count;
 };
 

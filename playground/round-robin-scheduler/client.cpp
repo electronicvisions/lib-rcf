@@ -1,5 +1,7 @@
 #include "waiting-worker.h"
 
+#include "rcf-extensions/logging.h"
+
 #include <iostream>
 #include <string>
 #include <utility>
@@ -13,6 +15,7 @@ int main(int argc, const char* argv[])
 	uint16_t port;
 	size_t num_messages;
 	bool silent = false;
+	size_t log_level = 4;
 
 	WorkUnit work_unit;
 
@@ -21,6 +24,8 @@ int main(int argc, const char* argv[])
 	    "quiet,q", po::bool_switch(&silent), "suppress output")(
 	    "ip,i", po::value<std::string>(&ip)->default_value("127.0.0.1"), "specify server IP")(
 	    "port,p", po::value<uint16_t>(&port)->required(), "specify server port")(
+	    "loglevel,l", po::value<size_t>(&log_level)->default_value(4),
+	    "specify loglevel [0-ERROR,1-WARNING,2-INFO,3-DEBUG,4-TRACE]")(
 	    "message,m", po::value<std::string>(&work_unit.message)->required(),
 	    "specify message to print")(
 	    "user,u", po::value<std::string>(&user)->required(), "specify issuing user")(
@@ -41,9 +46,12 @@ int main(int argc, const char* argv[])
 
 	RCF::RcfInit rcfInit;
 
+	logger_default_config(Logger::log4cxx_level(log_level));
+	auto log = log4cxx::Logger::getLogger("client");
+
 	if (!silent) {
-		std::cout << "Calling with " << user << "/" << work_unit.runtime << "/" << work_unit.message
-		          << std::endl;
+		RCF_LOG_INFO(
+		    log, "Calling with " << user << "/" << work_unit.runtime << "/" << work_unit.message);
 	}
 
 	std::deque<std::pair<rr_waiter_client_t, RCF::Future<typename rr_waiter_t::work_return_t>>>
@@ -63,7 +71,7 @@ int main(int argc, const char* argv[])
 		std::ignore = client;
 		future.wait(0);
 		if (!silent) {
-			std::cout << "Ran in job ID: " << *future << std::endl;
+			RCF_LOG_INFO(log, "Ran in job ID: " << *future);
 		}
 	}
 	return 0;

@@ -10,9 +10,8 @@
 #include <vector>
 #include <boost/assert.hpp>
 #include <RCF/RCF.hpp>
+#include <log4cxx/logger.h>
 
-#include "log4cxx/logger.h"
-#include "rcf-extensions/common.h"
 #include "rcf-extensions/detail/round-robin-scheduler/work-methods.h"
 
 /*
@@ -154,6 +153,8 @@ private:
 
 	// members
 	std::unique_ptr<RCF::RcfServer> m_server;
+
+	log4cxx::Logger* m_log;
 
 	RCF::Condition m_cond_worker;
 	RCF::Condition m_cond_timeout;

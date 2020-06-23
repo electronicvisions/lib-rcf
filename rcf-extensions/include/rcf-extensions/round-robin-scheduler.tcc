@@ -1,9 +1,8 @@
 #pragma once
 
+#include "rcf-extensions/common.h"
+#include "rcf-extensions/logging.h"
 #include "rcf-extensions/round-robin-scheduler.h"
-
-#include "logger.h"
-#include "logging_ctrl.h"
 
 namespace rcf_extensions {
 
@@ -13,6 +12,7 @@ RoundRobinScheduler<W>::RoundRobinScheduler(
     worker_t&& worker,
     size_t num_threads_pre,
     size_t num_threads_post) :
+    m_log(log4cxx::Logger::getLogger("lib-rcf.RoundRobinScheduler")),
     m_worker(std::move(worker)),
     m_worker_is_set_up(false),
     m_worker_last_release(std::chrono::system_clock::time_point::min()),
@@ -51,39 +51,38 @@ RoundRobinScheduler<W>::~RoundRobinScheduler()
 template <typename W>
 void RoundRobinScheduler<W>::shutdown()
 {
-	auto log = log4cxx::Logger::getLogger(__func__);
-	LOG4CXX_DEBUG(log, "Preparing to shut down!");
+	RCF_LOG_DEBUG(m_log, "Preparing to shut down!");
 	m_stop_flag = true;
-	LOG4CXX_DEBUG(log, "Notifying worker..");
+	RCF_LOG_DEBUG(m_log, "Notifying worker..");
 	notify_worker();
-	LOG4CXX_DEBUG(log, "Notifying output threads..");
+	RCF_LOG_DEBUG(m_log, "Notifying output threads..");
 	notify_output_all();
-	LOG4CXX_DEBUG(log, "Joining worker thread..");
+	RCF_LOG_DEBUG(m_log, "Joining worker thread..");
 	m_worker_thread->join();
 	{
 		// tear worker down to be sure
-		LOG4CXX_DEBUG(log, "Tearing down worker.");
+		RCF_LOG_DEBUG(m_log, "Tearing down worker.");
 		RCF::Lock input_lock(m_mutex_input_queue);
 		m_worker.teardown();
-		LOG4CXX_DEBUG(log, "Teardown finished");
+		RCF_LOG_DEBUG(m_log, "Teardown finished");
 	}
-	LOG4CXX_DEBUG(log, "Joining output threads");
+	RCF_LOG_DEBUG(m_log, "Joining output threads");
 	for (auto& thread : m_threads_output) {
 		thread->join();
 	}
-	LOG4CXX_DEBUG(log, "Notifying timeout thread");
+	LOG4CXX_DEBUG(m_log, "Notifying timeout thread");
 	{
 		RCF::Mutex mutex;
 		RCF::Lock lock(mutex);
 		m_cond_timeout.notify_all();
 	}
 
-	LOG4CXX_DEBUG(log, "Resetting server");
+	RCF_LOG_DEBUG(m_log, "Resetting server");
 	// destruct server prior to deinit
 	m_server.reset();
-	LOG4CXX_DEBUG(log, "RCF::deinit");
+	RCF_LOG_DEBUG(m_log, "RCF::deinit");
 	RCF::deinit();
-	LOG4CXX_DEBUG(log, "Shutdown finished");
+	RCF_LOG_DEBUG(m_log, "Shutdown finished");
 }
 
 template <typename W>
