@@ -84,12 +84,12 @@ struct work_methods
 	using work_return_t = typename boost::function_types::result_type<method_work_t>::type;
 
 	// this will fail if verify_user-method does not return an std::optional-value!
-	using optional_user_id_t =
+	using optional_verified_user_data_t =
 	    typename boost::function_types::result_type<method_verify_user_t>::type;
-	using user_id_t = typename optional_user_id_t::value_type;
+	using user_id_t = typename optional_verified_user_data_t::value_type;
 
 	static_assert(
-	    hate::is_specialization_of<optional_user_id_t, std::optional>::value,
+	    hate::is_specialization_of<optional_verified_user_data_t, std::optional>::value,
 	    "verify_user-method has to return an std::optional value!");
 
 	using work_context_t = RCF::RemoteCallContext<work_return_t, work_argument_t, SequenceNumber>;

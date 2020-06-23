@@ -16,6 +16,7 @@
 #include "rcf-extensions/detail/round-robin-scheduler/input-queue.h"
 #include "rcf-extensions/detail/round-robin-scheduler/output-queue.h"
 #include "rcf-extensions/detail/round-robin-scheduler/work-methods.h"
+#include "rcf-extensions/detail/round-robin-scheduler/worker-thread.h"
 #include "rcf-extensions/sequence-number.h"
 
 /*
@@ -42,6 +43,8 @@
  *  // authorized and the work will not be executed. Otherwise, the contained
  *  // UserIdentifierT-value will be used to assign the given work unit to a
  *  // user.
+ *  //
+ *  // This version needs to be thread-safe!
  *  std::optional<UserIdentifierT> verify_user(std::string const&);
  *
  *  // Function that does the acutal work. Both the supplied parameter and the
@@ -98,7 +101,6 @@ public:
 	using work_return_t = typename work_methods::work_return_t;
 	using work_context_t = typename work_methods::work_context_t;
 	using work_package_t = typename work_methods::work_package_t;
-	using user_id_t = typename work_methods::user_id_t;
 
 	RoundRobinScheduler() = delete;
 	RoundRobinScheduler(const RoundRobinScheduler&) = delete;
@@ -144,17 +146,23 @@ public:
 	work_return_t submit_work(work_argument_t, SequenceNumber);
 
 	/**
-	 *  Set and retrieve the period after which the teardown()-method is called.
-	 *  If there is still work left to do, setup() will be called immediately.
+	 * Set interval after which the the worker has to be teared down at least once.
+	 *
+	 * @param s Release interval.
 	 */
 	void set_release_interval(std::chrono::seconds const& s)
 	{
-		m_teardown_period = s;
+		m_worker_thread->set_release_interval(s);
 	}
 
+	/**
+	 * Get interval after which the the worker has to be teared down at least once.
+	 *
+	 * @return Release interval.
+	 */
 	std::chrono::seconds get_release_interval() const
 	{
-		return m_teardown_period;
+		return m_worker_thread->get_release_interval();
 	}
 
 	/**
@@ -178,6 +186,14 @@ public:
 		return m_input_queue->get_period_per_user();
 	}
 
+	/**
+	 * Reset the counter governing the idle timeout.
+	 */
+	void reset_idle_timeout()
+	{
+		m_worker_thread->reset_last_idle();
+	}
+
 private:
 	log4cxx::Logger* m_log;
 	std::unique_ptr<RCF::RcfServer> m_server;
@@ -188,27 +204,18 @@ private:
 	using output_queue_t = detail::round_robin_scheduler::OutputQueue<worker_t>;
 	std::unique_ptr<output_queue_t> m_output_queue;
 
-	RCF::Condition m_cond_worker;
-	RCF::Condition m_cond_timeout;
-	RCF::ThreadPtr m_worker_thread;
-	worker_t m_worker;
+	using worker_thread_t = detail::round_robin_scheduler::WorkerThread<worker_t>;
+	std::unique_ptr<worker_thread_t> m_worker_thread;
+
+	std::condition_variable m_cv_timeout;
 	// variable indicating worker doing work or not
-	bool m_worker_is_set_up;
-	std::chrono::system_clock::time_point m_worker_last_release;
-	std::chrono::system_clock::time_point m_worker_last_idle; // protected by locked input_queue
-	std::chrono::seconds m_teardown_period;
 	std::chrono::seconds m_timeout;
-	RCF::Mutex m_mutex_notify_worker;
 
 	bool m_stop_flag;
 
-	// methods
-	void worker_main_thread();
-	bool is_teardown_needed(RCF::Lock& lock_input_queue);
-	std::chrono::milliseconds get_time_till_next_teardown();
-	std::chrono::milliseconds get_time_till_timeout();
+	bool is_timeout_reached() const;
 
-	void notify_worker();
+	std::chrono::milliseconds get_time_till_timeout();
 
 	void server_idle_timeout();
 };
