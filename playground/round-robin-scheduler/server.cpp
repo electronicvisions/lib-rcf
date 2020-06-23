@@ -1,5 +1,9 @@
 #include "waiting-worker.h"
 
+#include "logger.h"
+#include "logging_ctrl.h"
+
+#include <chrono>
 #include <iostream>
 #include <string>
 #include <boost/program_options.hpp>
@@ -8,15 +12,20 @@ namespace po = boost::program_options;
 
 int main(int argc, const char* argv[])
 {
+	using namespace std::chrono_literals;
+
 	std::string ip;
 	uint16_t port;
 	size_t num_threads_pre, num_threads_post;
 	size_t timeout_seconds;
+	size_t log_level = 4;
 
 	po::options_description desc("Allowed options");
 	desc.add_options()("help,h", "produce help message")(
 	    "ip,i", po::value<std::string>(&ip)->default_value("0.0.0.0"), "specify listening IP")(
 	    "port,p", po::value<uint16_t>(&port)->required(), "specify listening port")(
+	    "loglevel,l", po::value<size_t>(&log_level)->default_value(4),
+	    "specify loglevel [0-ERROR,1-WARNING,2-INFO,3-DEBUG,4-TRACE]")(
 	    "num_threads_pre,n", po::value<size_t>(&num_threads_pre)->default_value(4),
 	    "number of threads for accepting work")(
 	    "num_threads_post,m", po::value<size_t>(&num_threads_post)->default_value(4),
@@ -34,6 +43,17 @@ int main(int argc, const char* argv[])
 	}
 	po::notify(vm);
 
+	std::cout << "Setting loglevel to " << log_level << std::endl;
+	logger_default_config(Logger::log4cxx_level(log_level));
+
+	auto log = log4cxx::Logger::getLogger(__func__);
+
+	LOG4CXX_ERROR(log, "Error level enabled");
+	LOG4CXX_WARN(log, "Warn level enabled");
+	LOG4CXX_INFO(log, "Info level enabled");
+	LOG4CXX_DEBUG(log, "Debug level enabled");
+	LOG4CXX_TRACE(log, "Trace level enabled");
+
 	auto server = rr_waiter_construct(
 	    RCF::TcpEndpoint(ip, port), Worker(), num_threads_pre, num_threads_post);
 	server->get_server().getServerTransport().setMaxIncomingMessageLength(1280 * 1024 * 1024);
@@ -43,7 +63,7 @@ int main(int argc, const char* argv[])
 
 	server->start_server(std::chrono::seconds(timeout_seconds));
 
-	std::cout << "Server shutting down due to being idle for too long.." << std::endl;
+	std::cout << "Server shut down due to being idle for too long.." << std::endl;
 
 	return 0;
 }

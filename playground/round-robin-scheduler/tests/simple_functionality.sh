@@ -9,6 +9,7 @@ trap '(( $(jobs | wc -l) > 0 )) && kill $(jobs -p | awk "{ print $3 }" )' EXIT
 ( ( rcf-roundrobin-server -i 127.0.0.1 \
                           -p 8989 \
                           -t 10 \
+                          -l 4 \
                           -n 4 \
                           -m 2 \
                           2>&1 &; echo $! > "${pidfile}" ) | tee server.log ) &
