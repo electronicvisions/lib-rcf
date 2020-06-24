@@ -33,6 +33,23 @@ inline std::ostream& operator<<(std::ostream& stream, WorkPackage<UserT, Context
 	return stream;
 }
 
+template <typename UserT, typename SessionT, typename ContextT>
+struct WorkPackageWithSession
+{
+	UserT user_id;
+	SessionT session_id;
+	ContextT context;
+	SequenceNumber sequence_num;
+};
+
+template <typename UserT, typename SessionT, typename ContextT>
+inline std::ostream& operator<<(
+    std::ostream& stream, WorkPackageWithSession<UserT, SessionT, ContextT> const& pkg)
+{
+	stream << "[" << pkg.user_id << "@" << pkg.session_id << "] " << pkg.sequence_num;
+	return stream;
+}
+
 namespace trait {
 
 template <typename... Ts>
@@ -114,12 +131,58 @@ template <typename T>
 using remove_optional_t = typename remove_optional<T>::type;
 
 template <typename Worker, typename = void>
+struct has_session_id : public std::false_type
+{};
+
+template <typename Worker>
+struct has_session_id<
+    Worker,
+    std::enable_if_t<is_pair_v<remove_optional_t<method_verified_user_return_t<Worker>>>>>
+    /*Note: verified_user() returns optional*/
+    : public std::true_type
+{};
+
+template <typename Worker>
+inline constexpr bool has_session_id_v = has_session_id<Worker>::value;
+
+template <typename Worker>
+struct method_perform_reinit
+{
+	using type = std::remove_cvref_t<decltype(&Worker::perform_reinit)>;
+};
+
+template <typename Worker>
+using method_perform_reinit_t = typename method_perform_reinit<Worker>::type;
+
+template <typename Worker, typename = void>
+struct has_method_perform_reinit : public std::false_type
+{};
+
+template <typename Worker>
+struct has_method_perform_reinit<Worker, std::void_t<decltype(&Worker::perform_reinit)>>
+    : public std::true_type
+{};
+
+template <typename Worker>
+inline constexpr bool has_method_perform_reinit_v = has_method_perform_reinit<Worker>::value;
+
+template <typename Worker, typename = void>
 struct submit_work_context
 {
 	using type = RCF::RemoteCallContext<
 	    method_work_return_t<Worker>,
 	    method_work_argument_t<Worker>,
 	    SequenceNumber>;
+};
+
+template <typename Worker>
+struct submit_work_context<Worker, std::enable_if_t<has_method_perform_reinit_v<Worker>>>
+{
+	using type = RCF::RemoteCallContext<
+	    method_work_return_t<Worker>,
+	    method_work_argument_t<Worker>,
+	    SequenceNumber,
+	    bool>;
 };
 
 template <typename Worker>
@@ -132,7 +195,17 @@ struct user_id
 };
 
 template <typename Worker>
+struct user_id<Worker, std::enable_if_t<has_session_id_v<Worker>>>
+{
+	using type = typename method_verified_user_return_t<Worker>::value_type::first_type;
+};
+
+template <typename Worker>
 using user_id_t = typename user_id<Worker>::type;
+
+// NOTE: session_id is only defined if Worker has a session id
+template <typename Worker>
+using session_id_t = typename method_verified_user_return_t<Worker>::value_type::second_type;
 
 template <typename Worker, typename = void>
 struct work_package
@@ -141,7 +214,29 @@ struct work_package
 };
 
 template <typename Worker>
+struct work_package<Worker, std::enable_if_t<has_method_perform_reinit_v<Worker>>>
+{
+	using type = WorkPackageWithSession<
+	    user_id_t<Worker>,
+	    session_id_t<Worker>,
+	    submit_work_context_t<Worker>>;
+};
+
+template <typename Worker>
 using work_package_t = typename work_package<Worker>::type;
+
+// NOTE: reinit_data is only defined if Worker has a session id
+template <typename Worker>
+struct reinit_data
+{
+	using type = std::remove_cvref_t<typename boost::mpl::at_c<
+	    boost::function_types::parameter_types<method_perform_reinit_t<Worker>>,
+	    1>::type>;
+};
+
+
+template <typename Worker>
+using reinit_data_t = typename reinit_data<Worker>::type;
 
 template <typename T, typename = void>
 struct has_member_session_id : public std::false_type
@@ -207,6 +302,22 @@ struct SortDescendingBySequenceNum
 	template <typename T>
 	constexpr bool operator()(T const& left, T const& right)
 	{
+		if constexpr (trait::has_member_session_id_v<T>) {
+			// Note: Different sessions by the same users is not the expected
+			// use-case, but still it needs to be supported in a way that does not
+			// break the system. Ergo we sort the jobs by hash of their session
+			// names. This will lead to jobs from one session to be processed in
+			// batch before switching to another session for the same user.
+			using hasher_t = std::hash<decltype(left.session_id)>;
+
+			auto hash_left = hasher_t{}(left.session_id);
+			auto hash_right = hasher_t{}(right.session_id);
+
+			if (hash_left != hash_right) {
+				return hash_left > hash_right;
+			}
+		}
+
 		// If both sides have sequence numbers sort inversly by them.
 		// Otherwise, there is no ordering.
 		// In any realistic scenario, the user would not mix sequenced and
@@ -225,7 +336,7 @@ struct SortDescendingBySequenceNum
  * Helper struct consolidating all inferred types
  */
 template <typename Worker>
-struct work_methods
+struct work_methods_base
 {
 	// *this-pointer counts toward arity
 	static_assert(
@@ -250,6 +361,34 @@ struct work_methods
 
 	using work_context_t = trait::submit_work_context_t<Worker>;
 	using work_package_t = trait::work_package_t<Worker>;
+
+	using reinit_detected = std::false_type;
 };
+
+template <typename Worker>
+struct work_methods_reinit : public work_methods_base<Worker>
+{
+	// *this-pointer counts toward arity
+	static_assert(
+	    (boost::function_types::function_arity<trait::method_perform_reinit_t<Worker>>::value == 2),
+	    "perform_reinit-method of Worker has to take exactly one argument!");
+
+	static_assert(trait::has_session_id_v<Worker>, "Worker has no session id!");
+
+	using reinit_data_t = trait::reinit_data_t<Worker>;
+	using session_id_t = trait::session_id_t<Worker>;
+
+	using reinit_detected = std::true_type;
+};
+
+// Selector type
+template <typename Worker, typename = void>
+struct work_methods : work_methods_base<Worker>
+{};
+
+template <typename Worker>
+struct work_methods<Worker, std::enable_if_t<trait::has_method_perform_reinit_v<Worker>>>
+    : work_methods_reinit<Worker>
+{};
 
 } // namespace rcf_extensions::detail::round_robin_scheduler
