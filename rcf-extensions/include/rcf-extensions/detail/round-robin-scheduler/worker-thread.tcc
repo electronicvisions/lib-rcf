@@ -23,10 +23,12 @@ WorkerThread<W>::~WorkerThread()
 
 	RCF_LOG_TRACE(m_log, "Shutting down..");
 	m_thread.request_stop();
+	notify();
 	while (m_running) {
 		notify();
 		std::this_thread::sleep_for(100ms);
 	}
+	RCF_LOG_TRACE(m_log, "Joining main thread.");
 	m_thread.join();
 	RCF_LOG_TRACE(m_log, "Shut down.");
 }
@@ -111,6 +113,7 @@ void WorkerThread<W>::main_thread(std::stop_token st)
 	// sctrltp::ARQStream (in hxcomm::ARQConnection).
 	m_worker.teardown();
 	m_running = false;
+	RCF_LOG_TRACE(m_log, "main_thread() shut down.");
 }
 
 template <typename W>
