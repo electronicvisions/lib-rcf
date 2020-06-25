@@ -13,6 +13,7 @@
 #include <log4cxx/logger.h>
 
 #include "rcf-extensions/common.h"
+#include "rcf-extensions/detail/round-robin-scheduler/idle-timeout.h"
 #include "rcf-extensions/detail/round-robin-scheduler/input-queue.h"
 #include "rcf-extensions/detail/round-robin-scheduler/output-queue.h"
 #include "rcf-extensions/detail/round-robin-scheduler/work-methods.h"
@@ -207,17 +208,10 @@ private:
 	using worker_thread_t = detail::round_robin_scheduler::WorkerThread<worker_t>;
 	std::unique_ptr<worker_thread_t> m_worker_thread;
 
-	std::condition_variable m_cv_timeout;
-	// variable indicating worker doing work or not
-	std::chrono::seconds m_timeout;
+	using idle_timeout_t = detail::round_robin_scheduler::IdleTimeout<worker_thread_t>;
+	std::unique_ptr<idle_timeout_t> m_idle_timeout;
 
 	bool m_stop_flag;
-
-	bool is_timeout_reached() const;
-
-	std::chrono::milliseconds get_time_till_timeout();
-
-	void server_idle_timeout();
 };
 
 } // namespace rcf_extensions

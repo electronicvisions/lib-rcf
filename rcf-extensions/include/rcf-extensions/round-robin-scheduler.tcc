@@ -15,10 +15,9 @@ RoundRobinScheduler<W>::RoundRobinScheduler(
     m_log(log4cxx::Logger::getLogger("lib-rcf.RoundRobinScheduler")),
     m_input_queue{new input_queue_t},
     m_output_queue{new output_queue_t{num_threads_post}},
-    m_worker_thread{new worker_thread_t{std::move(worker), *m_input_queue, *m_output_queue}}
+    m_worker_thread{new worker_thread_t{std::move(worker), *m_input_queue, *m_output_queue}},
+    m_idle_timeout{new idle_timeout_t{*m_worker_thread}}
 {
-	m_stop_flag = false; // no other threads running
-
 	RCF::init();
 
 	m_server.reset(new RCF::RcfServer(endpoint));
@@ -31,67 +30,28 @@ RoundRobinScheduler<W>::RoundRobinScheduler(
 template <typename W>
 RoundRobinScheduler<W>::~RoundRobinScheduler()
 {
-	if (!m_stop_flag) {
-		RCF_LOG_DEBUG(m_log, "Preparing to shut down!");
-		m_stop_flag = true;
-		m_worker_thread.reset();
-		m_output_queue.reset();
-		LOG4CXX_DEBUG(m_log, "Notifying timeout thread");
-		m_cv_timeout.notify_all();
+	RCF_LOG_DEBUG(m_log, "Preparing to shut down!");
 
-		m_input_queue.reset();
+	// Delete in reverse order
+	m_idle_timeout.reset();
+	m_worker_thread.reset();
+	m_output_queue.reset();
+	m_input_queue.reset();
 
-		RCF_LOG_DEBUG(m_log, "Resetting server");
-		// destruct server prior to deinit
-		m_server.reset();
-		RCF_LOG_DEBUG(m_log, "RCF::deinit");
-		RCF::deinit();
-		RCF_LOG_DEBUG(m_log, "Shutdown finished");
-	}
+	RCF_LOG_DEBUG(m_log, "Resetting server");
+	// destruct server prior to deinit
+	m_server.reset();
+	RCF_LOG_DEBUG(m_log, "RCF::deinit");
+	RCF::deinit();
+	RCF_LOG_DEBUG(m_log, "Shutdown finished");
 }
 
 template <typename W>
 void RoundRobinScheduler<W>::start_server(std::chrono::seconds const& timeout)
 {
-	m_timeout = timeout;
 	m_worker_thread->start();
 	m_server->start();
-
-	server_idle_timeout();
-}
-
-
-template <typename W>
-void RoundRobinScheduler<W>::server_idle_timeout()
-{
-	using namespace std::chrono_literals;
-
-	RCF::Mutex mutex_timeout;
-	RCF::Lock lock_timeout(mutex_timeout);
-	bool timeout_reached = false;
-
-	// set idle timeout routine
-	do {
-		if (m_timeout > 0s) {
-			std::chrono::milliseconds duration_till_timeout;
-
-			if (m_worker_thread->is_set_up()) {
-				duration_till_timeout = m_worker_thread->get_time_till_next_teardown();
-			} else {
-				duration_till_timeout = get_time_till_timeout();
-			}
-
-			// sleep at least a second before checking for timeout again
-			m_cv_timeout.wait_for(lock_timeout, std::max(duration_till_timeout, 1000ms));
-
-			timeout_reached = is_timeout_reached();
-		} else {
-			// there is no time-out - we just wait forever (i.e. till the user aborts)
-			m_cv_timeout.wait(lock_timeout);
-			// will never be reached because we wait for user input to abort
-			timeout_reached = true;
-		}
-	} while (!timeout_reached && !m_stop_flag);
+	m_idle_timeout->wait_until_idle_for(timeout);
 }
 
 template <typename W>
@@ -118,21 +78,6 @@ typename RoundRobinScheduler<W>::work_return_t RoundRobinScheduler<W>::submit_wo
 	m_worker_thread->notify();
 
 	return RoundRobinScheduler<W>::work_return_t(); // not passed to client
-}
-
-template <typename W>
-std::chrono::milliseconds RoundRobinScheduler<W>::get_time_till_timeout()
-{
-	auto now = std::chrono::system_clock::now();
-	return m_timeout - std::chrono::duration_cast<std::chrono::milliseconds>(
-	                       now - m_worker_thread->get_last_idle());
-}
-
-template <typename W>
-bool RoundRobinScheduler<W>::is_timeout_reached() const
-{
-	return !m_worker_thread->is_set_up() &&
-	       (std::chrono::system_clock::now() - m_worker_thread->get_last_idle()) > m_timeout;
 }
 
 } // namespace rcf_extensions
