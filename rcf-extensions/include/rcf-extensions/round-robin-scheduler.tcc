@@ -58,16 +58,13 @@ template <typename W>
 typename RoundRobinScheduler<W>::work_return_t RoundRobinScheduler<W>::submit_work(
     work_argument_t work, SequenceNumber sequence_num)
 {
-	std::ignore = work; // captured in session object
+	std::ignore = work; // captured in context object
 
-	std::string user_data = RCF::getCurrentRcfSession().getRequestUserData();
-
-	auto verified_user_id = m_worker_thread->verify_user(user_data);
+	auto verified_user_id =
+	    get_verified_user_data<work_return_t, work_argument_t, SequenceNumber>(*m_worker_thread);
 
 	if (!verified_user_id) {
-		work_context_t context(RCF::getCurrentRcfSession());
-		context.commit(UserNotAuthorized());
-		// dummy data not passed to client
+		// return early, exception already set
 		return RoundRobinScheduler<W>::work_return_t();
 	}
 

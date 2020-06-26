@@ -4,6 +4,8 @@
 #include <sstream>
 #include <string>
 
+#include <RCF/RCF.hpp>
+
 namespace rcf_extensions {
 
 class UserNotAuthorized : public std::exception
@@ -53,5 +55,28 @@ private:
 	std::size_t m_num_actual;
 	std::size_t m_num_expected;
 };
+
+/**
+ * Helper function to get and verify user data.
+ *
+ * @tparam Args Arguments from which to construct the RCF::RemoteCallContext
+ * (note that void needs to be mapped to RCF::Void).
+ *
+ * @return Optional containing the verified user data, if the user was verified.
+ *         If the user was not verified, UserNotAuthorized-exception will be
+ *         returned to the user and the caller should abort its exectuion.
+ */
+template <typename... Args, typename VerifierT>
+auto get_verified_user_data(VerifierT& verifier)
+{
+	std::string user_data = RCF::getCurrentRcfSession().getRequestUserData();
+	auto verified_user_session_id = verifier.verify_user(user_data);
+
+	if (!verified_user_session_id) {
+		RCF::RemoteCallContext<Args...> context(RCF::getCurrentRcfSession());
+		context.commit(UserNotAuthorized());
+	}
+	return verified_user_session_id;
+}
 
 } // namespace rcf_extensions
