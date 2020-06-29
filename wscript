@@ -151,4 +151,5 @@ def build(bld):
         use = ["logger_obj", "hate_inc"])
 
     bld.recurse("playground/round-robin-scheduler")
+    bld.recurse("playground/round-robin-reinit-scheduler")
     bld.recurse("playground/on-demand")
