@@ -54,6 +54,8 @@ int main(int argc, const char* argv[])
 		    log, "Calling with " << user << "/" << work_unit.runtime << "/" << work_unit.message);
 	}
 
+	RCF::globals().setDefaultConnectTimeoutMs(3600 * 1000);
+
 	std::deque<std::pair<rr_waiter_client_t, RCF::Future<typename rr_waiter_t::work_return_t>>>
 	    futures;
 
