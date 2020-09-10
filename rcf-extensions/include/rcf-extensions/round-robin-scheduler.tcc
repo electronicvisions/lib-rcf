@@ -44,45 +44,39 @@ template <typename W>
 RoundRobinScheduler<W>::~RoundRobinScheduler()
 {
 	if (!m_stop_flag) {
-		shutdown();
-	}
-}
+		RCF_LOG_DEBUG(m_log, "Preparing to shut down!");
+		m_stop_flag = true;
+		RCF_LOG_DEBUG(m_log, "Notifying worker..");
+		notify_worker();
+		RCF_LOG_DEBUG(m_log, "Notifying output threads..");
+		notify_output_all();
+		RCF_LOG_DEBUG(m_log, "Joining worker thread..");
+		m_worker_thread->join();
+		{
+			// tear worker down to be sure
+			RCF_LOG_DEBUG(m_log, "Tearing down worker.");
+			RCF::Lock input_lock(m_mutex_input_queue);
+			m_worker.teardown();
+			RCF_LOG_DEBUG(m_log, "Teardown finished");
+		}
+		RCF_LOG_DEBUG(m_log, "Joining output threads");
+		for (auto& thread : m_threads_output) {
+			thread->join();
+		}
+		LOG4CXX_DEBUG(m_log, "Notifying timeout thread");
+		{
+			RCF::Mutex mutex;
+			RCF::Lock lock(mutex);
+			m_cond_timeout.notify_all();
+		}
 
-template <typename W>
-void RoundRobinScheduler<W>::shutdown()
-{
-	RCF_LOG_DEBUG(m_log, "Preparing to shut down!");
-	m_stop_flag = true;
-	RCF_LOG_DEBUG(m_log, "Notifying worker..");
-	notify_worker();
-	RCF_LOG_DEBUG(m_log, "Notifying output threads..");
-	notify_output_all();
-	RCF_LOG_DEBUG(m_log, "Joining worker thread..");
-	m_worker_thread->join();
-	{
-		// tear worker down to be sure
-		RCF_LOG_DEBUG(m_log, "Tearing down worker.");
-		RCF::Lock input_lock(m_mutex_input_queue);
-		m_worker.teardown();
-		RCF_LOG_DEBUG(m_log, "Teardown finished");
+		RCF_LOG_DEBUG(m_log, "Resetting server");
+		// destruct server prior to deinit
+		m_server.reset();
+		RCF_LOG_DEBUG(m_log, "RCF::deinit");
+		RCF::deinit();
+		RCF_LOG_DEBUG(m_log, "Shutdown finished");
 	}
-	RCF_LOG_DEBUG(m_log, "Joining output threads");
-	for (auto& thread : m_threads_output) {
-		thread->join();
-	}
-	LOG4CXX_DEBUG(m_log, "Notifying timeout thread");
-	{
-		RCF::Mutex mutex;
-		RCF::Lock lock(mutex);
-		m_cond_timeout.notify_all();
-	}
-
-	RCF_LOG_DEBUG(m_log, "Resetting server");
-	// destruct server prior to deinit
-	m_server.reset();
-	RCF_LOG_DEBUG(m_log, "RCF::deinit");
-	RCF::deinit();
-	RCF_LOG_DEBUG(m_log, "Shutdown finished");
 }
 
 template <typename W>
@@ -138,13 +132,6 @@ void RoundRobinScheduler<W>::server_idle_timeout()
 			timeout_reached = true;
 		}
 	} while (!timeout_reached && !m_stop_flag);
-
-	{
-		RCF::Lock input_lock(m_mutex_input_queue);
-		m_stop_flag = true;
-	}
-	notify_worker();
-	notify_output_all();
 }
 
 template <typename W>

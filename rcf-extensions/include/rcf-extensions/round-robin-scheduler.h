@@ -96,6 +96,7 @@ public:
 
 	RoundRobinScheduler() = delete;
 	RoundRobinScheduler(const RoundRobinScheduler&) = delete;
+	RoundRobinScheduler(RoundRobinScheduler&&) = delete; // mutexes cannot be moved
 
 	RoundRobinScheduler(
 	    RCF::TcpEndpoint const& endpoint,
@@ -116,12 +117,10 @@ public:
 		m_server->bind<RcfInterface>(*this);
 	}
 
-	// start server and shut down server after a given timeout of being idle
+	/**
+	 * Start server and shut down server after a given timeout of being idle
+	 */
 	void start_server(std::chrono::seconds const& timeout = 0s);
-
-	// stop the server gracefully by letting the last work unit complete
-	// (this should be done as to not brick the FPGAs)
-	void shutdown();
 
 	RCF::RcfServer& get_server()
 	{

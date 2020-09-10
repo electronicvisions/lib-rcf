@@ -62,8 +62,7 @@ int main(int argc, const char* argv[])
 	          << std::endl;
 
 	server->start_server(std::chrono::seconds(timeout_seconds));
-
-	std::cout << "Server shut down due to being idle for too long.." << std::endl;
+	std::cout << "Server shutting down due to being idle for too long.." << std::endl;
 
 	return 0;
 }
