@@ -133,13 +133,16 @@ public:
 
 	work_return_t submit_work(work_argument_t);
 
-	// Set and retrieve the period after which the teardown()-method is called.
-	// If there is still work left to do, setup() will be called immediately.
+	/**
+	 *  Set and retrieve the period after which the teardown()-method is called.
+	 *  If there is still work left to do, setup() will be called immediately.
+	 */
 	void set_release_interval(std::chrono::seconds const& s)
 	{
 		m_teardown_period = s;
 	}
-	std::chrono::seconds get_release_interval()
+
+	std::chrono::seconds get_release_interval() const
 	{
 		return m_teardown_period;
 	}

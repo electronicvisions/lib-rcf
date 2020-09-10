@@ -18,6 +18,7 @@ int main(int argc, const char* argv[])
 	uint16_t port;
 	size_t num_threads_pre, num_threads_post;
 	size_t timeout_seconds;
+	size_t release_interval;
 	size_t log_level = 4;
 
 	po::options_description desc("Allowed options");
@@ -30,6 +31,8 @@ int main(int argc, const char* argv[])
 	    "number of threads for accepting work")(
 	    "num_threads_post,m", po::value<size_t>(&num_threads_post)->default_value(4),
 	    "number of threads for distributing work")(
+	    "release-interval,r", po::value<size_t>(&release_interval)->default_value(0),
+	    "Release interval of the server")(
 	    "timeout,t", po::value<size_t>(&timeout_seconds)->default_value(0),
 	    "timeout in seconds till shutdown after idle");
 
@@ -57,6 +60,8 @@ int main(int argc, const char* argv[])
 	auto server = rr_waiter_construct(
 	    RCF::TcpEndpoint(ip, port), Worker(), num_threads_pre, num_threads_post);
 	server->get_server().getServerTransport().setMaxIncomingMessageLength(1280 * 1024 * 1024);
+
+	server->set_release_interval(std::chrono::seconds(release_interval));
 
 	std::cout << "Started up (" << num_threads_pre << "/" << num_threads_post << " threads)..."
 	          << std::endl;
