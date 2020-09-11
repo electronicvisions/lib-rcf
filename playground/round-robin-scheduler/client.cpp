@@ -15,7 +15,12 @@ int main(int argc, const char* argv[])
 	uint16_t port;
 	size_t num_messages;
 	bool silent = false;
-	size_t log_level = 4;
+#ifdef RCF_LOG_THRESHOLD
+	size_t loglevel = RCF_LOG_THRESHOLD;
+#else
+	size_t loglevel = 2; // info
+#endif
+	logger_default_config(Logger::log4cxx_level_v2(loglevel));
 
 	WorkUnit work_unit;
 
@@ -24,14 +29,14 @@ int main(int argc, const char* argv[])
 	    "quiet,q", po::bool_switch(&silent), "suppress output")(
 	    "ip,i", po::value<std::string>(&ip)->default_value("127.0.0.1"), "specify server IP")(
 	    "port,p", po::value<uint16_t>(&port)->required(), "specify server port")(
-	    "loglevel,l", po::value<size_t>(&log_level)->default_value(4),
-	    "specify loglevel [0-ERROR,1-WARNING,2-INFO,3-DEBUG,4-TRACE]")(
+	    "loglevel,l", po::value<size_t>(&loglevel),
+	    "specify loglevel [0-TRACE,1-DEBUG,2-INFO,3-WARNING,4-ERROR]")(
 	    "message,m", po::value<std::string>(&work_unit.message)->required(),
 	    "specify message to print")(
 	    "user,u", po::value<std::string>(&user)->required(), "specify issuing user")(
 	    "runtime,r", po::value<size_t>(&work_unit.runtime)->default_value(1),
 	    "specifiy the runtime on server")(
-	    "number,n", po::value<size_t>(&num_messages)->default_value(1),
+	    "num-messages,n", po::value<size_t>(&num_messages)->default_value(1),
 	    "how many messages do we want to submit");
 
 	// populate vm variable
@@ -46,7 +51,7 @@ int main(int argc, const char* argv[])
 
 	RCF::RcfInit rcfInit;
 
-	logger_default_config(Logger::log4cxx_level(log_level));
+	logger_default_config(Logger::log4cxx_level_v2(loglevel));
 	auto log = log4cxx::Logger::getLogger("client");
 
 	if (!silent) {

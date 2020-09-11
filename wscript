@@ -9,6 +9,7 @@ def depends(ctx):
 def options(opt):
     opt.load('compiler_cxx')
     opt.load('boost')
+    opt.load('shelltest')
 
     hopts = opt.add_option_group('RCF Options')
     hopts.add_option(
@@ -74,6 +75,8 @@ def configure(cfg):
          'error':   4,
          'fatal':   5}[cfg.options.rcf_extensions_loglevel]
     )
+
+    cfg.load('shelltest')
 
 
 def build(bld):
