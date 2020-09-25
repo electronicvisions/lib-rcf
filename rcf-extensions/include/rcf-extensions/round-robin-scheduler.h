@@ -195,9 +195,27 @@ public:
 		m_worker_thread->reset_last_idle();
 	}
 
+protected:
+	/**
+	 * Apply const visitor to worker object.
+	 *
+	 * This is useful to extend the RCF-interface if there are some read-only
+	 * operations to be facilitated on the worker.
+	 */
+	template <typename VisitorT>
+	auto visit_worker_const(VisitorT visit) const
+	{
+		return m_worker_thread->visit_const(std::forward<VisitorT>(visit));
+	}
+
+	/**
+	 * RcfServer instance that can be custom-bound to extended RCF-interfaces
+	 * in derived classes.
+	 */
+	std::unique_ptr<RCF::RcfServer> m_server;
+
 private:
 	log4cxx::Logger* m_log;
-	std::unique_ptr<RCF::RcfServer> m_server;
 
 	using input_queue_t = rcf_extensions::detail::round_robin_scheduler::InputQueue<worker_t>;
 	std::unique_ptr<input_queue_t> m_input_queue;
