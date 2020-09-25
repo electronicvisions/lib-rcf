@@ -236,28 +236,43 @@ private:
 
 #include "rcf-extensions/round-robin-scheduler.tcc"
 
-// The only symbol that should be used externally:
-// Given a worker-type and and a desired alias for the RCF-server-wrapper, the
-// correct rcf-interface will be instantiated under the specified alias (with
-// an "I_"-prefix).
-//
-// The marcro also creates a construction helper `<specified-alias>_construct`
-// that automatically forwards the correct RCF-Interface to the constructor.
-//
-#define RR_GENERATE(WORKER_TYPE, ALIAS_SCHEDULER)                                                  \
-	RCF_BEGIN(I_##ALIAS_SCHEDULER, "I_" #ALIAS_SCHEDULER)                                          \
-	RCF_METHOD_R2(                                                                                 \
+/**
+ * The only symbols that should be used externally:
+ * Given a worker-type and and a desired alias for the RCF-server-wrapper, the
+ * correct rcf-interface will be instantiated under the specified alias (with
+ * an "I_"-prefix).
+ *
+ * The RR_GENERATE (RoundRobin-)macro also creates a
+ * construction helper `<specified-alias>_construct` that automatically
+ * forwards the correct RCF-Interface to the constructor. Due to the fact that
+ * the scheduler uses threads internally synchronised via std::mutexes, it is
+ * inherently not move-able and hence has to be constructed on the heap.
+ *
+ * If more control is needed the RCF interface can be created from the worker
+ * definition with RR_GENERATE_INTERFACE, whereas the utility funcionality is
+ * created via RR_GENERATE_UTILITIES. Please note that in order to allow for
+ * more flexibility, the interface generator-macros only generate the required
+ * part of the scheduler to work. The interface can be extended in user-code
+ * and then _has_ to be closed via RCF_END(<interface-name>)!
+ */
+
+#define RR_GENERATE_INTERFACE(WORKER_TYPE, RCF_INTERFACE)                                          \
+	RR_GENERATE_INTERFACE_EXPLICIT_TYPES(                                                          \
+	    RCF_INTERFACE,                                                                             \
 	    typename rcf_extensions::detail::round_robin_scheduler::work_methods<                      \
 	        WORKER_TYPE>::work_return_t,                                                           \
-	    submit_work,                                                                               \
 	    typename rcf_extensions::detail::round_robin_scheduler::work_methods<                      \
-	        WORKER_TYPE>::work_argument_t,                                                         \
-	    ::rcf_extensions::SequenceNumber)                                                          \
-	RCF_END(I_##ALIAS_SCHEDULER)                                                                   \
-                                                                                                   \
+	        WORKER_TYPE>::work_argument_t)
+
+#define RR_GENERATE_INTERFACE_EXPLICIT_TYPES(RCF_INTERFACE, WORK_RETURN_TYPE, WORK_ARGUMENT_TYPE)  \
+	RCF_BEGIN(RCF_INTERFACE, #RCF_INTERFACE)                                                       \
+	RCF_METHOD_R2(                                                                                 \
+	    WORK_RETURN_TYPE, submit_work, WORK_ARGUMENT_TYPE, ::rcf_extensions::SequenceNumber)
+
+#define RR_GENERATE_UTILITIES(WORKER_TYPE, ALIAS_SCHEDULER, RCF_INTERFACE)                         \
 	using ALIAS_SCHEDULER##_t = rcf_extensions::RoundRobinScheduler<WORKER_TYPE>;                  \
-	using ALIAS_SCHEDULER##_client_t = RcfClient<I_##ALIAS_SCHEDULER>;                             \
-	using ALIAS_SCHEDULER##_rcf_interface_t = I_##ALIAS_SCHEDULER;                                 \
+	using ALIAS_SCHEDULER##_client_t = RcfClient<RCF_INTERFACE>;                                   \
+	using ALIAS_SCHEDULER##_rcf_interface_t = RCF_INTERFACE;                                       \
                                                                                                    \
 	template <typename... Args>                                                                    \
 	std::unique_ptr<ALIAS_SCHEDULER##_t> ALIAS_SCHEDULER##_construct(Args&&... args)               \
@@ -266,3 +281,8 @@ private:
 		scheduler->template bind_to_interface<ALIAS_SCHEDULER##_rcf_interface_t>();                \
 		return scheduler;                                                                          \
 	}
+
+#define RR_GENERATE(WORKER_TYPE, ALIAS_SCHEDULER)                                                  \
+	RR_GENERATE_INTERFACE(WORKER_TYPE, I_##ALIAS_SCHEDULER)                                        \
+	RCF_END(I_##ALIAS_SCHEDULER)                                                                   \
+	RR_GENERATE_UTILITIES(WORKER_TYPE, ALIAS_SCHEDULER, I_##ALIAS_SCHEDULER)
