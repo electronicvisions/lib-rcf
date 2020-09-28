@@ -60,16 +60,17 @@ typename RoundRobinScheduler<W>::work_return_t RoundRobinScheduler<W>::submit_wo
 {
 	std::ignore = work; // captured in context object
 
-	auto verified_user_id =
+	auto verified_user_data =
 	    get_verified_user_data<work_return_t, work_argument_t, SequenceNumber>(*m_worker_thread);
 
-	if (!verified_user_id) {
+	if (!verified_user_data) {
 		// return early, exception already set
 		return RoundRobinScheduler<W>::work_return_t();
 	}
 
 	m_input_queue->add_work(work_package_t{
-	    *verified_user_id, work_context_t{RCF::getCurrentRcfSession()}, sequence_num});
+	    detail::round_robin_scheduler::get_user_id(verified_user_data),
+	    work_context_t{RCF::getCurrentRcfSession()}, sequence_num});
 
 	// notify the worker thread of work
 	m_worker_thread->notify();
