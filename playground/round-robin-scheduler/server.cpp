@@ -73,9 +73,11 @@ int main(int argc, const char* argv[])
 	RCF_LOG_INFO(
 	    log, "Started up (" << num_threads_input << "/" << num_threads_output << " threads)...");
 
-	server->start_server(std::chrono::seconds(timeout_seconds));
-
-	RCF_LOG_INFO(log, "Server shut down due to being idle for too long..");
+	if (server->start_server(std::chrono::seconds(timeout_seconds))) {
+		RCF_LOG_INFO(log, "Server shut down due to being idle for too long..");
+	} else {
+		RCF_LOG_INFO(log, "Server was killed.");
+	}
 
 	return 0;
 }

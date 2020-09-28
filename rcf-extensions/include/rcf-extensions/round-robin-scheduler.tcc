@@ -47,11 +47,12 @@ RoundRobinScheduler<W>::~RoundRobinScheduler()
 }
 
 template <typename W>
-void RoundRobinScheduler<W>::start_server(std::chrono::seconds const& timeout)
+bool RoundRobinScheduler<W>::start_server(std::chrono::seconds const& timeout)
 {
 	m_worker_thread->start();
 	m_server->start();
-	m_idle_timeout->wait_until_idle_for(timeout);
+	return m_idle_timeout->wait_until_idle_for(timeout);
+	// NOTE: Server needs to be destroyed to shutdown.
 }
 
 template <typename W>

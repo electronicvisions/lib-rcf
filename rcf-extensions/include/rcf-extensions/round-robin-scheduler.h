@@ -128,8 +128,11 @@ public:
 
 	/**
 	 * Start server and shut down server after a given timeout of being idle
+	 *
+	 * @return Whether or not the server shutdown due to idle timeout. If false
+	 * the server is already in the process of shutting down.
 	 */
-	void start_server(std::chrono::seconds const& timeout = 0s);
+	bool start_server(std::chrono::seconds const& timeout = 0s);
 
 	/**
 	 * Indicate whether scheduler has work left.
