@@ -111,7 +111,8 @@ public:
 	    RCF::TcpEndpoint const& endpoint,
 	    worker_t&& worker,
 	    size_t num_threads_pre = 1,
-	    size_t num_threads_post = 1);
+	    size_t num_threads_post = 1,
+	    std::size_t num_max_connections = 1 << 16);
 	~RoundRobinScheduler();
 
 	/**

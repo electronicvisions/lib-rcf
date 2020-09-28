@@ -11,7 +11,8 @@ RoundRobinScheduler<W>::RoundRobinScheduler(
     RCF::TcpEndpoint const& endpoint,
     worker_t&& worker,
     size_t num_threads_pre,
-    size_t num_threads_post) :
+    size_t num_threads_post,
+    std::size_t num_max_connections) :
     m_log(log4cxx::Logger::getLogger("lib-rcf.RoundRobinScheduler")),
     m_input_queue{new input_queue_t},
     m_output_queue{new output_queue_t{num_threads_post}},
@@ -21,6 +22,7 @@ RoundRobinScheduler<W>::RoundRobinScheduler(
 	RCF::init();
 
 	m_server.reset(new RCF::RcfServer(endpoint));
+	m_server->getServerTransport().setConnectionLimit(num_max_connections);
 
 	// Thread pool with fixed number of threads
 	RCF::ThreadPoolPtr tpPtr(new RCF::ThreadPool(num_threads_pre));
