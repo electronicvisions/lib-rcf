@@ -1,0 +1,9 @@
+@Library("jenlib") _
+
+Map<String, Object> pipelineOptions = [
+		projects: ["lib-rcf"],
+		container: [app: "dls-core"],
+		notificationChannel: "#dls-software",
+]
+
+wafDefaultPipeline(pipelineOptions)
