@@ -6,7 +6,7 @@ namespace rcf_extensions::detail::round_robin_scheduler {
 template <typename W>
 IdleTimeout<W>::~IdleTimeout()
 {
-	RCF_LOG_TRACE(m_log, "Shutting down..")
+	RCF_LOG_TRACE(m_log, "Shutting down..");
 	m_stop_flag = true;
 	// busy wait for other thread to exit
 	while (m_num_threads_idling > 0) {

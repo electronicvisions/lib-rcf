@@ -22,7 +22,7 @@ OutputQueue<W>::OutputQueue(size_t num_threads) :
 template <typename W>
 OutputQueue<W>::~OutputQueue()
 {
-	RCF_LOG_TRACE(m_log, "Shutting down..")
+	RCF_LOG_TRACE(m_log, "Shutting down..");
 	using namespace std::chrono_literals;
 
 	for (auto& thread : m_threads) {

@@ -21,14 +21,14 @@ WorkerThread<W>::~WorkerThread()
 {
 	using namespace std::chrono_literals;
 
-	RCF_LOG_TRACE(m_log, "Shutting down..")
+	RCF_LOG_TRACE(m_log, "Shutting down..");
 	m_thread.request_stop();
 	while (m_running) {
 		notify();
 		std::this_thread::sleep_for(100ms);
 	}
 	m_thread.join();
-	RCF_LOG_TRACE(m_log, "Shut down.")
+	RCF_LOG_TRACE(m_log, "Shut down.");
 }
 
 template <typename W>
