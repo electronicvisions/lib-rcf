@@ -120,7 +120,7 @@ bool InputQueue<W>::is_empty() const
 template <typename W>
 bool InputQueue<W>::is_empty_while_locked() const
 {
-	// The current user might have a queue size of zero as they queue only gets deleted once we
+	// The current user might have a queue size of zero as their queue only gets deleted once we
 	// switch FROM the users
 	// -> ergo, if we have more than one user there is work left to do
 	return m_user_list.size() == 0 ||
