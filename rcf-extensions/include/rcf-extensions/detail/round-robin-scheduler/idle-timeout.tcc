@@ -10,7 +10,7 @@ IdleTimeout<W>::~IdleTimeout()
 	m_stop_flag = true;
 	// busy wait for other thread to exit
 	while (m_num_threads_idling > 0) {
-		RCF_LOG_TRACE(m_log, "Other thread still idling, waiting..");
+		RCF_LOG_TRACE(m_log, "Still waiting for " << m_num_threads_idling << " idling threads..");
 		notify();
 		std::this_thread::sleep_for(10ms);
 	}
