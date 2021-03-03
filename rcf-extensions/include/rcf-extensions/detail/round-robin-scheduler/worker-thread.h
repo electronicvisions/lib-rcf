@@ -107,7 +107,16 @@ public:
 	 * Another way of phrasing would be to apply a lens to the worker object.
 	 */
 	template <typename VisitorT>
-	auto visit_const(VisitorT);
+	auto visit_const(VisitorT) const;
+
+	/**
+	 * Apply a visitor to the const worker object and return the result.
+	 * The worker is guaranteed to be set up while being visited.
+	 *
+	 * Another way of phrasing would be to apply a lens to the worker object.
+	 */
+	template <typename VisitorT>
+	auto visit_set_up_const(VisitorT);
 
 protected:
 	log4cxx::Logger* m_log;

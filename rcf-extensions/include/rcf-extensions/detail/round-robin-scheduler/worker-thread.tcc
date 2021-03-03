@@ -146,8 +146,20 @@ void WorkerThread<W>::reset_last_idle()
 
 template <typename W>
 template <typename VisitorT>
-auto WorkerThread<W>::visit_const(VisitorT visitor)
+auto WorkerThread<W>::visit_const(VisitorT visitor) const
 {
+	worker_t const& cref{m_worker};
+	return visitor(cref);
+}
+
+template <typename W>
+template <typename VisitorT>
+auto WorkerThread<W>::visit_set_up_const(VisitorT visitor)
+{
+	if (!is_set_up()) {
+		auto const lk = lock_guard();
+		ensure_worker_is_set_up();
+	}
 	worker_t const& cref{m_worker};
 	return visitor(cref);
 }
