@@ -213,6 +213,18 @@ protected:
 	}
 
 	/**
+	 * Apply const visitor to worker object that is set up.
+	 *
+	 * This is useful to extend the RCF-interface if there are some read-only
+	 * operations to be facilitated on the worker while it is set up.
+	 */
+	template <typename VisitorT>
+	auto visit_set_up_worker_const(VisitorT visit)
+	{
+		return m_worker_thread->visit_set_up_const(std::forward<VisitorT>(visit));
+	}
+
+	/**
 	 * RcfServer instance that can be custom-bound to extended RCF-interfaces
 	 * in derived classes.
 	 */
