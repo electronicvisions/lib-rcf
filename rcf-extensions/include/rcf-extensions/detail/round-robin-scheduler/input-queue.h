@@ -59,7 +59,7 @@ public:
 	 * @param work_package_t The package to add.
 	 */
 	template <typename SorterT = SortDescendingBySequenceNum>
-	void add_work(work_package_t, SorterT = SorterT{});
+	void add_work(work_package_t, SorterT const& = SorterT{});
 
 	/**
 	 * Retrieve the next work package in line from the queue. The work package
@@ -71,7 +71,7 @@ public:
 	 * @throws std::runtime_error if the queue is empty.
 	 */
 	template <typename SorterT = SortDescendingBySequenceNum>
-	work_package_t retrieve_work(SorterT = SorterT{});
+	work_package_t retrieve_work(SorterT const& = SorterT{});
 
 	/**
 	 * @return Whether the queue is empty.
