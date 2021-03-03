@@ -25,7 +25,7 @@ InputQueue<W>::~InputQueue()
 
 template <typename W>
 template <typename SorterT>
-void InputQueue<W>::add_work(work_package_t pkg, SorterT sorter)
+void InputQueue<W>::add_work(work_package_t pkg, SorterT const& sorter)
 {
 	auto lk = lock();
 
@@ -64,7 +64,7 @@ void InputQueue<W>::add_work(work_package_t pkg, SorterT sorter)
 
 template <typename W>
 template <typename SorterT>
-typename InputQueue<W>::work_package_t InputQueue<W>::retrieve_work(SorterT sorter)
+typename InputQueue<W>::work_package_t InputQueue<W>::retrieve_work(SorterT const& sorter)
 {
 	auto lk = lock();
 
