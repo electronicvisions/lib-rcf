@@ -71,9 +71,9 @@ typename RoundRobinScheduler<W>::work_return_t RoundRobinScheduler<W>::submit_wo
 		return RoundRobinScheduler<W>::work_return_t();
 	}
 
-	m_input_queue->add_work(work_package_t{
-	    detail::round_robin_scheduler::get_user_id(verified_user_data),
-	    work_context_t{RCF::getCurrentRcfSession()}, sequence_num});
+	m_input_queue->add_work(
+	    work_package_t{detail::round_robin_scheduler::get_user_id(verified_user_data),
+	                   work_context_t{RCF::getCurrentRcfSession()}, std::move(sequence_num)});
 
 	// notify the worker thread of work
 	m_worker_thread->notify();

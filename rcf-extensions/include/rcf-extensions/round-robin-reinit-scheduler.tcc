@@ -128,8 +128,8 @@ typename RoundRobinReinitScheduler<W>::work_return_t RoundRobinReinitScheduler<W
 	}
 
 	m_input_queue->add_work(
-	    work_package_t{user_id, session_id, work_context_t(RCF::getCurrentRcfSession()),
-	                   sequence_num},
+	    work_package_t{std::move(user_id), decltype(session_id){session_id}, work_context_t{RCF::getCurrentRcfSession()},
+	                   decltype(sequence_num){sequence_num}},
 	    m_session_storage->get_heap_sorter_most_completed());
 	RCF_LOG_TRACE(m_log, "[" << session_id << "] Submission " << sequence_num << " handled.");
 	// notify the worker thread of work

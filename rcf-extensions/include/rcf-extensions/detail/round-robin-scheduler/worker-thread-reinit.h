@@ -66,7 +66,7 @@ protected:
 	/**
 	 * Requeue the given work if it is not able to be executed right now.
 	 */
-	void requeue_work_package(work_package_t pkg);
+	void requeue_work_package(work_package_t&& pkg);
 
 	/**
 	 * Check if the given work package needs a delay.

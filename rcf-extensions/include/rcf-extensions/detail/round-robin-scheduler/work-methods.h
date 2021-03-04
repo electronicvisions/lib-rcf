@@ -24,6 +24,26 @@ struct WorkPackage
 	UserT user_id;
 	ContextT context;
 	SequenceNumber sequence_num;
+
+	WorkPackage() = delete;
+	WorkPackage(WorkPackage const&) = delete;
+	WorkPackage(WorkPackage&& other) :
+	    user_id{std::move(other.user_id)},
+	    context{std::move(other.context)},
+	    sequence_num{std::move(other.sequence_num)}
+	{}
+	WorkPackage(UserT&& user_id, ContextT&& context, SequenceNumber&& sequence_num) :
+	    user_id{user_id}, context{context}, sequence_num{sequence_num}
+	{}
+	WorkPackage& operator=(WorkPackage&& other)
+	{
+		if (this != &other) {
+			user_id = std::move(other.user_id);
+			context = std::move(other.context);
+			sequence_num = std::move(other.sequence_num);
+		}
+		return *this;
+	}
 };
 
 template <typename UserT, typename ContextT>
@@ -40,6 +60,29 @@ struct WorkPackageWithSession
 	SessionT session_id;
 	ContextT context;
 	SequenceNumber sequence_num;
+
+	WorkPackageWithSession() = delete;
+	WorkPackageWithSession(WorkPackageWithSession const&) = delete;
+	WorkPackageWithSession(WorkPackageWithSession&& other) :
+	    user_id{std::move(other.user_id)},
+	    session_id{std::move(other.session_id)},
+	    context{std::move(other.context)},
+	    sequence_num{std::move(other.sequence_num)}
+	{}
+	WorkPackageWithSession(
+	    UserT&& user_id, SessionT&& session_id, ContextT&& context, SequenceNumber&& sequence_num) :
+	    user_id{user_id}, session_id{session_id}, context{context}, sequence_num{sequence_num}
+	{}
+	WorkPackageWithSession& operator=(WorkPackageWithSession&& other)
+	{
+		if (this != &other) {
+			user_id = std::move(other.user_id);
+			session_id = std::move(other.session_id);
+			context = std::move(other.context);
+			sequence_num = std::move(other.sequence_num);
+		}
+		return *this;
+	}
 };
 
 template <typename UserT, typename SessionT, typename ContextT>
@@ -64,8 +107,8 @@ template <typename... Ts>
 inline constexpr bool is_pair_v = is_pair<Ts...>::value;
 
 
-// needed because the type aliases in work_methods helper struct cannot have the same name as the
-// template aliases
+// needed because the type aliases in work_methods helper struct cannot have the same name as
+// the template aliases
 
 template <typename Worker>
 struct method_work
