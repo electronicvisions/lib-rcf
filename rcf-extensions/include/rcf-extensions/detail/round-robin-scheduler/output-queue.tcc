@@ -48,6 +48,7 @@ void OutputQueue<W>::output_thread(std::stop_token st)
 	auto lk = lock();
 	while (true) {
 		m_cv.wait(lk, [this, st] { return m_queue.size() > 0 || st.stop_requested(); });
+		RCF_LOG_TRACE(m_log, "OutputQueue awoken.");
 
 		if (st.stop_requested()) {
 			break;
