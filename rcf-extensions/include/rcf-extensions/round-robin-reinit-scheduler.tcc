@@ -45,10 +45,15 @@ RoundRobinReinitScheduler<W>::~RoundRobinReinitScheduler()
 	}
 
 	// Delete in reverse order
+	RCF_LOG_TRACE(m_log, "Resetting: IdleTimeout");
 	m_idle_timeout.reset();
+	RCF_LOG_TRACE(m_log, "Resetting: WorkerThread");
 	m_worker_thread.reset();
+	RCF_LOG_TRACE(m_log, "Resetting: SessionStorage");
 	m_session_storage.reset();
+	RCF_LOG_TRACE(m_log, "Resetting: OutputQueue");
 	m_output_queue.reset();
+	RCF_LOG_TRACE(m_log, "Resetting: InputQueue");
 	m_input_queue.reset();
 
 	// destruct server prior to deinit

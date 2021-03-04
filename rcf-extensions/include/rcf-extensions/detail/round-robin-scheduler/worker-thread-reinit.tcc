@@ -37,10 +37,12 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 			wtr_t::set_idle();
 			if (wtr_t::m_is_set_up) {
 				// worker is still set up so we can only sleep until the next release
+				RCF_LOG_TRACE(wtr_t::m_log, "Sleeping while worker still set up.");
 				wtr_t::m_cv.wait_for(lk, wtr_t::get_time_till_next_teardown());
 				RCF_LOG_TRACE(wtr_t::m_log, "Woke up while worker still set up.");
 			} else {
 				// no work to be done -> sleep until needed
+				RCF_LOG_TRACE(wtr_t::m_log, "Sleeping while worker NOT set up.");
 				wtr_t::m_cv.wait(lk);
 				RCF_LOG_TRACE(wtr_t::m_log, "Woke up while worker NOT set up.");
 			}
@@ -95,7 +97,6 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 		auto context = std::move(pkg.context);
 
 		RCF_LOG_TRACE(wtr_t::m_log, "Executing: " << pkg);
-
 		auto work = context.parameters().a1.get();
 
 		wtr_t::set_busy();
@@ -240,8 +241,11 @@ bool WorkerThreadReinit<W>::perform_reinit()
 template <typename W>
 void WorkerThreadReinit<W>::perform_teardown()
 {
+	RCF_LOG_TRACE(wtr_t::m_log, "Performing teardown.");
 	base_t::perform_teardown();
 
+	RCF_LOG_TRACE(
+	    wtr_t::m_log, "Teardown performed, requesting potential reinit for current session.");
 	// request reinit for the current session
 	m_session_storage.reinit_request(m_current_session_id);
 }
