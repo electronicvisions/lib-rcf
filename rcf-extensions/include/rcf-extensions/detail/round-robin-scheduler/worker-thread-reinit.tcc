@@ -62,7 +62,8 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 			continue;
 		}
 
-		auto pkg = wtr_t::m_input.retrieve_work(m_session_storage.get_heap_sorter_most_completed());
+		work_package_t pkg =
+		    wtr_t::m_input.retrieve_work(m_session_storage.get_heap_sorter_most_completed());
 
 		if (pkg.sequence_num) {
 			RCF_LOG_TRACE(
@@ -157,16 +158,20 @@ bool WorkerThreadReinit<W>::switch_session(work_package_t const& pkg)
 }
 
 template <typename W>
-void WorkerThreadReinit<W>::requeue_work_package(work_package_t pkg)
+void WorkerThreadReinit<W>::requeue_work_package(work_package_t&& pkg)
 {
 	using namespace std::chrono_literals;
 	wtr_t::m_input.advance_user();
-	std::jthread([this, pkg(std::move(pkg))] {
-		RCF_LOG_TRACE(
-		    wtr_t::m_log, "[" << pkg.session_id << "] requeueing " << *(pkg.sequence_num));
-		wtr_t::m_input.add_work(std::move(pkg), m_session_storage.get_heap_sorter_most_completed());
-		wtr_t::notify();
-	}).detach();
+	std::jthread(
+	    [this](work_package_t&& pkg) {
+		    RCF_LOG_TRACE(
+		        wtr_t::m_log, "[" << pkg.session_id << "] Requeueing #" << *(pkg.sequence_num));
+		    wtr_t::m_input.add_work(
+		        std::move(pkg), m_session_storage.get_heap_sorter_most_completed());
+		    wtr_t::notify();
+	    },
+	    std::move(pkg))
+	    .detach();
 }
 
 template <typename W>

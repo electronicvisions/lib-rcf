@@ -25,7 +25,7 @@ InputQueue<W>::~InputQueue()
 
 template <typename W>
 template <typename SorterT>
-void InputQueue<W>::add_work(work_package_t pkg, SorterT const& sorter)
+void InputQueue<W>::add_work(work_package_t&& pkg, SorterT const& sorter)
 {
 	auto lk = lock();
 
@@ -101,7 +101,7 @@ typename InputQueue<W>::work_package_t InputQueue<W>::retrieve_work(SorterT cons
 	// retrieve next job for current user
 	BOOST_ASSERT(queue.size() > 0);
 	std::pop_heap(queue.begin(), queue.end(), sorter);
-	work_package_t pkg = queue.back();
+	work_package_t pkg = std::move(queue.back());
 	queue.pop_back();
 
 	RCF_LOG_DEBUG(
