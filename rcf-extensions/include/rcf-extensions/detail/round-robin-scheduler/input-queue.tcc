@@ -158,10 +158,12 @@ void InputQueue<W>::advance_user_while_locked()
 	reset_last_user_switch_while_locked();
 
 	// check if the old user has no jobs left
+	std::unique_lock<std::mutex> user_lk{*m_user_to_mutex[*citer_previous_user]};
 	if (m_user_to_input_queue[*citer_previous_user].size() == 0) {
 		RCF_LOG_DEBUG(
 		    m_log, "No jobs left for " << (*citer_previous_user) << ".. removing from queue.");
 		m_user_to_input_queue.erase(*citer_previous_user);
+		user_lk.unlock();
 		m_user_to_mutex.erase(*citer_previous_user);
 		RCF_LOG_TRACE(
 		    m_log, "No pending jobs left for user " << (*citer_previous_user)
