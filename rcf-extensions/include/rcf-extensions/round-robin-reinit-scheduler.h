@@ -234,6 +234,17 @@ public:
 		return m_input_queue->get_period_per_user();
 	}
 
+	/**
+	 * Enforce usage of a reinit program.
+	 *
+	 * The server will wait for a reinit program to be available if none are
+	 * registered yet.
+	 *
+	 * Calling this has the effect as submitting a unit of work with
+	 * enfoce_reinit set to true.
+	 */
+	void reinit_enforce();
+
 protected:
 	/**
 	 * Apply const visitor to worker object.
@@ -330,7 +341,8 @@ private:
 	RCF_METHOD_R3(                                                                                 \
 	    WORK_RETURN_TYPE, submit_work, WORK_ARGUMENT_TYPE, ::rcf_extensions::SequenceNumber, bool) \
 	RCF_METHOD_R0(bool, reinit_notify)                                                             \
-	RCF_METHOD_V1(void, reinit_upload, REINIT_DATA_TYPE)
+	RCF_METHOD_V1(void, reinit_upload, REINIT_DATA_TYPE)                                           \
+	RCF_METHOD_V0(void, reinit_enforce)
 
 
 #define RRWR_GENERATE_UTILITIES(WORKER_TYPE, ALIAS_SCHEDULER, RCF_INTERFACE)                       \

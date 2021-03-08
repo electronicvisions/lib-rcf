@@ -128,13 +128,36 @@ typename RoundRobinReinitScheduler<W>::work_return_t RoundRobinReinitScheduler<W
 	}
 
 	m_input_queue->add_work(
-	    work_package_t{std::move(user_id), decltype(session_id){session_id}, work_context_t{RCF::getCurrentRcfSession()},
+	    work_package_t{std::move(user_id), decltype(session_id){session_id},
+	                   work_context_t{RCF::getCurrentRcfSession()},
 	                   decltype(sequence_num){sequence_num}},
 	    m_session_storage->get_heap_sorter_most_completed());
 	RCF_LOG_TRACE(m_log, "[" << session_id << "] Submission " << sequence_num << " handled.");
 	// notify the worker thread of work
 	m_worker_thread->notify();
 	return work_return_t{}; // result submitted to client asynchronously
+}
+
+template <typename W>
+void RoundRobinReinitScheduler<W>::reinit_enforce()
+{
+	RCF_LOG_TRACE(m_log, "Handling new reinit enforce..");
+
+	auto verified_user_session_id =
+	    get_verified_user_data<work_return_t, work_argument_t, SequenceNumber, bool>(
+	        *m_worker_thread);
+
+	if (!verified_user_session_id) {
+		return; // result submitted to client asynchronously
+	}
+
+	auto session_id = detail::round_robin_scheduler::get_session_id(verified_user_session_id);
+	m_session_storage->ensure_registered(session_id);
+	m_session_storage->reinit_set_needed(session_id);
+
+	RCF_LOG_TRACE(
+	    m_log, "[" << detail::round_robin_scheduler::get_user_id(verified_user_session_id) << "@"
+	               << session_id << "] Enforcing reinit.");
 }
 
 } // namespace rcf_extensions
