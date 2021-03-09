@@ -188,6 +188,27 @@ bool SessionStorage<W>::reinit_is_notified_while_locked(session_id_t const& sess
 }
 
 template <typename W>
+void SessionStorage<W>::sequence_num_fast_forward(
+    session_id_t const& session_id, SequenceNumber const& sequence_num)
+{
+	if (*sequence_num == 0 || sequence_num.is_out_of_order()) {
+		return;
+	} else {
+		auto lk_shared = lock_shared();
+		if (*m_session_to_sequence_num[session_id] > 0) {
+			return;
+		} else {
+			lk_shared.unlock();
+			RCF_LOG_DEBUG(
+			    m_log,
+			    "[" << session_id << "] Fast-forwarding to sequence number: " << *sequence_num);
+			auto lk = lock_guard();
+			m_session_to_sequence_num[session_id] = sequence_num;
+		}
+	}
+}
+
+template <typename W>
 SequenceNumber SessionStorage<W>::sequence_num_get(session_id_t const& session_id) const
 {
 	auto lk = lock_shared();

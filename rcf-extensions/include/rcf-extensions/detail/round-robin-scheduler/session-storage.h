@@ -97,6 +97,22 @@ public:
 	std::optional<reinit_data_cref_t> reinit_get(session_id_t const& session_id);
 
 	/**
+	 * Adjust the given sessions sequence number.
+	 * This is necessary if the server is restarted while the client is still running.
+	 * Hence the client will continue sending well advanced sequence numbers
+	 * that would stall forever.
+	 * Hence, if the server still expects to see sequence number zero, but the
+	 * client submits sequence number 2 or higher (i.e. 2 work packages would
+	 * have been lost if the server did not restart) we fast forward the
+	 * sequence number.
+	 *
+	 * @param session_id Session for which to fast forward sequence numbers.
+	 * @param sequence_num The currently submitted sequence number.
+	 */
+	void sequence_num_fast_forward(
+	    session_id_t const& session_id, SequenceNumber const& sequence_num);
+
+	/**
 	 * Get current (i.e., expected) sequence number for session.
 	 */
 	SequenceNumber sequence_num_get(session_id_t const& session_id) const;
