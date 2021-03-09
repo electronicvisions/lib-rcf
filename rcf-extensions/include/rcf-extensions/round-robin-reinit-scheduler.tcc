@@ -127,6 +127,8 @@ typename RoundRobinReinitScheduler<W>::work_return_t RoundRobinReinitScheduler<W
 		m_session_storage->reinit_set_needed(session_id);
 	}
 
+	m_session_storage->sequence_num_fast_forward(session_id, sequence_num);
+
 	m_input_queue->add_work(
 	    work_package_t{std::move(user_id), decltype(session_id){session_id},
 	                   work_context_t{RCF::getCurrentRcfSession()},
