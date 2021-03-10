@@ -85,14 +85,12 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 			continue;
 		}
 
-		auto worker_was_set_up = wtr_t::ensure_worker_is_set_up();
+		wtr_t::ensure_worker_is_set_up();
 
-		if (!worker_was_set_up || is_different(pkg.session_id)) {
-			if (!switch_session(pkg)) {
-				// switching session failed
-				requeue_work_package(std::move(pkg));
-				continue;
-			}
+		if (!ensure_session_via_reinit(pkg)) {
+			// switching session failed
+			requeue_work_package(std::move(pkg));
+			continue;
 		}
 
 		auto context = std::move(pkg.context);
@@ -138,19 +136,25 @@ bool WorkerThreadReinit<W>::is_different(session_id_t const& session_id)
 }
 
 template <typename W>
-bool WorkerThreadReinit<W>::switch_session(work_package_t const& pkg)
+bool WorkerThreadReinit<W>::ensure_session_via_reinit(work_package_t const& pkg)
 {
-	RCF_LOG_TRACE(
-	    wtr_t::m_log,
-	    "Switching session from " << m_current_session_id << " to " << pkg.session_id << ".");
-	// request the reinit program for the old session if we have to resume
-	m_session_storage.reinit_request(m_current_session_id);
-
-	// switch session
-	m_current_session_id = pkg.session_id;
+	if (pkg.session_id != m_current_session_id) {
+		RCF_LOG_TRACE(
+		    wtr_t::m_log, "Switching session from " << m_current_session_id << " to " << pkg.user_id
+		                                            << "@" << pkg.session_id << ".");
+		// request the reinit program for the old session if we have to resume
+		m_session_storage.reinit_request(m_current_session_id);
+		m_current_session_id = pkg.session_id;
+	}
 
 	if (m_session_storage.reinit_is_needed(m_current_session_id)) {
-		return perform_reinit();
+		if (!perform_reinit()) {
+			// reinit failed, clear session
+			m_current_session_id = session_id_t{};
+			return false;
+		} else {
+			return true;
+		}
 	} else {
 		RCF_LOG_TRACE(wtr_t::m_log, "No reinit needed for session " << m_current_session_id);
 		return true; // switch successful
