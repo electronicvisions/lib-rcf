@@ -153,6 +153,7 @@ bool WorkerThreadReinit<W>::ensure_session_via_reinit(work_package_t const& pkg)
 			m_current_session_id = session_id_t{};
 			return false;
 		} else {
+			m_session_storage.reinit_set_performed(m_current_session_id);
 			return true;
 		}
 	} else {
