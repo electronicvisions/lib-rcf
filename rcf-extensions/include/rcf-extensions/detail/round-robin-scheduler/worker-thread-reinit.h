@@ -53,7 +53,7 @@ protected:
 	bool is_different(session_id_t const& session_id);
 
 	/**
-	 * Switch session to given id.
+	 * Switch session to given id and ensure correct state via potential reinit.
 	 *
 	 * @param pkg Work package which session we should switch to.
 	 *
@@ -61,7 +61,7 @@ protected:
 	 * current work package should be pushed back to the input queue and the
 	 * user switched.
 	 */
-	bool switch_session(work_package_t const& pkg);
+	bool ensure_session_via_reinit(work_package_t const& pkg);
 
 	/**
 	 * Requeue the given work if it is not able to be executed right now.
