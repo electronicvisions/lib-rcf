@@ -90,6 +90,12 @@ public:
 	void reinit_set_needed(session_id_t const& session_id);
 
 	/**
+	 * Indicate that a reinit was performed and hence is not needed in and of
+	 * itself. It will still be performed when the session switches.
+	 */
+	void reinit_set_performed(session_id_t const& session_id);
+
+	/**
 	 * Get a const reference to the given reinit_data_t if available.
 	 *
 	 * The reint_data_t will be requested if it was not requested up until now.

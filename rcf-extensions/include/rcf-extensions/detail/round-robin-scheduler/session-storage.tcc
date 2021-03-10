@@ -145,6 +145,13 @@ void SessionStorage<W>::reinit_set_needed(session_id_t const& session_id)
 }
 
 template <typename W>
+void SessionStorage<W>::reinit_set_performed(session_id_t const& session_id)
+{
+	auto const lk = lock_guard();
+	m_session_reinit_needed.erase(session_id);
+}
+
+template <typename W>
 std::optional<typename SessionStorage<W>::reinit_data_cref_t> SessionStorage<W>::reinit_get(
     session_id_t const& session_id)
 {
