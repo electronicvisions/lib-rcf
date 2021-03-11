@@ -156,11 +156,11 @@ std::optional<typename SessionStorage<W>::reinit_data_cref_t> SessionStorage<W>:
     session_id_t const& session_id)
 {
 	auto lk = lock_shared();
-	// If there is a pending request -> get it and wait
+	// If there is a pending request -> request it and move to next
 	if (reinit_is_notified_while_locked(session_id)) {
 		lk.unlock();
 		reinit_request(session_id);
-		lk.lock();
+		return std::nullopt;
 	}
 
 	if (reinit_is_requested_while_locked(session_id)) {
