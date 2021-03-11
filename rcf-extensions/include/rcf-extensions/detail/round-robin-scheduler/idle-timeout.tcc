@@ -73,7 +73,7 @@ std::chrono::milliseconds IdleTimeout<W>::get_duration_till_timeout()
 template <typename W>
 bool IdleTimeout<W>::is_timeout_reached()
 {
-	return std::chrono::system_clock::now() - m_worker_thread.get_last_idle() > m_timeout;
+	return (std::chrono::system_clock::now() - m_worker_thread.get_last_idle()) > m_timeout;
 }
 
 } // namespace rcf_extensions::detail::round_robin_scheduler

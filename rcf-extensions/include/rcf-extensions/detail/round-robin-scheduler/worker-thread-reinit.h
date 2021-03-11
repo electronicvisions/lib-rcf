@@ -4,6 +4,7 @@
 #include "rcf-extensions/detail/round-robin-scheduler/session-storage.h"
 #include "rcf-extensions/detail/round-robin-scheduler/worker-thread.h"
 
+#include <optional>
 #include <thread>
 
 namespace rcf_extensions::detail::round_robin_scheduler {
@@ -43,7 +44,7 @@ protected:
 	using wtr_t = WorkerThreadReinit; // helper typedef to access protected members of WorkerThread
 
 	session_storage_t& m_session_storage;
-	session_id_t m_current_session_id;
+	std::optional<session_id_t> m_current_session_id;
 
 	virtual void main_thread(std::stop_token) override;
 

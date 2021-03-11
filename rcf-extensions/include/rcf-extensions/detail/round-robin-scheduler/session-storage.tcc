@@ -1,6 +1,6 @@
 
+#include "hate/unordered_map.h"
 #include "rcf-extensions/detail/round-robin-scheduler/session-storage.h"
-
 #include <RCF/RCF.hpp>
 
 namespace rcf_extensions::detail::round_robin_scheduler {
@@ -14,7 +14,7 @@ SessionStorage<W>::SessionStorage() :
 	    auto const logger = log4cxx::Logger::getLogger("lib-rcf.SessionStorage.session_cleanup");
 	    while (!st.stop_requested()) {
 		    m_cv_session_cleanup.wait_for(
-		        lk, m_session_timeout, [&] { return !st.stop_requested(); });
+		        lk, m_session_timeout, [&] { return st.stop_requested(); });
 		    RCF_LOG_TRACE(logger, "Performing cleanup..");
 		    std::erase_if(m_session_to_refcount, [&timeout(m_session_timeout)](auto const& item) {
 			    auto const& [session_id, refcount] = item;
@@ -39,29 +39,62 @@ SessionStorage<W>::~SessionStorage()
 }
 
 template <typename W>
-void SessionStorage<W>::reinit_handle_notify(session_id_t const& session_id)
+void SessionStorage<W>::reinit_handle_notify(session_id_t const& session_id, std::size_t reinit_id)
 {
 	ensure_registered(session_id);
 	auto const lk = lock_guard();
-	RCF_LOG_TRACE(m_log, "Handling notify for session: " << session_id);
-	// clear previous init data if it exists
-	m_session_to_reinit_data.erase(session_id);
-
-	m_session_to_reinit_notify[session_id] = std::make_unique<DeferredUpload>();
+	auto id_notified = hate::get(m_session_to_reinit_id_notified, session_id);
+	if (!id_notified || *id_notified != reinit_id) {
+		RCF_LOG_TRACE(
+		    m_log, "notify()-ed NEW reinit id " << reinit_id << "for session: " << session_id);
+		// clear previous init data if it exists
+		m_session_to_reinit_data.erase(session_id);
+		m_session_to_reinit_id_notified[session_id] = reinit_id;
+	} else {
+		RCF_LOG_TRACE(m_log, "notify()-ed existing reinit id for session: " << session_id);
+	}
 }
 
 template <typename W>
-void SessionStorage<W>::reinit_store(session_id_t const& session_id, reinit_data_t&& data)
+bool SessionStorage<W>::reinit_handle_pending(session_id_t const& session_id, std::size_t reinit_id)
 {
 	ensure_registered(session_id);
-	{
-		auto const lk = lock_guard();
-		RCF_LOG_TRACE(m_log, "Storing reinit data for session: " << session_id);
-		m_session_to_reinit_data[session_id] = std::move(data);
-		m_session_to_reinit_notify.erase(session_id);
+	auto const lk = lock_guard();
+	auto const id_notified = hate::cget(m_session_to_reinit_id_notified, session_id);
+	if (id_notified && *id_notified == reinit_id) {
+		RCF_LOG_TRACE(
+		    m_log,
+		    "Handling pending() for reinit id " << reinit_id << " in session: " << session_id);
+		// clear previous init data if it exists
+		m_session_to_reinit_id_pending[session_id] = reinit_id;
+		m_session_to_deferred[session_id] = std::make_unique<DeferredUpload>();
+		return true;
+	} else {
+		RCF_LOG_WARN(
+		    m_log, "pending() called for unexpected reinit id " << reinit_id << "in session "
+		                                                        << session_id << " -> ignoring.");
+		return false;
 	}
-	// notify possibly waiting process if reinit was explicitly requested
-	m_cv_new_reinit.notify_all();
+}
+
+template <typename W>
+void SessionStorage<W>::reinit_store(
+    session_id_t const& session_id, reinit_data_t&& data, std::size_t reinit_id)
+{
+	ensure_registered(session_id);
+	auto const lk = lock_guard();
+	auto const id_notified = hate::cget(m_session_to_reinit_id_notified, session_id);
+	auto const id_pending = hate::cget(m_session_to_reinit_id_pending, session_id);
+	if (id_notified && id_pending && (*id_notified == *id_pending) && (*id_pending == reinit_id)) {
+		RCF_LOG_TRACE(
+		    m_log, "Storing reinit data with id " << reinit_id << " for session: " << session_id);
+		m_session_to_reinit_data[session_id] = std::move(data);
+		m_session_to_reinit_id_stored[session_id] = reinit_id;
+		m_session_to_deferred.erase(session_id);
+	} else {
+		RCF_LOG_WARN(
+		    m_log, "Got unexpected reinit request for session: " << session_id << " -> ignoring.");
+	}
 }
 
 template <typename W>
@@ -72,7 +105,10 @@ void SessionStorage<W>::erase_session_while_locked(session_id_t const& session_i
 	m_session_to_refcount.erase(session_id);
 
 	m_session_to_reinit_data.erase(session_id);
-	m_session_to_reinit_notify.erase(session_id);
+	m_session_to_deferred.erase(session_id);
+	m_session_to_reinit_id_notified.erase(session_id);
+	m_session_to_reinit_id_pending.erase(session_id);
+	m_session_to_reinit_id_stored.erase(session_id);
 
 	m_session_reinit_needed.erase(session_id);
 
@@ -107,34 +143,42 @@ void SessionStorage<W>::ensure_registered(session_id_t const& session_id)
 template <typename W>
 void SessionStorage<W>::reinit_request(session_id_t const& session_id)
 {
+	RCF_LOG_TRACE(m_log, "Handling reinit request for session: " << session_id);
 	auto const lk = lock_guard();
-	if (m_session_to_reinit_notify.contains(session_id)) {
-		m_session_to_reinit_notify[session_id]->request();
-	}
-}
+	if (!is_active_while_locked(session_id)) {
+		RCF_LOG_TRACE(m_log, "Session is not active -> no reinit requested: " << session_id);
 
-template <typename W>
-bool SessionStorage<W>::reinit_is_requested(session_id_t const& session_id) const
-{
-	auto const lk = lock_shared();
-	return reinit_is_requested_while_locked(session_id);
+	} else if (reinit_is_up_to_date_while_locked(session_id)) {
+		RCF_LOG_TRACE(m_log, "Reinit up to date, not requesting: " << session_id);
+
+	} else if (
+	    reinit_is_pending_while_locked(session_id) &&
+	    !(reinit_is_requested_while_locked(session_id))) {
+		RCF_LOG_TRACE(m_log, "Requesting pending upload " << session_id);
+		m_session_to_deferred[session_id]->request();
+
+	} else {
+		RCF_LOG_TRACE(m_log, "Could not request reinit for session " << session_id);
+	}
 }
 
 template <typename W>
 bool SessionStorage<W>::reinit_is_requested_while_locked(session_id_t const& session_id) const
 {
+	auto const id_notified = hate::cget(m_session_to_reinit_id_notified, session_id);
+	auto const id_pending = hate::cget(m_session_to_reinit_id_pending, session_id);
+
 	return (
-	    m_session_to_reinit_notify.contains(session_id) &&
-	    m_session_to_reinit_notify.at(session_id)->was_requested());
+	    id_notified && id_pending && (*id_notified == *id_pending) &&
+	    m_session_to_deferred.contains(session_id) &&
+	    m_session_to_deferred.at(session_id)->was_requested());
 }
 
 template <typename W>
 bool SessionStorage<W>::reinit_is_needed(session_id_t const& session_id) const
 {
 	auto const lk = lock_shared();
-	return m_session_reinit_needed.contains(session_id) ||
-	       m_session_to_reinit_data.contains(session_id) ||
-	       reinit_is_requested_while_locked(session_id);
+	return m_session_to_reinit_id_notified.contains(session_id);
 }
 
 template <typename W>
@@ -145,53 +189,50 @@ void SessionStorage<W>::reinit_set_needed(session_id_t const& session_id)
 }
 
 template <typename W>
-void SessionStorage<W>::reinit_set_performed(session_id_t const& session_id)
-{
-	auto const lk = lock_guard();
-	m_session_reinit_needed.erase(session_id);
-}
-
-template <typename W>
 std::optional<typename SessionStorage<W>::reinit_data_cref_t> SessionStorage<W>::reinit_get(
     session_id_t const& session_id)
 {
 	auto lk = lock_shared();
-	// If there is a pending request -> request it and move to next
-	if (reinit_is_notified_while_locked(session_id)) {
+	if (reinit_is_up_to_date_while_locked(session_id)) {
+		RCF_LOG_TRACE(m_log, "Getting reinit for session: " << session_id)
+		return hate::cget(m_session_to_reinit_data, session_id);
+	} else if (reinit_is_pending_while_locked(session_id)) {
+		RCF_LOG_TRACE(m_log, "Reinit for session not up to date, requesting: " << session_id)
+		// If there is a pending request -> request it and move to next
 		lk.unlock();
 		reinit_request(session_id);
 		return std::nullopt;
-	}
-
-	if (reinit_is_requested_while_locked(session_id)) {
-		m_cv_new_reinit.wait(lk, [&session_id, this] {
-			// If by some race condition a session gets disconnected while we
-			// wait, the refcount will go to zero and the clean-up threat might
-			// erase session data if enough time passes -> we might deadlock if
-			// we don't check for it (though very very unlikely)
-			return m_session_to_reinit_data.contains(session_id) ||
-			       !m_session_to_refcount.contains(session_id);
-		});
-	}
-
-	if (m_session_to_reinit_data.contains(session_id)) {
-		return std::make_optional(std::cref(m_session_to_reinit_data[session_id]));
 	} else {
 		return std::nullopt;
 	}
 }
 
 template <typename W>
-bool SessionStorage<W>::reinit_is_notified(session_id_t const& session_id) const
+bool SessionStorage<W>::reinit_is_pending_while_locked(session_id_t const& session_id) const
 {
-	auto lk = lock_shared();
-	return reinit_is_notified_while_locked(session_id);
+	auto const id_notified = hate::cget(m_session_to_reinit_id_notified, session_id);
+	auto const id_pending = hate::cget(m_session_to_reinit_id_pending, session_id);
+	return (id_notified && id_pending && *id_notified == *id_pending);
 }
 
 template <typename W>
-bool SessionStorage<W>::reinit_is_notified_while_locked(session_id_t const& session_id) const
+bool SessionStorage<W>::reinit_is_up_to_date_while_locked(session_id_t const& session_id) const
 {
-	return m_session_to_reinit_notify.contains(session_id);
+	auto const id_notified = hate::cget(m_session_to_reinit_id_notified, session_id);
+	auto const id_pending = hate::cget(m_session_to_reinit_id_pending, session_id);
+	auto const id_stored = hate::cget(m_session_to_reinit_id_stored, session_id);
+
+	RCF_LOG_TRACE(
+	    m_log, "Current reinit id state (notified/pending/stored/reinit_data): "
+	               << (id_notified ? std::to_string(*id_notified) : std::string{"<undefined>"})
+	               << "/" << (id_pending ? std::to_string(*id_pending) : std::string{"<undefined>"})
+	               << "/" << (id_stored ? std::to_string(*id_stored) : std::string{"<undefined>"})
+	               << "/" << std::boolalpha << m_session_to_reinit_data.contains(session_id));
+
+	// All ids must match and the reinit data nees to exist!
+	return (
+	    id_notified && id_pending && id_stored && (*id_notified == *id_pending) &&
+	    (*id_pending == *id_stored) && m_session_to_reinit_data.contains(session_id));
 }
 
 template <typename W>
@@ -283,16 +324,28 @@ void SessionStorage<W>::register_new_session_while_locked(session_id_t const& se
 template <typename W>
 std::size_t SessionStorage<W>::get_total_refcount() const
 {
-	auto const lk = lock_guard();
+	auto const lk = lock_shared();
 	return get_total_refcount_while_locked();
 }
 
 template <typename W>
 bool SessionStorage<W>::is_active(session_id_t const& session_id) const
 {
-	auto lk = lock_guard();
-	return m_session_to_refcount.contains(session_id) &&
-	       (*m_session_to_refcount.at(session_id) > 0);
+	auto const lk = lock_shared();
+	return is_active_while_locked(session_id);
+}
+
+template <typename W>
+bool SessionStorage<W>::is_active_while_locked(session_id_t const& session_id) const
+{
+	auto const refcount = hate::cget(m_session_to_refcount, session_id);
+	if (refcount) {
+		RCF_LOG_TRACE(
+		    m_log, "[Session: " << session_id << "] Reference count: " << *(*refcount).get());
+	} else {
+		RCF_LOG_TRACE(m_log, "No reference count for session: " << session_id);
+	}
+	return refcount && (*(*refcount).get() > 0);
 }
 
 template <typename W>
