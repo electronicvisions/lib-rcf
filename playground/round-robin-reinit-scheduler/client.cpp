@@ -23,9 +23,9 @@ int main(int argc, const char* argv[])
 	bool synchronous = false;
 	std::size_t reinit_runtime;
 #ifdef RCF_LOG_THRESHOLD
-    size_t loglevel = RCF_LOG_THRESHOLD;
+	size_t loglevel = RCF_LOG_THRESHOLD;
 #else
-    size_t loglevel = 2; // info
+	size_t loglevel = 2; // info
 #endif
 
 	WorkUnit work_unit;
@@ -63,7 +63,7 @@ int main(int argc, const char* argv[])
 
 	RCF::RcfInit rcfInit;
 
-    logger_default_config(Logger::log4cxx_level_v2(loglevel));
+	logger_default_config(Logger::log4cxx_level_v2(loglevel));
 	auto log = log4cxx::Logger::getLogger("client");
 
 	if (!silent) {
@@ -73,30 +73,30 @@ int main(int argc, const char* argv[])
 
 	RCF::globals().setDefaultConnectTimeoutMs(24 * 3600 * 1000);
 
-	std::deque<std::pair<rr_waiter_client_t, RCF::Future<typename rr_waiter_t::work_return_t>>>
+	std::deque<std::pair<
+	    std::shared_ptr<rr_waiter_client_t>, RCF::Future<typename rr_waiter_t::work_return_t>>>
 	    futures;
 
 	ReinitWorkUnit reinit{reinit_runtime, "Reinit program for " + user + "@" + session, session};
 
-	auto uploader = rr_waiter_construct_reinit_uploader([ip, port, user, session] {
+	auto create_client = [ip, port, user, session] {
 		auto client = std::make_shared<rr_waiter_client_t>(RCF::TcpEndpoint(ip, port));
 		client->getClientStub().setRemoteCallTimeoutMs(24 * 3600 * 1000);
 		client->getClientStub().setRequestUserData(user + ":" + session);
 		return client;
-	});
+	};
+
+	auto uploader = rr_waiter_construct_reinit_uploader(create_client);
 
 	work_unit.session_id = session;
 
 	uploader.upload(std::move(reinit));
-	uploader.ensure_connected();
+	create_client()->reinit_enforce();
 
 	std::size_t previous_job_id = 0;
 
 	for (size_t i = 0; i < num_messages; ++i) {
-		rr_waiter_client_t client(RCF::TcpEndpoint(ip, port));
-		client.getClientStub().setRemoteCallTimeoutMs(24 * 3600 * 1000);
-		client.getClientStub().setRequestUserData(user + ":" + session);
-		client.getClientStub().getTransport().setMaxIncomingMessageLength(1280 * 1024 * 1024);
+		auto client = create_client();
 
 		WorkUnit my_work_unit(work_unit);
 		my_work_unit.first_unit = (i == 0);
@@ -117,10 +117,10 @@ int main(int argc, const char* argv[])
 			}
 			std::size_t ran_in_job_id;
 			if (out_of_order) {
-				ran_in_job_id = client.submit_work(
+				ran_in_job_id = client->submit_work(
 				    my_work_unit, rcf_extensions::SequenceNumber::out_of_order(), true);
 			} else {
-				ran_in_job_id = client.submit_work(my_work_unit, i, false);
+				ran_in_job_id = client->submit_work(my_work_unit, i, false);
 			}
 			if (!silent) {
 				RCF_LOG_INFO(log, "Ran in job ID: " << ran_in_job_id);
@@ -142,10 +142,10 @@ int main(int argc, const char* argv[])
 			}
 			RCF::Future<typename rr_waiter_t::work_return_t> future;
 			if (out_of_order) {
-				future = client.submit_work(
+				future = client->submit_work(
 				    my_work_unit, rcf_extensions::SequenceNumber::out_of_order(), true);
 			} else {
-				future = client.submit_work(my_work_unit, i, false);
+				future = client->submit_work(my_work_unit, i, false);
 			}
 			futures.push_back(std::make_pair(std::move(client), std::move(future)));
 		}

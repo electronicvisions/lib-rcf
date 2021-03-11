@@ -44,18 +44,37 @@ public:
 
 	/**
 	 * Handle a new notification for a reinit data upload.
+	 * Any call to reinit_get() will return nullopt until the given reinit id is uploaded.
+	 *
+	 * @param session_id for which session to add reinit notification
+	 * @param reinit_id the identifier of the reinit data that could be uploaded
 	 */
-	void reinit_handle_notify(session_id_t const& session_id);
+	void reinit_handle_notify(session_id_t const& session_id, std::size_t reinit_id);
+
+	/**
+	 * Handle a new pending upload (i.e. a client call that is blocked until
+	 * the given upload is needed on the server-side).
+	 *
+	 * @param session_id for which session to add reinit notification
+	 * @param reinit_id the identifier of the reinit data that could be uploaded
+	 */
+	bool reinit_handle_pending(session_id_t const& session_id, std::size_t reinit_id);
 
 	/**
 	 * Store the given data (called from upload-function).
+	 *
+	 * @param session_id which session to store reinit data for
+	 * @param data to store
+	 * @param id of the reinit data
 	 */
-	void reinit_store(session_id_t const& session_id, reinit_data_t&&);
+	void reinit_store(session_id_t const& session_id, reinit_data_t&&, std::size_t reinit_id);
 
 	/**
 	 * Register the given session id with the current RCF::RcfSession.
 	 *
 	 * If the RcfSession is already registered, nothing happens.
+	 *
+	 * @param session_id for which to ensure it is registered
 	 */
 	void ensure_registered(session_id_t const& session_id);
 
@@ -63,16 +82,10 @@ public:
 	 * Request reinit data from the client if there is a pending notification.
 	 *
 	 * Otherwise do nothing.
+	 *
+	 * @param session_id for which session to request the reinit
 	 */
 	void reinit_request(session_id_t const& session_id);
-
-	/**
-	 * Return whether or not the given session id has a reinit program that
-	 * was requested but not already uploaded.
-	 *
-	 * This can be used to identify if the session has already been run once or not.
-	 */
-	bool reinit_is_requested(session_id_t const& session_id) const;
 
 	/**
 	 * @return whether a reinit program is needed.
@@ -80,25 +93,18 @@ public:
 	bool reinit_is_needed(session_id_t const& session_id) const;
 
 	/**
-	 * Indicate if a new reinit program was notified for upload.
-	 */
-	bool reinit_is_notified(session_id_t const& session_id) const;
-
-	/**
 	 * Indicate that a reinit is mandatory for the given session_id.
 	 */
 	void reinit_set_needed(session_id_t const& session_id);
 
 	/**
-	 * Indicate that a reinit was performed and hence is not needed in and of
-	 * itself. It will still be performed when the session switches.
-	 */
-	void reinit_set_performed(session_id_t const& session_id);
-
-	/**
 	 * Get a const reference to the given reinit_data_t if available.
 	 *
 	 * The reint_data_t will be requested if it was not requested up until now.
+	 * Please note that this function returning nullopt does _not_ mean that no
+	 * reinit is needed, but merely that it is not available yet.
+	 *
+	 * @return optional indicating whether correct reinit data is available.
 	 */
 	std::optional<reinit_data_cref_t> reinit_get(session_id_t const& session_id);
 
@@ -175,7 +181,7 @@ private:
 	// the current not-yet-uploaded reinit data for each session that has one registered
 	using session_to_reinit_notify_t =
 	    std::unordered_map<session_id_t, std::unique_ptr<deferred_upload_t>>;
-	session_to_reinit_notify_t m_session_to_reinit_notify;
+	session_to_reinit_notify_t m_session_to_deferred;
 
 	// the current already-uploaded reinit data for each session that has one registered
 	using session_to_reinit_data_t = std::unordered_map<session_id_t, reinit_data_t>;
@@ -186,6 +192,15 @@ private:
 	using session_to_refcount_t = std::unordered_map<session_id_t, refcount_type>;
 	session_to_refcount_t m_session_to_refcount;
 
+	using session_to_reinit_id_t = std::unordered_map<session_id_t, std::size_t>;
+	// track which reinit id:
+	// -> could be uploaded
+	session_to_reinit_id_t m_session_to_reinit_id_notified;
+	// -> pending to be uploaded
+	session_to_reinit_id_t m_session_to_reinit_id_pending;
+	// -> actually is uploaded and stored
+	session_to_reinit_id_t m_session_to_reinit_id_stored;
+
 	// Track if the user has indicated that a reinit program is needed (so we know
 	// if we have to wait or not).
 	using session_set_t = std::unordered_set<session_id_t>;
@@ -193,9 +208,6 @@ private:
 
 	using session_to_sequence_num_t = std::unordered_map<session_id_t, SequenceNumber>;
 	session_to_sequence_num_t m_session_to_sequence_num;
-
-	// condition variable that gets notified whenever a new reinit-program gets uploaded
-	std::condition_variable_any m_cv_new_reinit;
 
 	std::size_t m_max_sessions;
 
@@ -229,7 +241,24 @@ private:
 
 	bool reinit_is_requested_while_locked(session_id_t const& session_id) const;
 
-	bool reinit_is_notified_while_locked(session_id_t const& session_id) const;
+	/**
+	 * Check if the givens session id belongs to a registered session and can
+	 * hence be expected to exist in all maps.
+	 *
+	 * @param sessio_id session to check.
+	 * @return true if given session id is registered.
+	 */
+	bool is_active_while_locked(session_id_t const& session_id) const;
+
+	/**
+	 * Indicate whether the reinit for the given session can be requested.
+	 *
+	 * @param session_id Session for which to check.
+	 * @return If reinit can be requested.
+	 */
+	bool reinit_is_pending_while_locked(session_id_t const& session_id) const;
+
+	bool reinit_is_up_to_date_while_locked(session_id_t const& session_id) const;
 
 	void register_new_session_while_locked(session_id_t const& session_id);
 

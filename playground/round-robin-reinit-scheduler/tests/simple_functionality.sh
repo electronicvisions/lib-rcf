@@ -25,7 +25,7 @@ for try in $(seq 10); do
     rcf-roundrobin-reinit-server \
         --ip 127.0.0.1 \
         --port ${quiggeldy_port} \
-        --timeout 3 \
+        --timeout 30 \
         --loglevel ${RCF_TESTS_LOGLEVEL:-2} \
         --num-threads-input 6 \
         --num-threads-output 1 \
@@ -68,6 +68,7 @@ for rcf_user in "${rcf_users[@]}"; do
             --num-messages $((1 << 5))
             --runtime "${runtime}"
             --reinit-runtime "${runtime_reinit}"
+            --synchronous  # TODO: There is still an unsolved issue with asynchronous submission and fast-forward.
         )
         # half of clients submits out-of-order
         if (( session_num % 2 == 0 )); then

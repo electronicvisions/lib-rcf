@@ -68,11 +68,14 @@ void WorkerThread<W>::main_thread(std::stop_token st)
 			set_idle();
 			if (is_set_up()) {
 				// worker is still set up so we can only sleep until the next release
-				m_cv.wait_for(lk, get_time_till_next_teardown());
+				m_cv.wait_for(lk, st, get_time_till_next_teardown(), [this, st] {
+					return st.stop_requested() || !m_input.is_empty();
+				});
 				RCF_LOG_TRACE(m_log, "Woke up while worker still set up.");
 			} else {
 				// no work to be done -> sleep until needed
-				m_cv.wait(lk);
+				m_cv.wait(
+				    lk, st, [this, st] { return st.stop_requested() || !m_input.is_empty(); });
 				RCF_LOG_TRACE(m_log, "Woke up while worker NOT set up.");
 			}
 		}

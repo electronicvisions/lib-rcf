@@ -138,13 +138,26 @@ public:
 
 	/**
 	 * Notify server about new reinit program.
+	 *
+	 * @param id of the reinit program that could be uploaded.
 	 */
-	bool reinit_notify();
+	void reinit_notify(std::size_t);
+
+	/**
+	 * Offer new reinit program to server, call blocks until server requests it.
+	 *
+	 * @param id of the pending reinit program.
+	 * @return Wheter or not server requests upload.
+	 */
+	bool reinit_pending(std::size_t);
 
 	/**
 	 * Upload new reinit program.
+	 *
+	 * @param reinit data to upload
+	 * @param reinit id of the data uploaded
 	 */
-	void reinit_upload(reinit_data_t);
+	void reinit_upload(reinit_data_t, std::size_t);
 
 	/**
 	 * Start server and shut down server after a given timeout of being idle.
@@ -340,8 +353,9 @@ private:
 	RCF_BEGIN(RCF_INTERFACE, #RCF_INTERFACE)                                                       \
 	RCF_METHOD_R3(                                                                                 \
 	    WORK_RETURN_TYPE, submit_work, WORK_ARGUMENT_TYPE, ::rcf_extensions::SequenceNumber, bool) \
-	RCF_METHOD_R0(bool, reinit_notify)                                                             \
-	RCF_METHOD_V1(void, reinit_upload, REINIT_DATA_TYPE)                                           \
+	RCF_METHOD_V1(void, reinit_notify, std::size_t)                                                \
+	RCF_METHOD_R1(bool, reinit_pending, std::size_t)                                               \
+	RCF_METHOD_V2(void, reinit_upload, REINIT_DATA_TYPE, std::size_t)                              \
 	RCF_METHOD_V0(void, reinit_enforce)
 
 
@@ -367,6 +381,7 @@ private:
 	{                                                                                              \
 		return ALIAS_SCHEDULER##_reinit_uploader_t(                                                \
 		    std::move(func_create), &ALIAS_SCHEDULER##_client_t::reinit_notify,                    \
+		    &ALIAS_SCHEDULER##_client_t::reinit_pending,                                           \
 		    &ALIAS_SCHEDULER##_client_t::reinit_upload);                                           \
 	}
 

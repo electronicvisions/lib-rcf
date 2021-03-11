@@ -67,27 +67,49 @@ RoundRobinReinitScheduler<W>::~RoundRobinReinitScheduler()
 }
 
 template <typename W>
-bool RoundRobinReinitScheduler<W>::reinit_notify()
+void RoundRobinReinitScheduler<W>::reinit_notify(std::size_t reinit_id)
 {
-	auto verified_user_session_id = get_verified_user_data<bool>(*m_worker_thread);
+	auto verified_user_session_id =
+	    get_verified_user_data<RCF::Void, std::size_t>(*m_worker_thread);
 	if (verified_user_session_id) {
-		m_session_storage->reinit_handle_notify(verified_user_session_id->second);
+		m_session_storage->reinit_handle_notify(verified_user_session_id->second, reinit_id);
 		RCF_LOG_TRACE(
-		    m_log, "[" << verified_user_session_id->second
-		               << "] Reinit program notification successfully processed.");
+		    m_log,
+		    "[" << verified_user_session_id->first << "@" << verified_user_session_id->second
+		        << "] Reinit program notification successfully processed for id: " << reinit_id);
+		m_worker_thread->notify();
 	}
-	return true;
 }
 
 template <typename W>
-void RoundRobinReinitScheduler<W>::reinit_upload(reinit_data_t reinit_data)
+bool RoundRobinReinitScheduler<W>::reinit_pending(std::size_t reinit_id)
 {
-	auto verified_user_session_id = get_verified_user_data<void, reinit_data_t>(*m_worker_thread);
+	auto verified_user_session_id = get_verified_user_data<bool, std::size_t>(*m_worker_thread);
 	if (verified_user_session_id) {
-		m_session_storage->reinit_store(verified_user_session_id->second, std::move(reinit_data));
 		RCF_LOG_TRACE(
 		    m_log,
-		    "[" << verified_user_session_id->second << "] Reinit program successfully uploaded.");
+		    "[" << verified_user_session_id->first << "@" << verified_user_session_id->second
+		        << "] Reinit program pending() successfully processed for id: " << reinit_id);
+		m_worker_thread->notify();
+		return m_session_storage->reinit_handle_pending(
+		    verified_user_session_id->second, reinit_id);
+	}
+	return false;
+}
+
+template <typename W>
+void RoundRobinReinitScheduler<W>::reinit_upload(reinit_data_t reinit_data, std::size_t reinit_id)
+{
+	auto verified_user_session_id =
+	    get_verified_user_data<RCF::Void, reinit_data_t, std::size_t>(*m_worker_thread);
+	if (verified_user_session_id) {
+		m_session_storage->reinit_store(
+		    verified_user_session_id->second, std::move(reinit_data), reinit_id);
+		RCF_LOG_TRACE(
+		    m_log, "[" << verified_user_session_id->first << "@" << verified_user_session_id->second
+		               << "] Reinit program successfully uploaded.");
+		// notify worker thread because it might be waiting for reinit
+		m_worker_thread->notify();
 	}
 }
 
@@ -122,11 +144,15 @@ typename RoundRobinReinitScheduler<W>::work_return_t RoundRobinReinitScheduler<W
 	RCF_LOG_TRACE(m_log, "[" << session_id << "] Handling submission " << sequence_num);
 
 	m_session_storage->ensure_registered(session_id);
+	RCF_LOG_TRACE(
+	    m_log, "[" << session_id << " " << sequence_num << "] Ensured session is registered.");
 
 	if (enforce_reinit) {
+		RCF_LOG_TRACE(m_log, "[" << session_id << "] Setting reinit to needed.");
 		m_session_storage->reinit_set_needed(session_id);
 	}
 
+	RCF_LOG_TRACE(m_log, "[" << session_id << "] Checking for fast forward.");
 	m_session_storage->sequence_num_fast_forward(session_id, sequence_num);
 
 	m_input_queue->add_work(
@@ -145,9 +171,7 @@ void RoundRobinReinitScheduler<W>::reinit_enforce()
 {
 	RCF_LOG_TRACE(m_log, "Handling new reinit enforce..");
 
-	auto verified_user_session_id =
-	    get_verified_user_data<work_return_t, work_argument_t, SequenceNumber, bool>(
-	        *m_worker_thread);
+	auto verified_user_session_id = get_verified_user_data<RCF::Void>(*m_worker_thread);
 
 	if (!verified_user_session_id) {
 		return; // result submitted to client asynchronously

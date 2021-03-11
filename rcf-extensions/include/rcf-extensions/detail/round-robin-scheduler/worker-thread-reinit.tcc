@@ -10,9 +10,7 @@ WorkerThreadReinit<W>::WorkerThreadReinit(
     input_queue_t& input,
     output_queue_t& output,
     session_storage_t& session_storage) :
-    WorkerThread<W>{std::move(worker), input, output},
-    m_session_storage{session_storage},
-    m_current_session_id("<undefined>")
+    WorkerThread<W>{std::move(worker), input, output}, m_session_storage{session_storage}
 {
 	wtr_t::wtr_t::m_log = log4cxx::Logger::getLogger("lib-rcf.WorkerThreadReinit");
 }
@@ -21,8 +19,11 @@ WorkerThreadReinit<W>::WorkerThreadReinit(
 template <typename W>
 void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 {
+	using namespace std::chrono_literals;
 	auto lk = wtr_t::lock();
 	RCF_LOG_TRACE(wtr_t::m_log, "Worker starting up.");
+
+	auto idle_period_exponential = 10ms;
 
 	while (!st.stop_requested()) {
 		RCF_LOG_TRACE(wtr_t::m_log, "New loop.");
@@ -36,14 +37,29 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 		if (wtr_t::m_input.is_empty()) {
 			wtr_t::set_idle();
 			if (wtr_t::m_is_set_up) {
+				auto delay =
+				    std::min(idle_period_exponential, wtr_t::get_time_till_next_teardown());
 				// worker is still set up so we can only sleep until the next release
-				RCF_LOG_TRACE(wtr_t::m_log, "Sleeping while worker still set up.");
-				wtr_t::m_cv.wait_for(lk, wtr_t::get_time_till_next_teardown());
+				RCF_LOG_TRACE(
+				    wtr_t::m_log,
+				    "Sleeping while worker still set up for "
+				        << std::chrono::duration_cast<std::chrono::milliseconds>(delay).count()
+				        << "ms.");
+				wtr_t::m_cv.wait_for(lk, st, delay, [this, st] {
+					return st.stop_requested() || !wtr_t::m_input.is_empty();
+				});
 				RCF_LOG_TRACE(wtr_t::m_log, "Woke up while worker still set up.");
 			} else {
 				// no work to be done -> sleep until needed
-				RCF_LOG_TRACE(wtr_t::m_log, "Sleeping while worker NOT set up.");
-				wtr_t::m_cv.wait(lk);
+				RCF_LOG_TRACE(
+				    wtr_t::m_log, "Sleeping while worker NOT set up for "
+				                      << std::chrono::duration_cast<std::chrono::milliseconds>(
+				                             idle_period_exponential)
+				                             .count()
+				                      << "ms.");
+				wtr_t::m_cv.wait_for(lk, st, idle_period_exponential, [this, st] {
+					return st.stop_requested() || !wtr_t::m_input.is_empty();
+				});
 				RCF_LOG_TRACE(wtr_t::m_log, "Woke up while worker NOT set up.");
 			}
 		}
@@ -51,7 +67,6 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 			RCF_LOG_TRACE(wtr_t::m_log, "Shutdown requested..");
 			break;
 		}
-
 		RCF_LOG_DEBUG(
 		    wtr_t::m_log, "Total count session/jobs: " << m_session_storage.get_total_refcount()
 		                                               << " / "
@@ -59,8 +74,12 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 
 		if (wtr_t::m_input.is_empty()) {
 			// no work to do -> do not advance
+			idle_period_exponential *= 2;
 			continue;
 		}
+		wtr_t::reset_last_idle();
+		// reset exponential waiting period
+		idle_period_exponential = 10ms;
 
 		work_package_t pkg =
 		    wtr_t::m_input.retrieve_work(m_session_storage.get_heap_sorter_most_completed());
@@ -93,7 +112,7 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 			continue;
 		}
 
-		auto context = std::move(pkg.context);
+		typename wtr_t::work_context_t context{std::move(pkg.context)};
 
 		RCF_LOG_TRACE(wtr_t::m_log, "Executing: " << pkg);
 		auto work = context.parameters().a1.get();
@@ -132,32 +151,41 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 template <typename W>
 bool WorkerThreadReinit<W>::is_different(session_id_t const& session_id)
 {
-	return session_id != m_current_session_id;
+	return !m_current_session_id || session_id != *m_current_session_id;
 }
 
 template <typename W>
 bool WorkerThreadReinit<W>::ensure_session_via_reinit(work_package_t const& pkg)
 {
-	if (pkg.session_id != m_current_session_id) {
-		RCF_LOG_TRACE(
-		    wtr_t::m_log, "Switching session from " << m_current_session_id << " to " << pkg.user_id
-		                                            << "@" << pkg.session_id << ".");
-		// request the reinit program for the old session if we have to resume
-		m_session_storage.reinit_request(m_current_session_id);
+	if (!m_current_session_id || pkg.session_id != *m_current_session_id) {
+		auto log_trace = [this, &pkg](auto& session_id) {
+			RCF_LOG_TRACE(
+			    wtr_t::m_log, "Switching session from " << session_id << " to " << pkg.user_id
+			                                            << "@" << pkg.session_id << ".");
+		};
+		if (m_current_session_id) {
+			log_trace(*m_current_session_id);
+			// request the reinit program for the old session if we have to resume
+			m_session_storage.reinit_request(*m_current_session_id);
+		} else {
+			log_trace("no active session");
+		}
 		m_current_session_id = pkg.session_id;
 	}
 
-	if (m_session_storage.reinit_is_needed(m_current_session_id)) {
+	if (m_session_storage.reinit_is_needed(*m_current_session_id)) {
 		if (!perform_reinit()) {
 			// reinit failed, clear session
-			m_current_session_id = session_id_t{};
+			RCF_LOG_TRACE(wtr_t::m_log, "Resetting current session.");
+			m_current_session_id = std::nullopt;
 			return false;
 		} else {
-			m_session_storage.reinit_set_performed(m_current_session_id);
 			return true;
 		}
 	} else {
-		RCF_LOG_TRACE(wtr_t::m_log, "No reinit needed for session " << m_current_session_id);
+		if (m_current_session_id) {
+			RCF_LOG_TRACE(wtr_t::m_log, "No reinit needed for session " << *m_current_session_id);
+		}
 		return true; // switch successful
 	}
 }
@@ -166,6 +194,7 @@ template <typename W>
 void WorkerThreadReinit<W>::requeue_work_package(work_package_t&& pkg)
 {
 	using namespace std::chrono_literals;
+	RCF_LOG_TRACE(wtr_t::m_log, "Requeueing: " << pkg);
 	wtr_t::m_input.advance_user();
 	std::jthread(
 	    [this](work_package_t&& pkg) {
@@ -235,7 +264,7 @@ bool WorkerThreadReinit<W>::perform_reinit()
 {
 	// check if we need to perform reinit for the new session (i.e. it has a reinit program
 	// requested)
-	auto reinit_data = m_session_storage.reinit_get(m_current_session_id);
+	auto reinit_data = m_session_storage.reinit_get(*m_current_session_id);
 	if (reinit_data) {
 		RCF_LOG_TRACE(wtr_t::m_log, "Performing reinit..");
 		wtr_t::m_worker.perform_reinit(*reinit_data);
@@ -243,7 +272,7 @@ bool WorkerThreadReinit<W>::perform_reinit()
 	} else {
 		RCF_LOG_WARN(
 		    wtr_t::m_log, "Reinit data needed but not available for session: "
-		                      << m_current_session_id << ". Delaying execution..");
+		                      << *m_current_session_id << ". Delaying execution..");
 		return false;
 	}
 }
@@ -256,8 +285,10 @@ void WorkerThreadReinit<W>::perform_teardown()
 
 	RCF_LOG_TRACE(
 	    wtr_t::m_log, "Teardown performed, requesting potential reinit for current session.");
-	// request reinit for the current session
-	m_session_storage.reinit_request(m_current_session_id);
+	if (m_current_session_id) {
+		// request reinit for the current session
+		m_session_storage.reinit_request(*m_current_session_id);
+	}
 }
 
 } // namespace rcf_extensions::detail::round_robin_scheduler

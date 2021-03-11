@@ -25,6 +25,42 @@ struct ReinitWorkUnit
 	std::string message;
 	std::string session_id;
 
+	ReinitWorkUnit() : runtime{0}, message{"<undefined>"}, session_id{"<no-session>"} {}
+
+	ReinitWorkUnit(size_t runtime, std::string message, std::string session_id) :
+	    runtime{std::move(runtime)}, message{std::move(message)}, session_id{std::move(session_id)}
+	{}
+
+	ReinitWorkUnit(ReinitWorkUnit const& other) :
+	    runtime{other.runtime}, message{other.message}, session_id{other.session_id}
+	{}
+
+	ReinitWorkUnit& operator=(ReinitWorkUnit const& other)
+	{
+		if (this != &other) {
+			runtime = other.runtime;
+			message = other.message;
+			session_id = other.session_id;
+		}
+		return *this;
+	}
+
+	ReinitWorkUnit& operator=(ReinitWorkUnit&& other)
+	{
+		if (this != &other) {
+			runtime = std::move(other.runtime);
+			message = std::move(other.message);
+			session_id = std::move(other.session_id);
+		}
+		return *this;
+	}
+
+	ReinitWorkUnit(ReinitWorkUnit&& other) :
+	    runtime{std::move(other.runtime)},
+	    message{std::move(other.message)},
+	    session_id{std::move(other.session_id)}
+	{}
+
 	void serialize(SF::Archive& ar)
 	{
 		if (ar.isWrite()) {
@@ -118,7 +154,7 @@ public:
 		return job_id;
 	}
 
-	void perform_reinit(ReinitWorkUnit const& reinit)
+	void perform_reinit(ReinitWorkUnit reinit)
 	{
 		RCF_LOG_INFO(m_log, "Performing reinint [" << reinit.runtime << "ms]: " << reinit.message);
 		RCF::sleepMs(reinit.runtime);
@@ -140,16 +176,3 @@ private:
 };
 
 RRWR_GENERATE(Worker, rr_waiter)
-
-// Without macro:
-/*
- * #pragma GCC diagnostic push
- * #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
- * #pragma GCC diagnostic ignored "-Wterminate"
- * #include <RCF/RCF.hpp>
- * RCF_BEGIN(I_RoundRobin, "I_RoundRobin")
- * RCF_METHOD_R1(size_t, submit_work, WorkUnit)
- * RCF_END(I_RoundRobin)
- * typedef RoundRobinScheduler<Worker, I_RoundRobin> rr_waiter_t;
- * #pragma GCC diagnostic pop
- */
