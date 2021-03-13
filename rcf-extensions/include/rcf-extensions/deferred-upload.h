@@ -1,6 +1,5 @@
 #pragma once
 
-#include <future>
 #include <mutex>
 #include <thread>
 
@@ -24,22 +23,15 @@ class DeferredUpload
 public:
 	using rcf_context_t = RCF::RemoteCallContext<bool>;
 
-	DeferredUpload() :
-	    m_log(log4cxx::Logger::getLogger("DeferredUpload")),
-	    m_lock(m_mutex_deferred),
-	    m_return_value_to_client(true),
-	    m_thread_finished(false)
+	DeferredUpload() : m_log{log4cxx::Logger::getLogger("DeferredUpload")}, m_lock{m_mutex_deferred}
 	{
 		RCF_LOG_TRACE(m_log, "Setting up DeferredUpload");
 
-		rcf_context_t context(RCF::getCurrentRcfSession());
-		std::promise<bool> promise;
-		m_future_thread_finished = promise.get_future();
+		rcf_context_t context{RCF::getCurrentRcfSession()};
 
-		m_thread = std::thread([this, context(context), promise(std::move(promise))]() mutable {
+		m_thread = std::jthread([this, context(context)]() mutable {
 			RCF_LOG_TRACE(m_log, "Started thread to hold asynchronous notification-call.");
-			promise.set_value_at_thread_exit(true);
-			std::lock_guard<std::mutex> const lk(m_mutex_deferred);
+			std::lock_guard<std::mutex> lk{m_mutex_deferred};
 			RCF_LOG_TRACE(
 			    m_log, "Resuming pending asynchronous call so that upload gets performed.");
 			context.parameters().r.set(m_return_value_to_client);
@@ -60,16 +52,8 @@ public:
 	 */
 	bool is_done()
 	{
-		// Since we can only call .get() on the future once, we need to cache its result.
-		if (m_thread_finished) {
-			return true;
-		} else if (m_future_thread_finished.valid()) {
-			RCF_LOG_TRACE(m_log, "Pending thread finished execution, storing result.");
-			m_thread_finished = m_future_thread_finished.get();
-			return m_thread_finished;
-		} else {
-			return false;
-		}
+		using namespace std::chrono_literals;
+		return !m_thread.joinable();
 	}
 
 	/**
@@ -114,9 +98,7 @@ private:
 
 	bool m_return_value_to_client;
 
-	std::thread m_thread;
-	std::future<bool> m_future_thread_finished;
-	bool m_thread_finished;
+	std::jthread m_thread;
 };
 
 } // namespace rcf_extensions
