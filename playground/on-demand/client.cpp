@@ -7,6 +7,8 @@
 
 #include <RCF/RCF.hpp>
 
+void perform_test(log4cxx::LoggerPtr, int);
+
 int main(int argc, char* argv[])
 {
 	using namespace std::chrono_literals;
@@ -21,13 +23,28 @@ int main(int argc, char* argv[])
 
 	RCF::RcfInit rcfInit;
 
-	std::string networkInterface = "127.0.0.1";
-
 	int port = 50001;
+	uint32_t iterations = 1;
 
 	if (argc > 1) {
 		port = atoi(argv[1]);
 	}
+	if (argc > 2) {
+		iterations = atoi(argv[2]);
+	}
+
+	for (uint32_t i = 0; i < iterations; ++i) {
+		RCF_LOG_INFO(log, "Iteration #" << i);
+		perform_test(log, port);
+	}
+
+	return 0;
+}
+
+void perform_test(log4cxx::LoggerPtr log, int port)
+{
+	std::string networkInterface = "127.0.0.1";
+
 	RCF_LOG_INFO(log, "Connecting to server on " << networkInterface << ":" << port << ".");
 	auto connect_to = RCF::TcpEndpoint(networkInterface, port);
 	RcfClient<I_OnDemandReload> client(connect_to);
@@ -44,11 +61,11 @@ int main(int argc, char* argv[])
 		    client->getClientStub().setRemoteCallTimeoutMs(60000);
 		    return client;
 	    },
-	    &uploader_t::client_t::notify_new_reinit, &uploader_t::client_t::upload_new_reinit);
+	    &uploader_t::client_t::notify_new_reinit, &uploader_t::client_t::pending_new_reinit,
+	    &uploader_t::client_t::upload_new_reinit);
 
+	RCF_LOG_INFO(log, "First upload()");
 	uploader.upload(my_reinit_data);
-
-	std::this_thread::sleep_for(3s);
 
 	auto poor_mans_assert = [log](ReinitData const& actual, ReinitData const& expected) {
 		if (actual != expected) {
@@ -60,22 +77,23 @@ int main(int argc, char* argv[])
 	RCF_LOG_INFO(log, "request_reinit()");
 	poor_mans_assert(client.request_reinit(), my_reinit_data);
 
-	std::this_thread::sleep_for(1s);
-
 	// provide several re-init data pbmems, only the latest should get uploaded
+	RCF_LOG_INFO(log, "new upload()");
 	uploader.upload(ReinitData(43));
-	uploader.ensure_connected();
 
 	auto my_reinit_data_2 = ReinitData(44);
+	RCF_LOG_INFO(log, "new upload(rvalue)");
 	uploader.upload(std::move(my_reinit_data_2));
-	uploader.ensure_connected();
 
 	my_reinit_data = ReinitData(45);
 
 	RCF_LOG_INFO(log, "request_reinit()");
 	poor_mans_assert(client.request_reinit(), ReinitData(44));
 
+	RCF_LOG_INFO(log, "request_reinit() again should not trigger new upload");
+	poor_mans_assert(client.request_reinit(), ReinitData(44));
+
 	uploader.wait();
 
-	return 0;
+	RCF_LOG_INFO(log, "TEST SUCCESSFUL");
 }
