@@ -50,8 +50,9 @@ void serialize(SF::Archive& ar, ReinitData& data)
 
 
 RCF_BEGIN(I_OnDemandReload, "I_OnDemandReload")
-RCF_METHOD_R0(bool, notify_new_reinit)
-RCF_METHOD_V1(void, upload_new_reinit, ReinitData)
+RCF_METHOD_V1(void, notify_new_reinit, std::size_t)
+RCF_METHOD_R1(bool, pending_new_reinit, std::size_t)
+RCF_METHOD_V2(void, upload_new_reinit, ReinitData, std::size_t)
 RCF_METHOD_R0(ReinitData, request_reinit)
 RCF_END(I_OnDemandReload)
 

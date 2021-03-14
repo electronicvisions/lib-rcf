@@ -2,9 +2,12 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <deque>
 #include <functional>
 #include <memory>
+#include <random>
 #include <thread>
+#include <unordered_set>
 
 #include <RCF/RCF.hpp>
 
@@ -32,6 +35,9 @@ namespace rcf_extensions {
  *   returned (or `false` if it does not need the data anymore).
  * * An `upload(data)`-method that actually sends the data to the server.
  *
+ * Data is offered to be uploaded in the loop to ensure the server side
+ * receives the reinit.
+ *
  * @tparam RcfClientT The `RcfClient<INTERFACE>` from the interface in use.
  * @tparam UploadDataT The data type that is being uploaded.
  *
@@ -47,8 +53,9 @@ public:
 	using upload_data_shared_ptr_t = std::shared_ptr<upload_data_t>;
 
 	using f_create_client_shared_ptr_t = std::function<client_shared_ptr_t()>;
-	using f_notify_upload = RCF::FutureConverter<bool> (client_t::*)(RCF::CallOptions const&);
-	using f_perform_upload = RCF::FutureConverter<RCF::Void> (client_t::*)(UploadDataT);
+	using f_notify_t = RCF::FutureConverter<RCF::Void> (client_t::*)(std::size_t);
+	using f_pending_t = RCF::FutureConverter<bool> (client_t::*)(std::size_t);
+	using f_upload_t = RCF::FutureConverter<RCF::Void> (client_t::*)(UploadDataT, std::size_t);
 
 	/**
 	 * Create a new OnDemandUpload-instance by providing the required methods.
@@ -60,15 +67,20 @@ public:
 	 * `getClientStub().setRequestUserData(user_data)` if needed.
 	 *
 	 * @param func_notify Member-method pointer of
-	 * `OnDemandUpload::client_t` that performs the notification.
+	 * `OnDemandUpload::client_t` that performs the notification, returns immediately.
+	 *
+	 * @param func_pending Member-method pointer of `OnDemandUpload::client_t`
+	 * that blocks on the server side until the upload is required, return
+	 * value indicates if upload should be performed.
 	 *
 	 * @param func_upload Member-method pointer of
 	 * `OnDemandUpload::client_t` that performs the data upload.
 	 */
 	OnDemandUpload(
 	    f_create_client_shared_ptr_t&& func_create,
-	    f_notify_upload func_notify,
-	    f_perform_upload func_upload);
+	    f_notify_t func_notify,
+	    f_pending_t func_pending,
+	    f_upload_t func_upload);
 
 	OnDemandUpload(OnDemandUpload&&) = delete;
 	OnDemandUpload(OnDemandUpload const&) = delete;
@@ -97,22 +109,6 @@ public:
 	bool holds_data();
 
 	/**
-	 * Exponential wait for connection to be established.
-	 *
-	 * Once this function returns we can be sure the server was notified.
-	 *
-	 * @param wait_interval_max The maximum amount of time to wait between checks.
-	 */
-	void ensure_connected(std::chrono::seconds wait_interval_max = std::chrono::seconds(1));
-
-	/**
-	 * Check if this instance is connected to the remote site.
-	 *
-	 * @return If this instance is connected to the remote site.
-	 */
-	bool is_connected();
-
-	/**
 	 * Abort upload.
 	 */
 	void abort();
@@ -130,23 +126,73 @@ private:
 	 */
 	void upload(upload_data_shared_ptr_t const& upload_data_ptr);
 
-	void prepare_new_upload(upload_data_shared_ptr_t const& upload_data_ptr);
+	void prepare_new_upload();
+
+	/**
+	 * Loop for a single upload.
+	 *
+	 * The upload loop has a local copy of its unique id to distinguish if it
+	 * is still up-to-date. This is due to the fact that we only abort pending
+	 * remote calls in RCF via the progress callback, i.e. in long intervals
+	 * and not immediately.
+	 *
+	 * We avoid that by signalling the thread to abort via stop token and
+	 * detaching it so that it can finish on its own within one callback
+	 * period.
+	 *
+	 * However, there might be race conditions in notification/upload flags
+	 * might be overwritten despite the upload not being up-to-date.
+	 *
+	 * Ergo, we supply each thread with its unique id so that it can check on
+	 * its own.
+	 */
+	void loop_upload(std::stop_token st, upload_data_shared_ptr_t, std::size_t unique_id);
+
+	void join_loop_upload();
+
+	/**
+	 * Check all stopped threads for termination.
+	 *
+	 * This is necessary because RCF only allows terminating running calls in
+	 * fixed intervals via callback.
+	 *
+	 * @param join_all If true, we join all threads.
+	 */
+	void trim_stopped_threads(bool join_all);
+
+	// connect a client to remote
+	client_shared_ptr_t connect(std::stop_token);
+
+	void reset_unique_id();
 
 	log4cxx::Logger* m_log;
 
-	client_shared_ptr_t m_client;
-	std::shared_ptr<UploadDataT> m_upload_data;
 	// m_request needs to be a unique_ptr because we need to defer its default
 	// construction until we have initialized RCF
 	std::unique_ptr<RCF::Future<bool>> m_request;
 
 	f_create_client_shared_ptr_t m_f_create_client;
-	f_notify_upload m_f_notify_upload;
-	f_perform_upload m_f_perform_upload;
+	f_notify_t m_f_notify;
+	f_pending_t m_f_pending;
+	f_upload_t m_f_upload;
 
-	std::mutex m_mutex_is_uploaded;
+	std::mutex m_mutex_loop_upload;
 	bool m_is_uploaded;
-	std::condition_variable m_cv_notify_is_uploaded;
+	bool m_is_notified;
+	std::condition_variable m_cv_wait_for_finish;
+
+	std::jthread m_thread_loop_upload;
+	std::deque<std::jthread> m_threads_stopped;
+	std::mutex m_mutex_safe_to_join;
+	std::unordered_set<std::thread::id> m_threads_safe_to_join;
+
+	std::size_t m_unique_id;
+
+	static constexpr std::size_t num_errors_max = 10;
+	// Period with which the client checks if he should terminate.
+	static constexpr auto period_client_progress_callback = std::chrono::milliseconds(1000);
+	// Delay to wait after an error occurs
+	static constexpr auto delay_after_error = std::chrono::milliseconds(1000);
 };
 
 } // namespace rcf_extensions

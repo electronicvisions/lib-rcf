@@ -21,7 +21,7 @@ namespace rcf_extensions {
 class DeferredUpload
 {
 public:
-	using rcf_context_t = RCF::RemoteCallContext<bool>;
+	using rcf_context_t = RCF::RemoteCallContext<bool, std::size_t>;
 
 	DeferredUpload() : m_log{log4cxx::Logger::getLogger("DeferredUpload")}, m_lock{m_mutex_deferred}
 	{
