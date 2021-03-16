@@ -10,7 +10,6 @@
 #include "hate/track_modifications.h"
 
 #include "rcf-extensions/adjust-ulimit.h"
-#include "rcf-extensions/deferred-upload.h"
 #include "rcf-extensions/detail/round-robin-scheduler/work-methods.h"
 #include "rcf-extensions/logging.h"
 
@@ -32,9 +31,9 @@ public:
 	using session_id_t = typename work_methods<worker_t>::session_id_t;
 	using work_package_t = typename work_methods<worker_t>::work_package_t;
 
-	using deferred_upload_t = rcf_extensions::DeferredUpload;
-
 	using reinit_data_cref_t = std::reference_wrapper<reinit_data_t const>;
+
+	using pending_context_t = RCF::RemoteCallContext<bool, std::size_t>;
 
 	using mutex_t = std::shared_mutex;
 
@@ -104,7 +103,7 @@ public:
 	 * Please note that this function returning nullopt does _not_ mean that no
 	 * reinit is needed, but merely that it is not available yet.
 	 *
-     * @param session_id The session for which to get reinit
+	 * @param session_id The session for which to get reinit
 	 * @param grace_period optional grace period to wait for reinit
 	 * @return optional indicating whether correct reinit data is available.
 	 */
@@ -183,9 +182,9 @@ private:
 	mutable mutex_t m_mutex;
 
 	// the current not-yet-uploaded reinit data for each session that has one registered
-	using session_to_reinit_notify_t =
-	    std::unordered_map<session_id_t, std::unique_ptr<deferred_upload_t>>;
-	session_to_reinit_notify_t m_session_to_deferred;
+	using session_to_reinit_pending_t =
+	    std::unordered_map<session_id_t, std::unique_ptr<pending_context_t>>;
+	session_to_reinit_pending_t m_session_to_deferred;
 
 	// the current already-uploaded reinit data for each session that has one registered
 	using session_to_reinit_data_t = std::unordered_map<session_id_t, reinit_data_t>;
@@ -268,6 +267,12 @@ private:
 	bool reinit_is_up_to_date_while_locked(session_id_t const& session_id) const;
 
 	void register_new_session_while_locked(session_id_t const& session_id);
+
+	void abort_pending_upload_while_locked(session_id_t const& session_id);
+
+	void request_pending_upload_while_locked(session_id_t const& session_id);
+
+	void signal_pending_upload_while_locked(session_id_t const& session_id, bool);
 
 	std::size_t get_total_refcount_while_locked() const;
 };

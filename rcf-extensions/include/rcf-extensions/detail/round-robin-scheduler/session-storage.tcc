@@ -2,6 +2,7 @@
 #include "hate/unordered_map.h"
 #include "rcf-extensions/detail/round-robin-scheduler/session-storage.h"
 #include <deque>
+#include <thread>
 #include <RCF/RCF.hpp>
 
 namespace rcf_extensions::detail::round_robin_scheduler {
@@ -72,9 +73,11 @@ bool SessionStorage<W>::reinit_handle_pending(session_id_t const& session_id, st
 		RCF_LOG_TRACE(
 		    m_log,
 		    "Handling pending() for reinit id " << reinit_id << " in session: " << session_id);
-		// clear previous init data if it exists
 		m_session_to_reinit_id_pending[session_id] = reinit_id;
-		m_session_to_deferred[session_id] = std::make_unique<DeferredUpload>();
+		// clear previous init data if it exists
+		abort_pending_upload_while_locked(session_id);
+		m_session_to_deferred[session_id] =
+		    std::make_unique<pending_context_t>(RCF::getCurrentRcfSession());
 		return true;
 	} else {
 		RCF_LOG_WARN(
@@ -97,7 +100,6 @@ void SessionStorage<W>::reinit_store(
 		    m_log, "Storing reinit data with id " << reinit_id << " for session: " << session_id);
 		m_session_to_reinit_data[session_id] = std::move(data);
 		m_session_to_reinit_id_stored[session_id] = reinit_id;
-		m_session_to_deferred.erase(session_id);
 	} else {
 		RCF_LOG_WARN(
 		    m_log, "Got unexpected reinit request for session: " << session_id << " -> ignoring.");
@@ -114,7 +116,8 @@ void SessionStorage<W>::erase_session_while_locked(session_id_t const& session_i
 	m_session_to_refcount.erase(session_id);
 
 	m_session_to_reinit_data.erase(session_id);
-	m_session_to_deferred.erase(session_id);
+	abort_pending_upload_while_locked(session_id);
+
 	m_session_to_reinit_id_notified.erase(session_id);
 	m_session_to_reinit_id_pending.erase(session_id);
 	m_session_to_reinit_id_stored.erase(session_id);
@@ -164,8 +167,7 @@ void SessionStorage<W>::reinit_request(session_id_t const& session_id)
 	    reinit_is_pending_while_locked(session_id) &&
 	    !(reinit_is_requested_while_locked(session_id))) {
 		RCF_LOG_TRACE(m_log, "Requesting pending upload " << session_id);
-		m_session_to_deferred[session_id]->request();
-
+		request_pending_upload_while_locked(session_id);
 	} else {
 		RCF_LOG_TRACE(m_log, "Could not request reinit for session " << session_id);
 	}
@@ -179,8 +181,7 @@ bool SessionStorage<W>::reinit_is_requested_while_locked(session_id_t const& ses
 
 	return (
 	    id_notified && id_pending && (*id_notified == *id_pending) &&
-	    m_session_to_deferred.contains(session_id) &&
-	    m_session_to_deferred.at(session_id)->was_requested());
+	    !m_session_to_deferred.contains(session_id));
 }
 
 template <typename W>
@@ -379,6 +380,35 @@ std::size_t SessionStorage<W>::get_total_refcount_while_locked() const
 		sum += *(refcount.second);
 	}
 	return sum;
+}
+
+template <typename W>
+void SessionStorage<W>::abort_pending_upload_while_locked(session_id_t const& session_id)
+{
+	signal_pending_upload_while_locked(session_id, false);
+}
+
+template <typename W>
+void SessionStorage<W>::request_pending_upload_while_locked(session_id_t const& session_id)
+{
+	signal_pending_upload_while_locked(session_id, true);
+}
+
+template <typename W>
+void SessionStorage<W>::signal_pending_upload_while_locked(
+    session_id_t const& session_id, bool value)
+{
+	auto context = hate::get(m_session_to_deferred, session_id);
+	if (context) {
+		// std::optional -> std::reference_wrapper -> std::unique_ptr
+		pending_context_t pending{*(*context).get()};
+		std::thread dispatch{[=]() mutable {
+			pending.parameters().r.set(value);
+			pending.commit();
+		}};
+		dispatch.detach();
+	}
+	m_session_to_deferred.erase(session_id);
 }
 
 } // namespace rcf_extensions::detail::round_robin_scheduler

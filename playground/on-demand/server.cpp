@@ -13,7 +13,6 @@
 
 #include <RCF/RCF.hpp>
 
-#include "rcf-extensions/deferred-upload.h"
 #include "rcf-extensions/logging.h"
 
 #include "interface.hpp"
@@ -23,6 +22,8 @@ using namespace std::chrono_literals;
 class OnDemandReload
 {
 public:
+	using pending_context_t = RCF::RemoteCallContext<bool, std::size_t>;
+
 	OnDemandReload() : m_log{log4cxx::Logger::getLogger("OnDemandReload")}, m_is_set_up{true} {};
 
 	~OnDemandReload()
@@ -77,7 +78,7 @@ public:
 				    m_log, "pending_new_reinit() current reinit with id "
 				               << id << ". Keep pending for upload..");
 				m_reinit_id_pending = id;
-				m_upload = std::make_unique<rcf_extensions::DeferredUpload>();
+				m_upload = std::make_unique<pending_context_t>(RCF::getCurrentRcfSession());
 				RCF_LOG_TRACE(m_log, "Async call returning.");
 				return true;
 			}
@@ -131,7 +132,9 @@ public:
 				throw std::runtime_error(msg);
 			} else {
 				RCF_LOG_TRACE(log, "Requesting upload..");
-				m_upload->request();
+				m_upload->parameters().r.set(true);
+				m_upload->commit();
+				m_upload.reset();
 			}
 			RCF_LOG_TRACE(log, "Sleeping..");
 			m_cv_upload.wait_for(lk, 100ms);
@@ -157,7 +160,7 @@ private:
 	log4cxx::Logger* m_log;
 	std::mutex m_mutex_upload;
 	std::condition_variable m_cv_upload;
-	std::unique_ptr<rcf_extensions::DeferredUpload> m_upload;
+	std::unique_ptr<pending_context_t> m_upload;
 	std::unique_ptr<ReinitData> m_received_reinit;
 	std::size_t m_reinit_id_notified;
 	std::size_t m_reinit_id_pending;
