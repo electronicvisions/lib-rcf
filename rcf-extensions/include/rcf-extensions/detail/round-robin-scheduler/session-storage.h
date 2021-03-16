@@ -104,9 +104,13 @@ public:
 	 * Please note that this function returning nullopt does _not_ mean that no
 	 * reinit is needed, but merely that it is not available yet.
 	 *
+     * @param session_id The session for which to get reinit
+	 * @param grace_period optional grace period to wait for reinit
 	 * @return optional indicating whether correct reinit data is available.
 	 */
-	std::optional<reinit_data_cref_t> reinit_get(session_id_t const& session_id);
+	std::optional<reinit_data_cref_t> reinit_get(
+	    session_id_t const& session_id,
+	    std::optional<std::chrono::milliseconds> grace_period = std::nullopt);
 
 	/**
 	 * Adjust the given sessions sequence number.
@@ -208,6 +212,9 @@ private:
 
 	using session_to_sequence_num_t = std::unordered_map<session_id_t, SequenceNumber>;
 	session_to_sequence_num_t m_session_to_sequence_num;
+
+	// condition variable that gets notified whenever a new reinit-program gets uploaded
+	std::condition_variable_any m_cv_new_reinit;
 
 	std::size_t m_max_sessions;
 

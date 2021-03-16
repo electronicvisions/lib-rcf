@@ -102,6 +102,8 @@ void SessionStorage<W>::reinit_store(
 		RCF_LOG_WARN(
 		    m_log, "Got unexpected reinit request for session: " << session_id << " -> ignoring.");
 	}
+	// notify possibly waiting process if reinit was explicitly requested
+	m_cv_new_reinit.notify_all();
 }
 
 template <typename W>
@@ -197,7 +199,7 @@ void SessionStorage<W>::reinit_set_needed(session_id_t const& session_id)
 
 template <typename W>
 std::optional<typename SessionStorage<W>::reinit_data_cref_t> SessionStorage<W>::reinit_get(
-    session_id_t const& session_id)
+    session_id_t const& session_id, std::optional<std::chrono::milliseconds> grace_period)
 {
 	auto lk = lock_shared();
 	if (reinit_is_up_to_date_while_locked(session_id)) {
@@ -208,7 +210,21 @@ std::optional<typename SessionStorage<W>::reinit_data_cref_t> SessionStorage<W>:
 		// If there is a pending request -> request it and move to next
 		lk.unlock();
 		reinit_request(session_id);
-		return std::nullopt;
+		lk.lock();
+		// Wait a short amount of time for the reinit
+		// TODO make adjustable
+		if (!grace_period) {
+			return std::nullopt;
+		} else {
+			m_cv_new_reinit.wait_for(lk, *grace_period);
+			if (reinit_is_up_to_date_while_locked(session_id)) {
+				RCF_LOG_TRACE(m_log, "Getting reinit for session: " << session_id)
+				return hate::cget(m_session_to_reinit_data, session_id);
+			} else {
+				return std::nullopt;
+			}
+		}
+
 	} else {
 		return std::nullopt;
 	}
