@@ -23,8 +23,6 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 	auto lk = wtr_t::lock();
 	RCF_LOG_TRACE(wtr_t::m_log, "Worker starting up.");
 
-	auto idle_period_exponential = 10ms;
-
 	while (!st.stop_requested()) {
 		RCF_LOG_TRACE(wtr_t::m_log, "New loop.");
 		// teardown needs to be done periodically
@@ -37,29 +35,20 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 		if (wtr_t::m_input.is_empty()) {
 			wtr_t::set_idle();
 			if (wtr_t::m_is_set_up) {
-				auto delay =
-				    std::min(idle_period_exponential, wtr_t::get_time_till_next_teardown());
-				// worker is still set up so we can only sleep until the next release
-				RCF_LOG_TRACE(
-				    wtr_t::m_log,
-				    "Sleeping while worker still set up for "
-				        << std::chrono::duration_cast<std::chrono::milliseconds>(delay).count()
-				        << "ms.");
-				wtr_t::m_cv.wait_for(lk, st, delay, [this, st] {
-					return st.stop_requested() || !wtr_t::m_input.is_empty();
-				});
+				RCF_LOG_TRACE(wtr_t::m_log, "Sleeping while worker still set up.");
+				while (!wtr_t::is_teardown_needed() && wtr_t::m_input.is_empty() &&
+				       !st.stop_requested()) {
+					// We need to active wait because otherwise there is a chance to miss new work
+					wtr_t::m_cv.wait_for(lk, std::min(100ms, wtr_t::get_time_till_next_teardown()));
+				}
 				RCF_LOG_TRACE(wtr_t::m_log, "Woke up while worker still set up.");
 			} else {
 				// no work to be done -> sleep until needed
-				RCF_LOG_TRACE(
-				    wtr_t::m_log, "Sleeping while worker NOT set up for "
-				                      << std::chrono::duration_cast<std::chrono::milliseconds>(
-				                             idle_period_exponential)
-				                             .count()
-				                      << "ms.");
-				wtr_t::m_cv.wait_for(lk, st, idle_period_exponential, [this, st] {
-					return st.stop_requested() || !wtr_t::m_input.is_empty();
-				});
+				RCF_LOG_TRACE(wtr_t::m_log, "Sleeping while worker NOT set up.");
+				while (wtr_t::m_input.is_empty() && !st.stop_requested()) {
+					// We need to active wait because otherwise there is a chance to miss new work
+					wtr_t::m_cv.wait_for(lk, 100ms);
+				}
 				RCF_LOG_TRACE(wtr_t::m_log, "Woke up while worker NOT set up.");
 			}
 		}
@@ -74,12 +63,9 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 
 		if (wtr_t::m_input.is_empty()) {
 			// no work to do -> do not advance
-			idle_period_exponential *= 2;
 			continue;
 		}
 		wtr_t::reset_last_idle();
-		// reset exponential waiting period
-		idle_period_exponential = 10ms;
 
 		work_package_t pkg =
 		    wtr_t::m_input.retrieve_work(m_session_storage.get_heap_sorter_most_completed());
@@ -194,7 +180,7 @@ template <typename W>
 void WorkerThreadReinit<W>::requeue_work_package(work_package_t&& pkg)
 {
 	using namespace std::chrono_literals;
-	RCF_LOG_TRACE(wtr_t::m_log, "Requeueing: " << pkg);
+	RCF_LOG_TRACE(wtr_t::m_log, "[" << pkg.session_id << "] Requeueing #" << *(pkg.sequence_num));
 	wtr_t::m_input.advance_user();
 	std::jthread(
 	    [this](work_package_t&& pkg) {

@@ -1,5 +1,6 @@
 #include "rcf-extensions/detail/round-robin-scheduler/worker-thread.h"
 #include "rcf-extensions/logging.h"
+#include <atomic>
 
 namespace rcf_extensions::detail::round_robin_scheduler {
 
@@ -51,6 +52,14 @@ std::chrono::milliseconds WorkerThread<W>::get_time_till_next_teardown() const
 }
 
 template <typename W>
+void WorkerThread<W>::notify()
+{
+	std::atomic_thread_fence(std::memory_order_release);
+	RCF_LOG_TRACE(m_log, "Notifying..");
+	m_cv.notify_one();
+}
+
+template <typename W>
 void WorkerThread<W>::main_thread(std::stop_token st)
 {
 	auto lk = lock();
@@ -68,14 +77,13 @@ void WorkerThread<W>::main_thread(std::stop_token st)
 			set_idle();
 			if (is_set_up()) {
 				// worker is still set up so we can only sleep until the next release
-				m_cv.wait_for(lk, st, get_time_till_next_teardown(), [this, st] {
+				m_cv.wait_for(lk, get_time_till_next_teardown(), [this, st] {
 					return st.stop_requested() || !m_input.is_empty();
 				});
 				RCF_LOG_TRACE(m_log, "Woke up while worker still set up.");
 			} else {
 				// no work to be done -> sleep until needed
-				m_cv.wait(
-				    lk, st, [this, st] { return st.stop_requested() || !m_input.is_empty(); });
+				m_cv.wait(lk, [this, st] { return st.stop_requested() || !m_input.is_empty(); });
 				RCF_LOG_TRACE(m_log, "Woke up while worker NOT set up.");
 			}
 		}
