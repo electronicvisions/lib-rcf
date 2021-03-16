@@ -222,27 +222,6 @@ private:
 	std::condition_variable_any m_cv_session_cleanup;
 	std::jthread m_session_cleanup;
 
-	/**
-	 * Exclusive ownwership when modifying.
-	 */
-	auto lock() const
-	{
-		return std::unique_lock<mutex_t>{m_mutex};
-	}
-
-	/**
-	 * Shared ownwership when reading.
-	 */
-	auto lock_shared() const
-	{
-		return std::shared_lock<mutex_t>{m_mutex};
-	}
-
-	auto lock_guard() const
-	{
-		return std::lock_guard<mutex_t>{m_mutex};
-	}
-
 	void erase_session_while_locked(session_id_t const& session_id);
 
 	bool reinit_is_requested_while_locked(session_id_t const& session_id) const;
