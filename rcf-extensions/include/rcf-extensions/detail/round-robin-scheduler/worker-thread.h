@@ -64,11 +64,7 @@ public:
 	/**
 	 * Notify worker about new work to be performed.
 	 */
-	void notify()
-	{
-		RCF_LOG_TRACE(m_log, "Notifying..");
-		m_cv.notify_one();
-	}
+	void notify();
 
 	auto get_last_idle() const
 	{
@@ -141,7 +137,7 @@ protected:
 
 	std::jthread m_thread;
 	mutable std::mutex m_mutex;
-	std::condition_variable_any m_cv;
+	std::condition_variable m_cv;
 
 	std::chrono::system_clock::time_point m_last_release;
 	std::chrono::system_clock::time_point m_last_idle;
