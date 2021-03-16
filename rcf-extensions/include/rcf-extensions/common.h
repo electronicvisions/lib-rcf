@@ -1,9 +1,9 @@
 #pragma once
 
+#include "rcf-extensions/logging.h"
 #include <exception>
 #include <sstream>
 #include <string>
-
 #include <RCF/RCF.hpp>
 
 namespace rcf_extensions {
@@ -69,8 +69,12 @@ private:
 template <typename... Args, typename VerifierT>
 auto get_verified_user_data(VerifierT& verifier)
 {
+	static auto log = log4cxx::Logger::getLogger("lib-rcf.get_verified_user_data");
+	RCF_LOG_TRACE(log, "Getting current RCF session.");
 	std::string user_data = RCF::getCurrentRcfSession().getRequestUserData();
+	RCF_LOG_TRACE(log, "Verifying user data.");
 	auto verified_user_session_id = verifier.verify_user(user_data);
+	RCF_LOG_TRACE(log, "User data verified.");
 
 	if (!verified_user_session_id) {
 		RCF::RemoteCallContext<Args...> context(RCF::getCurrentRcfSession());

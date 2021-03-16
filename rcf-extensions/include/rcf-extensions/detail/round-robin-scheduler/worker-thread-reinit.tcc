@@ -100,7 +100,7 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 
 		typename wtr_t::work_context_t context{std::move(pkg.context)};
 
-		RCF_LOG_TRACE(wtr_t::m_log, "Executing: " << pkg);
+		RCF_LOG_DEBUG(wtr_t::m_log, "Executing: " << pkg);
 		auto work = context.parameters().a1.get();
 
 		wtr_t::set_busy();
@@ -144,7 +144,7 @@ template <typename W>
 bool WorkerThreadReinit<W>::ensure_session_via_reinit(work_package_t const& pkg)
 {
 	if (!m_current_session_id || pkg.session_id != *m_current_session_id) {
-		auto log_trace = [this, &pkg](auto& session_id) {
+		auto log_trace = [this, &pkg]([[maybe_unused]] auto& session_id) {
 			RCF_LOG_TRACE(
 			    wtr_t::m_log, "Switching session from " << session_id << " to " << pkg.user_id
 			                                            << "@" << pkg.session_id << ".");
