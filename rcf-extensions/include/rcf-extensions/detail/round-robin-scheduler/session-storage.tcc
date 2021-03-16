@@ -1,6 +1,7 @@
 
 #include "hate/unordered_map.h"
 #include "rcf-extensions/detail/round-robin-scheduler/session-storage.h"
+#include <deque>
 #include <RCF/RCF.hpp>
 
 namespace rcf_extensions::detail::round_robin_scheduler {
@@ -16,10 +17,16 @@ SessionStorage<W>::SessionStorage() :
 		    m_cv_session_cleanup.wait_for(
 		        lk, m_session_timeout, [&] { return st.stop_requested(); });
 		    RCF_LOG_TRACE(logger, "Performing cleanup..");
-		    std::erase_if(m_session_to_refcount, [&timeout(m_session_timeout)](auto const& item) {
-			    auto const& [session_id, refcount] = item;
-			    return (*refcount == 0) && refcount.is_elapsed(timeout);
-		    });
+		    // TODO make better use of <algorithm>
+		    std::deque<session_id_t> old_sessions;
+		    for (auto const& [session_id, refcount] : m_session_to_refcount) {
+			    if ((*refcount == 0) && refcount.is_elapsed(m_session_timeout)) {
+				    old_sessions.push_back(session_id);
+			    }
+		    }
+		    for (auto const& session_id : old_sessions) {
+			    erase_session_while_locked(session_id);
+		    }
 	    }
     })
 {
