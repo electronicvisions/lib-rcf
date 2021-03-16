@@ -41,16 +41,6 @@ public:
 	InputQueue(InputQueue&&) = delete;
 	~InputQueue();
 
-	auto lock() const
-	{
-		return std::unique_lock<std::mutex>(m_mutex);
-	}
-
-	auto lock_guard() const
-	{
-		return std::lock_guard<std::mutex>(m_mutex);
-	}
-
 	/**
 	 * Add the given work package to the queue.
 	 *
@@ -130,7 +120,7 @@ private:
 	using user_to_queue_t = std::unordered_map<user_id_t, queue_t>;
 	user_to_queue_t m_user_to_input_queue;
 	using user_to_mutex_t = std::unordered_map<user_id_t, std::unique_ptr<std::mutex>>;
-	user_to_mutex_t m_user_to_mutex;
+	user_to_mutex_t mutable m_user_to_mutex;
 
 	using user_list_t = typename std::list<user_id_t>;
 	using user_list_citer_t = typename user_list_t::const_iterator;
