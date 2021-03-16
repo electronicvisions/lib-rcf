@@ -16,7 +16,7 @@ template <typename W>
 InputQueue<W>::~InputQueue()
 {
 	RCF_LOG_TRACE(m_log, "Shutting down..");
-	auto const lk = lock_guard();
+	std::lock_guard const lk{m_mutex};
 	if (!is_empty_while_locked()) {
 		RCF_LOG_ERROR(m_log, "Work left in input queue on shutdown, this should not happen!");
 	}
@@ -27,7 +27,7 @@ template <typename W>
 template <typename SorterT>
 void InputQueue<W>::add_work(work_package_t&& pkg, SorterT const& sorter)
 {
-	auto lk = lock();
+	std::unique_lock lk{m_mutex};
 
 	// check job count for user and add new user queue if no previous jobs exist
 	RCF_LOG_TRACE(m_log, "Adding new work for user " << pkg.user_id);
@@ -47,7 +47,7 @@ void InputQueue<W>::add_work(work_package_t&& pkg, SorterT const& sorter)
 		reset_last_user_switch_while_locked();
 	}
 
-	std::lock_guard<std::mutex> user_lk(*m_user_to_mutex[user_id]);
+	std::lock_guard user_lk(*m_user_to_mutex[user_id]);
 	queue_t& user_queue = m_user_to_input_queue.at(user_id);
 	lk.unlock();
 
@@ -66,7 +66,7 @@ template <typename W>
 template <typename SorterT>
 typename InputQueue<W>::work_package_t InputQueue<W>::retrieve_work(SorterT const& sorter)
 {
-	auto lk = lock();
+	std::unique_lock lk{m_mutex};
 
 	// there should always be work to retrieve, because otherwise we do not
 	// leave the while loop in worker_main_thread()
@@ -94,7 +94,7 @@ typename InputQueue<W>::work_package_t InputQueue<W>::retrieve_work(SorterT cons
 		RCF_LOG_DEBUG(m_log, ss.str());
 	}
 
-	std::lock_guard<std::mutex> lk_user(*m_user_to_mutex[current_user_id]);
+	std::lock_guard lk_user(*m_user_to_mutex[current_user_id]);
 	queue_t& queue = m_user_to_input_queue[current_user_id];
 	lk.unlock();
 
@@ -113,7 +113,7 @@ typename InputQueue<W>::work_package_t InputQueue<W>::retrieve_work(SorterT cons
 template <typename W>
 bool InputQueue<W>::is_empty() const
 {
-	auto lk = lock_guard();
+	std::lock_guard const lk{m_mutex};
 	return is_empty_while_locked();
 }
 
@@ -123,14 +123,21 @@ bool InputQueue<W>::is_empty_while_locked() const
 	// The current user might have a queue size of zero as their queue only gets deleted once we
 	// switch FROM the users
 	// -> ergo, if we have more than one user there is work left to do
-	return m_user_list.size() == 0 ||
-	       (m_user_list.size() == 1 && m_user_to_input_queue.at(*m_it_current_user).size() == 0);
+	if (m_user_list.size() == 0) {
+		return true;
+	} else if (m_user_list.size() == 1) {
+		// acquire lock on user queue to check how many jobs there are
+		std::lock_guard user_lk{*m_user_to_mutex[*m_it_current_user]};
+		return m_user_to_input_queue.at(*m_it_current_user).size() == 0;
+	} else {
+		return false;
+	}
 }
 
 template <typename W>
 void InputQueue<W>::advance_user()
 {
-	auto const lk = lock_guard();
+	std::lock_guard const lk{m_mutex};
 	advance_user_while_locked();
 }
 
@@ -158,7 +165,7 @@ void InputQueue<W>::advance_user_while_locked()
 	reset_last_user_switch_while_locked();
 
 	// check if the old user has no jobs left
-	std::unique_lock<std::mutex> user_lk{*m_user_to_mutex[*citer_previous_user]};
+	std::unique_lock user_lk{*m_user_to_mutex[*citer_previous_user]};
 	if (m_user_to_input_queue[*citer_previous_user].size() == 0) {
 		RCF_LOG_DEBUG(
 		    m_log, "No jobs left for " << (*citer_previous_user) << ".. removing from queue.");
@@ -175,7 +182,7 @@ void InputQueue<W>::advance_user_while_locked()
 template <typename W>
 void InputQueue<W>::reset_timeout_user_switch()
 {
-	auto const lk = lock_guard();
+	std::lock_guard const lk{m_mutex};
 	reset_last_user_switch_while_locked();
 }
 
@@ -215,7 +222,7 @@ void InputQueue<W>::ensure_heap_while_locked(queue_t& queue, SorterT const& sort
 template <typename W>
 std::size_t InputQueue<W>::get_total_job_count() const
 {
-	auto const lk = lock_guard();
+	std::lock_guard const lk{m_mutex};
 	return get_total_job_count_while_locked();
 }
 
