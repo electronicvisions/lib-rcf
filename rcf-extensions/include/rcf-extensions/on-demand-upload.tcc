@@ -11,7 +11,7 @@ OnDemandUpload<RcfClientT, UploadDataT>::OnDemandUpload(
     f_notify_t func_notify,
     f_pending_t func_pending,
     f_upload_t func_upload) :
-    m_log(log4cxx::Logger::getLogger("OnDemandUpload")),
+    m_log(log4cxx::Logger::getLogger("lib-rcf.OnDemandUpload")),
     m_f_create_client(std::move(func_create)),
     m_f_notify(func_notify),
     m_f_pending(func_pending),
@@ -83,7 +83,7 @@ template <typename RcfClientT, typename UploadDataT>
 void OnDemandUpload<RcfClientT, UploadDataT>::loop_upload(
     std::stop_token st, upload_data_shared_ptr_t upload_data, std::size_t unique_id)
 {
-	auto log = log4cxx::Logger::getLogger("OnDemandUpload.loop_upload");
+	auto log = log4cxx::Logger::getLogger("lib-rcf.OnDemandUpload.loop_upload");
 	client_shared_ptr_t client;
 	std::size_t num_errors = 0;
 	bool stop_flag = false;
