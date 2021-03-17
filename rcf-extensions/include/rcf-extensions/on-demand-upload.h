@@ -177,8 +177,8 @@ private:
 	f_upload_t m_f_upload;
 
 	std::mutex m_mutex_loop_upload;
-	bool m_is_uploaded;
-	bool m_is_notified;
+	std::atomic_bool m_is_uploaded;
+	std::atomic_bool m_is_notified;
 	std::condition_variable m_cv_wait_for_finish;
 
 	std::jthread m_thread_loop_upload;
