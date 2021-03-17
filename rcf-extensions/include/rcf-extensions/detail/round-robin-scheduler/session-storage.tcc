@@ -134,6 +134,8 @@ void SessionStorage<W>::ensure_registered(session_id_t const& session_id)
 	// SessionRegisteredToken tracks if we have checked this RcfSession before
 	if (session.querySessionObject<SessionRegistered>() != nullptr) {
 		RCF_LOG_TRACE(m_log, "Session already registered: " << session_id);
+		// refresh refcount to indicate session still valid
+		m_session_to_refcount[session_id].get();
 		return;
 	} else {
 		{
@@ -200,6 +202,7 @@ template <typename W>
 void SessionStorage<W>::reinit_set_needed(session_id_t const& session_id)
 {
 	std::lock_guard const lk{m_mutex};
+	RCF_LOG_TRACE(m_log, "[" << session_id << "] Setting reinit needed.");
 	m_session_reinit_needed.insert(session_id);
 }
 
@@ -251,11 +254,12 @@ bool SessionStorage<W>::reinit_is_up_to_date_while_locked(session_id_t const& se
 	auto const id_stored = hate::cget(m_session_to_reinit_id_stored, session_id);
 
 	RCF_LOG_TRACE(
-	    m_log, "Current reinit id state (notified/pending/stored/reinit_data): "
+	    m_log, "Current reinit id state (notified/pending/stored/reinit_data/deferred): "
 	               << (id_notified ? std::to_string(*id_notified) : std::string{"<undefined>"})
 	               << "/" << (id_pending ? std::to_string(*id_pending) : std::string{"<undefined>"})
 	               << "/" << (id_stored ? std::to_string(*id_stored) : std::string{"<undefined>"})
-	               << "/" << std::boolalpha << m_session_to_reinit_data.contains(session_id));
+	               << "/" << std::boolalpha << m_session_to_reinit_data.contains(session_id) << "/"
+	               << std::boolalpha << m_session_to_deferred.contains(session_id));
 
 	// All ids must match and the reinit data nees to exist!
 	return (
