@@ -170,6 +170,12 @@ private:
 	static constexpr auto m_session_timeout = 5min;
 
 	/**
+	 * Time after which a session that has not submitted any new workload is
+	 * erased regardless of refcount.
+	 */
+	static constexpr auto m_session_timeout_expire = 30min;
+
+	/**
 	 * Token to track if have the given session registered in our reference
 	 * counting and set its onDestroyCallback.
 	 *
