@@ -15,7 +15,9 @@ OnDemandUpload<RcfClientT, UploadDataT>::OnDemandUpload(
     m_f_create_client(std::move(func_create)),
     m_f_notify(func_notify),
     m_f_pending(func_pending),
-    m_f_upload(func_upload)
+    m_f_upload(func_upload),
+    m_is_uploaded(false),
+    m_is_notified(false)
 {
 	RCF::init();
 }
@@ -43,16 +45,18 @@ void OnDemandUpload<RcfClientT, UploadDataT>::upload(upload_data_t const& data)
 template <typename RcfClientT, typename UploadDataT>
 void OnDemandUpload<RcfClientT, UploadDataT>::wait()
 {
+	using namespace std::chrono_literals;
 	std::unique_lock lk{m_mutex_loop_upload};
-	if (!m_is_uploaded) {
-		m_cv_wait_for_finish.wait(lk, [&] { return m_is_uploaded; });
+	if (!m_is_uploaded.load(std::memory_order_acquire)) {
+		m_cv_wait_for_finish.wait_for(
+		    lk, 100ms, [&] { return m_is_uploaded.load(std::memory_order_acquire); });
 	}
 }
 
 template <typename RcfClientT, typename UploadDataT>
 bool OnDemandUpload<RcfClientT, UploadDataT>::holds_data()
 {
-    return m_is_notified;
+    return m_is_notified.load(std::memory_order_acquire);
 }
 
 template <typename RcfClientT, typename UploadDataT>
@@ -73,8 +77,9 @@ void OnDemandUpload<RcfClientT, UploadDataT>::upload(upload_data_shared_ptr_t co
 
 	RCF_LOG_TRACE(m_log, "Waiting for server to acknowledge reinit.");
 	std::unique_lock lk{m_mutex_loop_upload};
-	while (!m_is_notified) {
-		m_cv_wait_for_finish.wait(lk, [&] { return m_is_notified; });
+	while (!m_is_notified.load(std::memory_order_acquire)) {
+		m_cv_wait_for_finish.wait(
+		    lk, [&] { return m_is_notified.load(std::memory_order_acquire); });
 	}
 	RCF_LOG_TRACE(m_log, "Reinit acknowledged.");
 }
@@ -102,7 +107,7 @@ void OnDemandUpload<RcfClientT, UploadDataT>::loop_upload(
 				std::lock_guard lk{m_mutex_loop_upload};
 				// make sure that we only update if no other upload was started in the meantime
 				if (m_unique_id == unique_id) {
-					m_is_notified = true;
+					m_is_notified.store(true, std::memory_order_release);
 				}
 			}
 			m_cv_wait_for_finish.notify_all();
@@ -128,8 +133,8 @@ void OnDemandUpload<RcfClientT, UploadDataT>::loop_upload(
 				std::lock_guard lk{m_mutex_loop_upload};
 				// make sure that we only update if no other upload was started in the meantime
 				if (m_unique_id == unique_id) {
-					m_is_uploaded = true;
-					m_is_notified = true;
+					m_is_notified.store(true, std::memory_order_release);
+					m_is_uploaded.store(true, std::memory_order_release);
 				}
 				RCF_LOG_TRACE(log, "Upload completed.");
 			} else {
