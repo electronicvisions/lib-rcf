@@ -21,7 +21,10 @@ SessionStorage<W>::SessionStorage() :
 		    // TODO make better use of <algorithm>
 		    std::deque<session_id_t> old_sessions;
 		    for (auto const& [session_id, refcount] : m_session_to_refcount) {
-			    if ((*refcount == 0) && refcount.is_elapsed(m_session_timeout)) {
+			    RCF_LOG_TRACE(
+			        logger, "[Session: " << session_id << "] Current refcount: " << *refcount);
+			    if (((*refcount == 0) && refcount.is_elapsed(m_session_timeout)) ||
+			        refcount.is_elapsed(m_session_timeout_expire)) {
 				    old_sessions.push_back(session_id);
 			    }
 		    }
@@ -133,10 +136,17 @@ void SessionStorage<W>::ensure_registered(session_id_t const& session_id)
 	auto& session = RCF::getCurrentRcfSession();
 	// SessionRegisteredToken tracks if we have checked this RcfSession before
 	if (session.querySessionObject<SessionRegistered>() != nullptr) {
-		RCF_LOG_TRACE(m_log, "Session already registered: " << session_id);
-		// refresh refcount to indicate session still valid
-		m_session_to_refcount[session_id].get();
-		return;
+		std::lock_guard const lk{m_mutex};
+		auto refcount = hate::get(m_session_to_refcount, session_id);
+		if (refcount) {
+			RCF_LOG_TRACE(m_log, "Session already registered: " << session_id);
+			// refresh refcount to indicate session still valid
+			// std::optional -> std::reference_wrapper -> hate::TrackModifications
+			(*refcount).get().get();
+		} else {
+			RCF_LOG_TRACE(m_log, "Old session reactivated: " << session_id << " -> re-register.");
+			register_new_session_while_locked(session_id);
+		}
 	} else {
 		{
 			RCF_LOG_TRACE(m_log, "Preparing to update refcount: " << session_id);
@@ -152,8 +162,16 @@ void SessionStorage<W>::ensure_registered(session_id_t const& session_id)
 		session_id_t session_id_copy{session_id};
 		session.setOnDestroyCallback([session_id_copy, this](RCF::RcfSession&) {
 			std::lock_guard const lk{m_mutex};
-			RCF_LOG_TRACE(m_log, "Decreasing refcount for session " << session_id_copy);
-			--m_session_to_refcount[session_id_copy].get();
+			auto refcount = hate::get(m_session_to_refcount, session_id_copy);
+			if (refcount) {
+				RCF_LOG_TRACE(
+				    m_log, "Decreasing refcount for session "
+				               << session_id_copy << " [current: " << *((*refcount).get()) << "]");
+				// std::optional -> std::reference_wrapper -> hate::TrackModifications
+				--((*refcount).get().get());
+			} else {
+				RCF_LOG_WARN(m_log, "Refcount already deleted for: " << session_id_copy);
+			}
 		});
 		session.createSessionObject<SessionRegistered>();
 	}
@@ -173,7 +191,6 @@ void SessionStorage<W>::reinit_request(session_id_t const& session_id)
 	} else if (
 	    reinit_is_pending_while_locked(session_id) &&
 	    !(reinit_is_requested_while_locked(session_id))) {
-		RCF_LOG_TRACE(m_log, "Requesting pending upload " << session_id);
 		request_pending_upload_while_locked(session_id);
 	} else {
 		RCF_LOG_TRACE(m_log, "Could not request reinit for session " << session_id);
@@ -390,12 +407,14 @@ std::size_t SessionStorage<W>::get_total_refcount_while_locked() const
 template <typename W>
 void SessionStorage<W>::abort_pending_upload_while_locked(session_id_t const& session_id)
 {
+	RCF_LOG_TRACE(m_log, "Aborting pending upload: " << session_id);
 	signal_pending_upload_while_locked(session_id, false);
 }
 
 template <typename W>
 void SessionStorage<W>::request_pending_upload_while_locked(session_id_t const& session_id)
 {
+	RCF_LOG_TRACE(m_log, "Requesting pending upload: " << session_id);
 	signal_pending_upload_while_locked(session_id, true);
 }
 
@@ -406,10 +425,9 @@ void SessionStorage<W>::signal_pending_upload_while_locked(
 	auto context = hate::get(m_session_to_deferred, session_id);
 	if (context) {
 		// std::optional -> std::reference_wrapper -> std::unique_ptr
-		pending_context_t pending{*(*context).get()};
-		std::thread dispatch{[=]() mutable {
-			pending.parameters().r.set(value);
-			pending.commit();
+		std::jthread dispatch{[pending{std::move((*context).get())}, value]() {
+			pending->parameters().r.set(value);
+			pending->commit();
 		}};
 		dispatch.detach();
 	}
