@@ -88,6 +88,11 @@ public:
 	~OnDemandUpload();
 
 	/**
+	 * Refresh a given upload, making sure that it is still available to the server.
+	 */
+	void refresh();
+
+	/**
 	 * Notify and - if needed - upload the given data to the server.
 	 */
 	void upload(upload_data_t&& data);
@@ -123,9 +128,26 @@ private:
 	 * Notify and - if needed - upload the given data to the server.
 	 *
 	 * Make sure to not modify the data pointed to by the `upload_data_ptr`
+	 *
+	 * @param upload_data_ptr Data to upload.
 	 */
 	void upload(upload_data_shared_ptr_t const& upload_data_ptr);
 
+	/**
+	 * Start a new upload thread. Will use the current reinit id.
+	 *
+	 * @param upload_data_ptr Data to upload.
+	 */
+	void start_upload_thread(upload_data_shared_ptr_t const& upload_data_ptr);
+
+	/**
+	 * Check if the current upload thread is still running or if it needs to be restarted.
+	 */
+	bool is_upload_thread_running();
+
+	/**
+	 * Prepare for new upload with new upload id.
+	 */
 	void prepare_new_upload();
 
 	/**
@@ -187,6 +209,7 @@ private:
 	std::unordered_set<std::thread::id> m_threads_safe_to_join;
 
 	std::size_t m_unique_id;
+	upload_data_shared_ptr_t m_upload_data;
 
 	static constexpr std::size_t num_errors_max = 10;
 	// Period with which the client checks if he should terminate.

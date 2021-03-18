@@ -58,13 +58,21 @@ OnDemandUpload<RcfClientT, UploadDataT>::~OnDemandUpload()
 template <typename RcfClientT, typename UploadDataT>
 void OnDemandUpload<RcfClientT, UploadDataT>::upload(upload_data_t&& data)
 {
-	upload(std::make_shared<upload_data_t>(std::move(data)));
+	{
+		std::lock_guard const lk{m_mutex_loop_upload};
+		m_upload_data = std::make_shared<upload_data_t>(std::move(data));
+	}
+	upload(m_upload_data);
 }
 
 template <typename RcfClientT, typename UploadDataT>
 void OnDemandUpload<RcfClientT, UploadDataT>::upload(upload_data_t const& data)
 {
-	upload(std::make_shared<upload_data_t>(data));
+	{
+		std::lock_guard const lk{m_mutex_loop_upload};
+		m_upload_data = std::make_shared<upload_data_t>(data);
+	}
+	upload(m_upload_data);
 }
 
 template <typename RcfClientT, typename UploadDataT>
@@ -81,7 +89,19 @@ void OnDemandUpload<RcfClientT, UploadDataT>::wait()
 template <typename RcfClientT, typename UploadDataT>
 bool OnDemandUpload<RcfClientT, UploadDataT>::holds_data()
 {
-    return m_is_notified.load(std::memory_order_acquire);
+	std::lock_guard const lk{m_mutex_loop_upload};
+	return bool(m_upload_data);
+}
+
+template <typename RcfClientT, typename UploadDataT>
+bool OnDemandUpload<RcfClientT, UploadDataT>::is_upload_thread_running()
+{
+	if (m_thread_loop_upload.joinable()) {
+		std::lock_guard const lk{m_mutex_loop_upload};
+		return !m_threads_safe_to_join.contains(m_thread_loop_upload.get_id());
+	} else {
+		return false;
+	}
 }
 
 template <typename RcfClientT, typename UploadDataT>
@@ -92,10 +112,41 @@ void OnDemandUpload<RcfClientT, UploadDataT>::update_function_create_client(
 }
 
 template <typename RcfClientT, typename UploadDataT>
+void OnDemandUpload<RcfClientT, UploadDataT>::refresh()
+{
+	if (!holds_data()) {
+		RCF_LOG_TRACE(m_log, "Not holding data -> no refresh necessary.");
+	} else if (is_upload_thread_running()) {
+		// Note: m_unique_id not protected for debug message
+		RCF_LOG_TRACE(
+		    m_log,
+		    "Upload thread still running with id " << m_unique_id << "-> no refresh necessary.");
+	} else {
+		RCF_LOG_TRACE(m_log, "Performing refresh..");
+
+		upload_data_shared_ptr_t upload_data;
+		{
+			std::lock_guard const lk{m_mutex_loop_upload};
+			upload_data = m_upload_data;
+		}
+		join_loop_upload();
+		start_upload_thread(upload_data);
+
+		RCF_LOG_TRACE(m_log, "Performed refresh..");
+	}
+}
+
+template <typename RcfClientT, typename UploadDataT>
 void OnDemandUpload<RcfClientT, UploadDataT>::upload(upload_data_shared_ptr_t const& upload_data)
 {
 	prepare_new_upload();
+	start_upload_thread(upload_data);
+}
 
+template <typename RcfClientT, typename UploadDataT>
+void OnDemandUpload<RcfClientT, UploadDataT>::start_upload_thread(
+    upload_data_shared_ptr_t const& upload_data)
+{
 	m_thread_loop_upload = std::jthread([this, upload_data](std::stop_token st) {
 		loop_upload(std::move(st), upload_data, m_unique_id);
 	});
@@ -117,6 +168,14 @@ void OnDemandUpload<RcfClientT, UploadDataT>::loop_upload(
 	client_shared_ptr_t client;
 	std::size_t num_errors = 0;
 	bool stop_flag = false;
+
+	// used at several locations -> DRY
+	auto note_thread_finished = [&, this] {
+		stop_flag = true;
+		std::lock_guard const lk{m_mutex_safe_to_join};
+		m_threads_safe_to_join.insert(std::this_thread::get_id());
+	};
+
 	while (!(st.stop_requested() || stop_flag)) {
 		RCF_LOG_TRACE(log, "New iteration..");
 		try {
@@ -124,7 +183,7 @@ void OnDemandUpload<RcfClientT, UploadDataT>::loop_upload(
 			client = connect(st);
 			std::invoke(m_f_notify, *client, m_unique_id);
 			if (st.stop_requested()) {
-				stop_flag = true;
+				note_thread_finished();
 				break;
 			}
 			{
@@ -141,7 +200,7 @@ void OnDemandUpload<RcfClientT, UploadDataT>::loop_upload(
 			client = connect(st);
 			bool response_perform_upload = std::invoke(m_f_pending, *client, m_unique_id);
 			if (st.stop_requested()) {
-				stop_flag = true;
+				note_thread_finished();
 				break;
 			}
 			if (response_perform_upload) {
@@ -151,7 +210,7 @@ void OnDemandUpload<RcfClientT, UploadDataT>::loop_upload(
 				client = connect(st);
 				std::invoke(m_f_upload, *client, *upload_data, m_unique_id);
 				if (st.stop_requested()) {
-					stop_flag = true;
+					note_thread_finished();
 					break;
 				}
 
@@ -164,12 +223,12 @@ void OnDemandUpload<RcfClientT, UploadDataT>::loop_upload(
 				RCF_LOG_TRACE(log, "Upload completed.");
 			} else {
 				RCF_LOG_TRACE(log, "Upload aborted.");
-				stop_flag = true;
+				note_thread_finished();
 				break;
 			}
 		} catch (RCF::Exception const& e) {
 			if (st.stop_requested()) {
-				stop_flag = true;
+				note_thread_finished();
 				break;
 			}
 			++num_errors;
@@ -178,16 +237,13 @@ void OnDemandUpload<RcfClientT, UploadDataT>::loop_upload(
 		}
 		if (num_errors >= num_errors_max) {
 			RCF_LOG_ERROR(log, "Encountered " << num_errors_max << ", aborting!");
-			stop_flag = true;
+			note_thread_finished();
 			break;
 		}
 		m_cv_wait_for_finish.notify_all();
 	}
-	// Note that thread is finished
-	{
-		std::lock_guard lk{m_mutex_safe_to_join};
-		m_threads_safe_to_join.insert(std::this_thread::get_id());
-	}
+	// Again because we might have been terminated by stop_tokenj
+	note_thread_finished();
 	RCF_LOG_TRACE(log, "Terminating.");
 }
 
