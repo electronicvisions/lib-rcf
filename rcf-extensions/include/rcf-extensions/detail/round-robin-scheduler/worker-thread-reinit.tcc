@@ -151,8 +151,11 @@ bool WorkerThreadReinit<W>::ensure_session_via_reinit(work_package_t const& pkg)
 		};
 		if (m_current_session_id) {
 			log_trace(*m_current_session_id);
-			// request the reinit program for the old session if we have to resume
-			m_session_storage.reinit_request(*m_current_session_id);
+			if (m_session_storage.reinit_is_registered(*m_current_session_id)) {
+				// request the reinit program for the old session if there is one registered
+				m_session_storage.reinit_request(*m_current_session_id);
+				m_session_storage.reinit_set_needed(*m_current_session_id);
+			}
 		} else {
 			log_trace("no active session");
 		}
@@ -256,6 +259,7 @@ bool WorkerThreadReinit<W>::perform_reinit()
 	if (reinit_data) {
 		RCF_LOG_TRACE(wtr_t::m_log, "Performing reinit..");
 		wtr_t::m_worker.perform_reinit(*reinit_data);
+		m_session_storage.reinit_set_done(*m_current_session_id);
 		return true;
 	} else {
 		RCF_LOG_WARN(

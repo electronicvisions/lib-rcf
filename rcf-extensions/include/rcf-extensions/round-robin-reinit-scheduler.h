@@ -203,14 +203,9 @@ public:
 	 * sequence will cause the scheduler to stall whereas supplying a number
 	 * twice will lead to an exception.
 	 *
-	 * @param enforce_reinit If set to true the scheduler will not perfrom work
-	 * for the current session until a reinit program is available. This also
-	 * means that the reinit program will run for the first work unit in the
-	 * sequence.
-	 *
 	 * @return Return value of the worker after work unit was completed.
 	 */
-	work_return_t submit_work(work_argument_t, SequenceNumber sequence_num, bool enforce_reinit);
+	work_return_t submit_work(work_argument_t, SequenceNumber sequence_num);
 
 	/**
 	 * Set interval after which the the worker has to be teared down at least once.
@@ -351,8 +346,8 @@ private:
 #define RRWR_GENERATE_INTERFACE_EXPLICIT_TYPES(                                                    \
     RCF_INTERFACE, WORK_RETURN_TYPE, WORK_ARGUMENT_TYPE, REINIT_DATA_TYPE)                         \
 	RCF_BEGIN(RCF_INTERFACE, #RCF_INTERFACE)                                                       \
-	RCF_METHOD_R3(                                                                                 \
-	    WORK_RETURN_TYPE, submit_work, WORK_ARGUMENT_TYPE, ::rcf_extensions::SequenceNumber, bool) \
+	RCF_METHOD_R2(                                                                                 \
+	    WORK_RETURN_TYPE, submit_work, WORK_ARGUMENT_TYPE, ::rcf_extensions::SequenceNumber)       \
 	RCF_METHOD_V1(void, reinit_notify, std::size_t)                                                \
 	RCF_METHOD_R1(bool, reinit_pending, std::size_t)                                               \
 	RCF_METHOD_V2(void, reinit_upload, REINIT_DATA_TYPE, std::size_t)                              \

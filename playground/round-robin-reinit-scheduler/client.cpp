@@ -118,9 +118,9 @@ int main(int argc, const char* argv[])
 			std::size_t ran_in_job_id;
 			if (out_of_order) {
 				ran_in_job_id = client->submit_work(
-				    my_work_unit, rcf_extensions::SequenceNumber::out_of_order(), true);
+				    my_work_unit, rcf_extensions::SequenceNumber::out_of_order());
 			} else {
-				ran_in_job_id = client->submit_work(my_work_unit, i, false);
+				ran_in_job_id = client->submit_work(my_work_unit, i);
 			}
 			if (!silent) {
 				RCF_LOG_INFO(log, "Ran in job ID: " << ran_in_job_id);
@@ -143,9 +143,9 @@ int main(int argc, const char* argv[])
 			RCF::Future<typename rr_waiter_t::work_return_t> future;
 			if (out_of_order) {
 				future = client->submit_work(
-				    my_work_unit, rcf_extensions::SequenceNumber::out_of_order(), true);
+				    my_work_unit, rcf_extensions::SequenceNumber::out_of_order());
 			} else {
-				future = client->submit_work(my_work_unit, i, false);
+				future = client->submit_work(my_work_unit, i);
 			}
 			futures.push_back(std::make_pair(std::move(client), std::move(future)));
 		}

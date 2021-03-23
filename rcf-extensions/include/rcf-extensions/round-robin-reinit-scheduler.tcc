@@ -124,14 +124,14 @@ bool RoundRobinReinitScheduler<W>::start_server(std::chrono::seconds const& time
 
 template <typename W>
 typename RoundRobinReinitScheduler<W>::work_return_t RoundRobinReinitScheduler<W>::submit_work(
-    work_argument_t work, SequenceNumber sequence_num, bool enforce_reinit)
+    work_argument_t work, SequenceNumber sequence_num)
 {
 	std::ignore = work;
 
 	RCF_LOG_TRACE(m_log, "Handling new submission..");
 
 	auto verified_user_session_id =
-	    get_verified_user_data<work_return_t, work_argument_t, SequenceNumber, bool>(
+	    get_verified_user_data<work_return_t, work_argument_t, SequenceNumber>(
 	        *m_worker_thread);
 
 	if (!verified_user_session_id) {
@@ -146,11 +146,6 @@ typename RoundRobinReinitScheduler<W>::work_return_t RoundRobinReinitScheduler<W
 	m_session_storage->ensure_registered(session_id);
 	RCF_LOG_TRACE(
 	    m_log, "[" << session_id << " " << sequence_num << "] Ensured session is registered.");
-
-	if (enforce_reinit) {
-		RCF_LOG_TRACE(m_log, "[" << session_id << "] Setting reinit to needed.");
-		m_session_storage->reinit_set_needed(session_id);
-	}
 
 	RCF_LOG_TRACE(m_log, "[" << session_id << "] Checking for fast forward.");
 	m_session_storage->sequence_num_fast_forward(session_id, sequence_num);
