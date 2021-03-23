@@ -209,23 +209,13 @@ struct has_method_perform_reinit<Worker, std::void_t<decltype(&Worker::perform_r
 template <typename Worker>
 inline constexpr bool has_method_perform_reinit_v = has_method_perform_reinit<Worker>::value;
 
-template <typename Worker, typename = void>
+template <typename Worker>
 struct submit_work_context
 {
 	using type = RCF::RemoteCallContext<
 	    method_work_return_t<Worker>,
 	    method_work_argument_t<Worker>,
 	    SequenceNumber>;
-};
-
-template <typename Worker>
-struct submit_work_context<Worker, std::enable_if_t<has_method_perform_reinit_v<Worker>>>
-{
-	using type = RCF::RemoteCallContext<
-	    method_work_return_t<Worker>,
-	    method_work_argument_t<Worker>,
-	    SequenceNumber,
-	    bool>;
 };
 
 template <typename Worker>

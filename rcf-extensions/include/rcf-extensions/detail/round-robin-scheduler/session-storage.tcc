@@ -209,10 +209,17 @@ bool SessionStorage<W>::reinit_is_requested_while_locked(session_id_t const& ses
 }
 
 template <typename W>
-bool SessionStorage<W>::reinit_is_needed(session_id_t const& session_id) const
+bool SessionStorage<W>::reinit_is_registered(session_id_t const& session_id) const
 {
 	std::shared_lock const lk{m_mutex};
 	return m_session_to_reinit_id_notified.contains(session_id);
+}
+
+template <typename W>
+bool SessionStorage<W>::reinit_is_needed(session_id_t const& session_id) const
+{
+	std::shared_lock const lk{m_mutex};
+	return m_session_reinit_needed.contains(session_id);
 }
 
 template <typename W>
@@ -221,6 +228,14 @@ void SessionStorage<W>::reinit_set_needed(session_id_t const& session_id)
 	std::lock_guard const lk{m_mutex};
 	RCF_LOG_TRACE(m_log, "[" << session_id << "] Setting reinit needed.");
 	m_session_reinit_needed.insert(session_id);
+}
+
+template <typename W>
+void SessionStorage<W>::reinit_set_done(session_id_t const& session_id)
+{
+	std::lock_guard const lk{m_mutex};
+	RCF_LOG_TRACE(m_log, "[" << session_id << "] Setting reinint done.");
+	m_session_reinit_needed.erase(session_id);
 }
 
 template <typename W>

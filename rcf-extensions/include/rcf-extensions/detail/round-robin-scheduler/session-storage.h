@@ -87,6 +87,10 @@ public:
 	void reinit_request(session_id_t const& session_id);
 
 	/**
+	 * @return whether a reinit program is registered for the given session.
+	 */
+	bool reinit_is_registered(session_id_t const& session_id) const;
+	/**
 	 * @return whether a reinit program is needed.
 	 */
 	bool reinit_is_needed(session_id_t const& session_id) const;
@@ -97,7 +101,12 @@ public:
 	void reinit_set_needed(session_id_t const& session_id);
 
 	/**
-	 * Get a const reference to the given reinit_data_t if available.
+	 * Indicate that the reinit for the given session_id was performed.
+	 */
+	void reinit_set_done(session_id_t const& session_id);
+
+	/**
+	 * Get a const reference to the given reinit_data_t if avairable.
 	 *
 	 * The reint_data_t will be requested if it was not requested up until now.
 	 * Please note that this function returning nullopt does _not_ mean that no
