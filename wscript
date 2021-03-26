@@ -19,7 +19,7 @@ def options(opt):
 
     hopts.add_option("--rcf-extensions-loglevel",
                      choices=["trace", "debug", "info", "warning", "error", "fatal"],
-                     default="warning",
+                     default="info",
                      help="Maximal loglevel to compile in rcf-extensions with.")
 
 

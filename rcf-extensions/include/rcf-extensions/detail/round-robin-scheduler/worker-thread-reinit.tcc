@@ -1,5 +1,6 @@
 #include "rcf-extensions/detail/round-robin-scheduler/worker-thread-reinit.h"
 
+#include <ctime>
 #include <exception>
 
 namespace rcf_extensions::detail::round_robin_scheduler {
@@ -91,6 +92,7 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 		}
 
 		wtr_t::ensure_worker_is_set_up();
+		auto const time_start = std::chrono::system_clock::now();
 
 		if (!ensure_session_via_reinit(pkg)) {
 			// switching session failed
@@ -100,12 +102,27 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 
 		typename wtr_t::work_context_t context{std::move(pkg.context)};
 
-		RCF_LOG_DEBUG(wtr_t::m_log, "Executing: " << pkg);
+		RCF_LOG_TRACE(wtr_t::m_log, "Executing: " << pkg);
 		auto work = context.parameters().a1.get();
 
 		wtr_t::set_busy();
 		try {
 			auto retval = wtr_t::m_worker.work(work);
+			auto const time_stop = std::chrono::system_clock::now();
+			const std::time_t t_c = std::chrono::system_clock::to_time_t(time_start);
+			auto millis =
+			    std::chrono::duration_cast<std::chrono::milliseconds>(time_start.time_since_epoch())
+			        .count() %
+			    1000;
+			RCF_LOG_INFO(
+			    wtr_t::m_log,
+			    "Executed: " << pkg
+			                 << " Start time: " << std::put_time(std::localtime(&t_c), "%F %T,")
+			                 << std::setw(3) << std::setfill('0') << millis << " Duration: "
+			                 << std::chrono::duration_cast<std::chrono::milliseconds>(
+			                        time_stop - time_start)
+			                        .count()
+			                 << "ms");
 			context.parameters().r.set(retval);
 
 			wtr_t::m_output.push_back(std::move(context));
