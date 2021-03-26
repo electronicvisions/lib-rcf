@@ -219,7 +219,8 @@ template <typename W>
 bool SessionStorage<W>::reinit_is_needed(session_id_t const& session_id) const
 {
 	std::shared_lock const lk{m_mutex};
-	return m_session_reinit_needed.contains(session_id);
+	return m_session_reinit_needed.contains(session_id) ||
+	       m_session_to_reinit_id_notified.contains(session_id);
 }
 
 template <typename W>
@@ -228,13 +229,18 @@ void SessionStorage<W>::reinit_set_needed(session_id_t const& session_id)
 	std::lock_guard const lk{m_mutex};
 	RCF_LOG_TRACE(m_log, "[" << session_id << "] Setting reinit needed.");
 	m_session_reinit_needed.insert(session_id);
+
+	// as the reinit will be needed in any case: request it
+	if (reinit_is_pending_while_locked(session_id)) {
+		request_pending_upload_while_locked(session_id);
+	}
 }
 
 template <typename W>
 void SessionStorage<W>::reinit_set_done(session_id_t const& session_id)
 {
 	std::lock_guard const lk{m_mutex};
-	RCF_LOG_TRACE(m_log, "[" << session_id << "] Setting reinint done.");
+	RCF_LOG_TRACE(m_log, "[" << session_id << "] Setting reinit done.");
 	m_session_reinit_needed.erase(session_id);
 }
 
@@ -275,7 +281,11 @@ bool SessionStorage<W>::reinit_is_pending_while_locked(session_id_t const& sessi
 {
 	auto const id_notified = hate::cget(m_session_to_reinit_id_notified, session_id);
 	auto const id_pending = hate::cget(m_session_to_reinit_id_pending, session_id);
-	return (id_notified && id_pending && *id_notified == *id_pending);
+	auto const id_stored = hate::cget(m_session_to_reinit_id_stored, session_id);
+	// If reinit is notified and pending, but not yet stored, it is pending.
+	return (
+	    id_notified && id_pending && *id_notified == *id_pending &&
+	    (!id_stored || *id_stored != *id_pending));
 }
 
 template <typename W>
