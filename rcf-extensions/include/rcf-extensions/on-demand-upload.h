@@ -187,6 +187,7 @@ private:
 
 	void reset_unique_id();
 
+	RCF::RcfInit m_rcf_init;
 	log4cxx::Logger* m_log;
 
 	// m_request needs to be a unique_ptr because we need to defer its default
