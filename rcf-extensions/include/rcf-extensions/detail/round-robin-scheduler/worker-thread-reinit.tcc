@@ -160,6 +160,7 @@ bool WorkerThreadReinit<W>::is_different(session_id_t const& session_id)
 template <typename W>
 bool WorkerThreadReinit<W>::ensure_session_via_reinit(work_package_t const& pkg)
 {
+	bool session_switched = false;
 	if (!m_current_session_id || pkg.session_id != *m_current_session_id) {
 		auto log_trace = [this, &pkg]([[maybe_unused]] auto& session_id) {
 			RCF_LOG_TRACE(
@@ -177,9 +178,10 @@ bool WorkerThreadReinit<W>::ensure_session_via_reinit(work_package_t const& pkg)
 			log_trace("no active session");
 		}
 		m_current_session_id = pkg.session_id;
+		session_switched = true;
 	}
 
-	if (m_session_storage.reinit_is_needed(*m_current_session_id)) {
+	if (session_switched && m_session_storage.reinit_is_needed(*m_current_session_id)) {
 		if (!perform_reinit()) {
 			// reinit failed, clear session
 			RCF_LOG_TRACE(wtr_t::m_log, "Resetting current session.");
@@ -189,7 +191,7 @@ bool WorkerThreadReinit<W>::ensure_session_via_reinit(work_package_t const& pkg)
 			return true;
 		}
 	} else {
-		if (m_current_session_id) {
+		if (!session_switched && m_current_session_id) {
 			RCF_LOG_TRACE(wtr_t::m_log, "No reinit needed for session " << *m_current_session_id);
 		}
 		return true; // switch successful
