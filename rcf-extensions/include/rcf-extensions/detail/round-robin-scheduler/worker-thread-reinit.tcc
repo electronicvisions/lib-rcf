@@ -103,7 +103,7 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 		typename wtr_t::work_context_t context{std::move(pkg.context)};
 
 		RCF_LOG_TRACE(wtr_t::m_log, "Executing: " << pkg);
-		auto work = context.parameters().a1.get();
+		auto& work = context.get_argument_work();
 
 		wtr_t::set_busy();
 		try {
@@ -123,7 +123,7 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 			                        time_stop - time_start)
 			                        .count()
 			                 << "ms");
-			context.parameters().r.set(retval);
+			context.set_return_value(std::move(retval));
 
 			wtr_t::m_output.push_back(std::move(context));
 		} catch (std::exception& e) {

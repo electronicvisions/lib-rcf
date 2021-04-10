@@ -58,7 +58,7 @@ void OutputQueue<W>::output_thread(std::stop_token st)
 		// have committed
 		{
 			// retrieve the oldest output to deliver
-			work_context_t context = m_queue.front();
+			work_context_t context = std::move(m_queue.front());
 			m_queue.pop_front();
 			RCF_LOG_TRACE(
 			    m_log, "Delivering work result. Current output queue size: " << m_queue.size());

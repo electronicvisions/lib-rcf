@@ -13,6 +13,7 @@
 #include <functional>
 #include <optional>
 #include <type_traits>
+#include <variant>
 
 #include "hate/iterator_traits.h"
 
@@ -33,7 +34,7 @@ struct WorkPackage
 	    sequence_num{std::move(other.sequence_num)}
 	{}
 	WorkPackage(UserT&& user_id, ContextT&& context, SequenceNumber&& sequence_num) :
-	    user_id{user_id}, context{context}, sequence_num{sequence_num}
+	    user_id{std::move(user_id)}, context{std::move(context)}, sequence_num{std::move(sequence_num)}
 	{}
 	WorkPackage& operator=(WorkPackage&& other)
 	{
@@ -71,7 +72,10 @@ struct WorkPackageWithSession
 	{}
 	WorkPackageWithSession(
 	    UserT&& user_id, SessionT&& session_id, ContextT&& context, SequenceNumber&& sequence_num) :
-	    user_id{user_id}, session_id{session_id}, context{context}, sequence_num{sequence_num}
+	    user_id{std::move(user_id)},
+	    session_id{std::move(session_id)},
+	    context{std::move(context)},
+	    sequence_num{std::move(sequence_num)}
 	{}
 	WorkPackageWithSession& operator=(WorkPackageWithSession&& other)
 	{
@@ -209,17 +213,52 @@ struct has_method_perform_reinit<Worker, std::void_t<decltype(&Worker::perform_r
 template <typename Worker>
 inline constexpr bool has_method_perform_reinit_v = has_method_perform_reinit<Worker>::value;
 
+/**
+ * SubmitWorkContext that is valid for slow and fast transmission.
+ */
 template <typename Worker>
-struct submit_work_context
+class SubmitWorkContext
 {
-	using type = RCF::RemoteCallContext<
-	    method_work_return_t<Worker>,
-	    method_work_argument_t<Worker>,
-	    SequenceNumber>;
+public:
+	using work_argument_t = method_work_argument_t<Worker>;
+	using work_return_t = method_work_return_t<Worker>;
+
+	using remote_context_typed_t =
+	    RCF::RemoteCallContext<work_return_t, work_argument_t, SequenceNumber>;
+	using remote_context_buffer_t =
+	    RCF::RemoteCallContext<RCF::ByteBuffer, RCF::ByteBuffer, SequenceNumber>;
+
+	using context_variant_t = std::variant<remote_context_typed_t, remote_context_buffer_t>;
+
+	SubmitWorkContext() = delete;
+	SubmitWorkContext(SubmitWorkContext const&) = delete;
+	SubmitWorkContext(SubmitWorkContext&&) = default;
+	SubmitWorkContext& operator=(SubmitWorkContext&&) = default;
+	SubmitWorkContext(remote_context_typed_t&& context);
+	SubmitWorkContext(remote_context_buffer_t&& context);
+
+	work_argument_t const& get_argument_work();
+
+	void set_return_value(work_return_t&&);
+
+	void commit();
+
+	template <typename ExceptionT>
+	void commit(ExceptionT&&);
+
+private:
+	void prepare_parameter();
+
+	context_variant_t m_remote_context;
+
+	std::optional<std::reference_wrapper<work_argument_t const>> m_work_argument;
+
+	// helper variable that holds reconstructed argument from ByteBuffer
+	std::unique_ptr<work_argument_t const> m_work_argument_from_buffer;
 };
 
 template <typename Worker>
-using submit_work_context_t = typename submit_work_context<Worker>::type;
+using submit_work_context_t = SubmitWorkContext<Worker>;
 
 template <typename Worker, typename = void>
 struct user_id
@@ -425,3 +464,5 @@ struct work_methods<Worker, std::enable_if_t<trait::has_method_perform_reinit_v<
 {};
 
 } // namespace rcf_extensions::detail::round_robin_scheduler
+
+#include "rcf-extensions/detail/round-robin-scheduler/work-methods.tcc"

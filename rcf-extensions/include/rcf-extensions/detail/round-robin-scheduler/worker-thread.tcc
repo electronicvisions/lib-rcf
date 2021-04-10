@@ -100,12 +100,12 @@ void WorkerThread<W>::main_thread(std::stop_token st)
 
 		auto pkg = m_input.retrieve_work();
 
-		auto const& work = pkg.context.parameters().a1.get();
+		auto const& work = pkg.context.get_argument_work();
 
 		set_busy();
 		try {
 			auto retval = m_worker.work(work);
-			pkg.context.parameters().r.set(retval);
+            pkg.context.set_return_value(std::move(retval));
 			m_output.push_back(std::move(pkg.context));
 		} catch (std::exception& e) {
 			RCF_LOG_ERROR(m_log, pkg << " encountered exception: " << e.what());

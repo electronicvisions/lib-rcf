@@ -3,6 +3,8 @@
 #include "rcf-extensions/common.h"
 #include "rcf-extensions/logging.h"
 #include "rcf-extensions/round-robin-reinit-scheduler.h"
+#include <cstring>
+#include <type_traits>
 
 namespace rcf_extensions {
 
@@ -126,17 +128,35 @@ template <typename W>
 typename RoundRobinReinitScheduler<W>::work_return_t RoundRobinReinitScheduler<W>::submit_work(
     work_argument_t work, SequenceNumber sequence_num)
 {
-	std::ignore = work;
-
 	RCF_LOG_TRACE(m_log, "Handling new submission..");
 
+	return submit_work_inner<work_return_t, work_argument_t>(
+	    std::move(work), std::move(sequence_num));
+}
+
+template <typename W>
+RCF::ByteBuffer RoundRobinReinitScheduler<W>::submit_work_raw(
+    RCF::ByteBuffer work, SequenceNumber sequence_num)
+{
+	RCF_LOG_TRACE(m_log, "Handling new raw submission..");
+
+	return submit_work_inner<RCF::ByteBuffer, RCF::ByteBuffer>(
+	    std::move(work), std::move(sequence_num));
+}
+
+template <typename W>
+template <typename ReturnT, typename WorkArgumentT>
+ReturnT RoundRobinReinitScheduler<W>::submit_work_inner(
+    WorkArgumentT work, SequenceNumber sequence_num)
+{
 	auto verified_user_session_id =
-	    get_verified_user_data<work_return_t, work_argument_t, SequenceNumber>(
-	        *m_worker_thread);
+	    get_verified_user_data<ReturnT, WorkArgumentT, SequenceNumber>(*m_worker_thread);
 
 	if (!verified_user_session_id) {
-		return work_return_t{}; // result submitted to client asynchronously
+		return ReturnT{}; // result submitted to client asynchronously
 	}
+
+	std::ignore = work;
 
 	auto user_id = detail::round_robin_scheduler::get_user_id(verified_user_session_id);
 	auto session_id = detail::round_robin_scheduler::get_session_id(verified_user_session_id);
@@ -151,14 +171,17 @@ typename RoundRobinReinitScheduler<W>::work_return_t RoundRobinReinitScheduler<W
 	m_session_storage->sequence_num_fast_forward(session_id, sequence_num);
 
 	m_input_queue->add_work(
-	    work_package_t{std::move(user_id), decltype(session_id){session_id},
-	                   work_context_t{RCF::getCurrentRcfSession()},
-	                   decltype(sequence_num){sequence_num}},
+	    work_package_t{
+	        std::move(user_id), std::move(session_id),
+	        work_context_t(RCF::RemoteCallContext<ReturnT, WorkArgumentT, SequenceNumber>(
+	            RCF::getCurrentRcfSession())),
+	        std::move(sequence_num)},
 	    m_session_storage->get_heap_sorter_most_completed());
+
 	RCF_LOG_TRACE(m_log, "[" << session_id << "] Submission " << sequence_num << " handled.");
 	// notify the worker thread of work
 	m_worker_thread->notify();
-	return work_return_t{}; // result submitted to client asynchronously
+	return ReturnT{}; // result submitted to client asynchronously
 }
 
 template <typename W>

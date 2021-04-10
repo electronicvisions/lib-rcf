@@ -208,6 +208,13 @@ public:
 	work_return_t submit_work(work_argument_t, SequenceNumber sequence_num);
 
 	/**
+	 * Submit work to be executed on the server.
+	 *
+	 * Fast variant that transfers work_return_t and work_argument_t as binary data.
+	 */
+	RCF::ByteBuffer submit_work_raw(RCF::ByteBuffer, SequenceNumber sequence_num);
+
+	/**
 	 * Set interval after which the the worker has to be teared down at least once.
 	 */
 	void set_release_interval(std::chrono::seconds const& s)
@@ -303,6 +310,10 @@ private:
 	std::unique_ptr<idle_timeout_t> m_idle_timeout;
 
 	void handle_submission(SequenceNumber, bool);
+
+	// helper function performing work submission after user is verified
+	template <typename ReturnT, typename WorkArgumentT>
+	ReturnT submit_work_inner(WorkArgumentT work, SequenceNumber sequence_num);
 };
 
 } // namespace rcf_extensions
@@ -348,6 +359,8 @@ private:
 	RCF_BEGIN(RCF_INTERFACE, #RCF_INTERFACE)                                                       \
 	RCF_METHOD_R2(                                                                                 \
 	    WORK_RETURN_TYPE, submit_work, WORK_ARGUMENT_TYPE, ::rcf_extensions::SequenceNumber)       \
+	RCF_METHOD_R2(                                                                                 \
+	    RCF::ByteBuffer, submit_work_raw, RCF::ByteBuffer, ::rcf_extensions::SequenceNumber)       \
 	RCF_METHOD_V1(void, reinit_notify, std::size_t)                                                \
 	RCF_METHOD_R1(bool, reinit_pending, std::size_t)                                               \
 	RCF_METHOD_V2(void, reinit_upload, REINIT_DATA_TYPE, std::size_t)                              \
