@@ -4,6 +4,7 @@ Map<String, Object> pipelineOptions = [
 		projects: ["lib-rcf"],
 		container: [app: "dls-core"],
 		notificationChannel: "#dls-software",
+		configureInstallOptions: "--build-profile=ci"
 ]
 
 wafDefaultPipeline(pipelineOptions)
