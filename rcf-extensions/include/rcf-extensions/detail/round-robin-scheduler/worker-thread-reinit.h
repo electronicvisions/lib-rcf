@@ -45,6 +45,7 @@ protected:
 
 	session_storage_t& m_session_storage;
 	std::optional<session_id_t> m_current_session_id;
+	std::optional<std::size_t> m_current_reinit_id; // TODO: introduce type
 
 	virtual void main_thread(std::stop_token) override;
 

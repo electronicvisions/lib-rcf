@@ -170,6 +170,13 @@ public:
 	 */
 	bool is_active(session_id_t const& session_id) const;
 
+	/**
+	 * Get session's notified reinit id (i.e. it has been announced by the user).
+	 *
+	 * @return session's optional notified reinit id.
+	 */
+	std::optional<std::size_t> get_reinit_id_notified(session_id_t const& session_id) const;
+
 private:
 	log4cxx::Logger* m_log;
 

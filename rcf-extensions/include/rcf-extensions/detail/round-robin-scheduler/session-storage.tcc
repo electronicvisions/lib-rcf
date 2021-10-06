@@ -407,6 +407,13 @@ bool SessionStorage<W>::is_active(session_id_t const& session_id) const
 }
 
 template <typename W>
+std::optional<std::size_t> SessionStorage<W>::get_reinit_id_notified(session_id_t const& session_id) const
+{
+	std::shared_lock const lk{m_mutex};
+	return hate::cget(m_session_to_reinit_id_notified, session_id);
+}
+
+template <typename W>
 bool SessionStorage<W>::is_active_while_locked(session_id_t const& session_id) const
 {
 	auto const refcount = hate::cget(m_session_to_refcount, session_id);

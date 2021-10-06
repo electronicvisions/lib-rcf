@@ -162,6 +162,7 @@ template <typename W>
 bool WorkerThreadReinit<W>::ensure_session_via_reinit(work_package_t const& pkg)
 {
 	bool session_switched = false;
+	bool reinit_id_changed = false;
 	if (!m_current_session_id || pkg.session_id != *m_current_session_id) {
 		auto log_trace = [this, &pkg]([[maybe_unused]] auto& session_id) {
 			RCF_LOG_TRACE(
@@ -182,7 +183,15 @@ bool WorkerThreadReinit<W>::ensure_session_via_reinit(work_package_t const& pkg)
 		session_switched = true;
 	}
 
-	if (session_switched && m_session_storage.reinit_is_needed(*m_current_session_id)) {
+	if (!m_current_reinit_id) {
+		m_current_reinit_id = m_session_storage.get_reinit_id_notified(*m_current_session_id);
+	} else {
+		if (m_current_reinit_id != m_session_storage.get_reinit_id_notified(*m_current_session_id)) {
+			reinit_id_changed = true;
+		}
+	}
+
+	if ((session_switched || reinit_id_changed) && m_session_storage.reinit_is_needed(*m_current_session_id)) {
 		if (!perform_reinit()) {
 			// reinit failed, clear session
 			RCF_LOG_TRACE(wtr_t::m_log, "Resetting current session.");
@@ -280,6 +289,7 @@ bool WorkerThreadReinit<W>::perform_reinit()
 		RCF_LOG_TRACE(wtr_t::m_log, "Performing reinit..");
 		wtr_t::m_worker.perform_reinit(*reinit_data);
 		m_session_storage.reinit_set_done(*m_current_session_id);
+		m_current_reinit_id = m_session_storage.get_reinit_id_notified(*m_current_session_id);
 		return true;
 	} else {
 		RCF_LOG_WARN(
