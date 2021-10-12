@@ -19,6 +19,7 @@
 #ifndef INCLUDE_RCF_THREADLIBRARY_HPP
 #define INCLUDE_RCF_THREADLIBRARY_HPP
 
+#include <condition_variable>
 #include <mutex>
 #include <shared_mutex>
 #include <thread>
