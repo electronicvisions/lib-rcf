@@ -215,7 +215,7 @@ void OnDemandUpload<RcfClientT, UploadDataT>::loop_upload(
 		}
 		m_cv_wait_for_finish.notify_all();
 	}
-	// Again because we might have been terminated by stop_tokenj
+	// Again because we might have been terminated by stop_token
 	note_thread_finished();
 	RCF_LOG_TRACE(log, "Terminating.");
 }
@@ -256,13 +256,21 @@ OnDemandUpload<RcfClientT, UploadDataT>::connect(std::stop_token st)
 
 	auto progress_callback =
 	    [st](const RCF::RemoteCallProgressInfo&, RCF::RemoteCallAction& action) {
+		    auto log = log4cxx::Logger::getLogger("lib-rcf.OnDemandUpload.progress_callback");
+		    [[maybe_unused]] auto thread_id = std::this_thread::get_id();
+		    RCF_LOG_TRACE(
+		        log, "Thread #" << thread_id << ": Performing remote call progress callback.");
 		    if (st.stop_requested()) {
+			    RCF_LOG_TRACE(
+			        log, "Thread #" << thread_id << ": Stop was requested, stopping the call.");
 			    action = RCF::Rca_Cancel;
 		    } else {
+			    RCF_LOG_TRACE(log, "Thread #" << thread_id << ": No stop requested, continuing.");
 			    action = RCF::Rca_Continue;
 		    }
 	    };
 
+	RCF_LOG_TRACE(m_log, "Setting callback period to " << progress_callback_interval_ms << "ms.");
 	client->getClientStub().setRemoteCallProgressCallback(
 	    progress_callback, progress_callback_interval_ms);
 
@@ -288,6 +296,9 @@ void OnDemandUpload<RcfClientT, UploadDataT>::trim_stopped_threads(bool join_all
 		    if (!join_all) {
 			    std::lock_guard lk{m_mutex_safe_to_join};
 			    safe_to_join = m_threads_safe_to_join.contains(thread_id);
+		    } else {
+			    // explicitly request the current thread to stop again, to be safe
+			    thread.request_stop();
 		    }
 		    if (safe_to_join) {
 			    thread.join();
