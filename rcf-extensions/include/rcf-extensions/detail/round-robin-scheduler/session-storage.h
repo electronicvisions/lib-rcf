@@ -32,6 +32,7 @@ public:
 	using work_package_t = typename work_methods<worker_t>::work_package_t;
 
 	using reinit_data_cref_t = std::reference_wrapper<reinit_data_t const>;
+	using reinit_data_ref_t = std::reference_wrapper<reinit_data_t>;
 
 	using pending_context_t = RCF::RemoteCallContext<bool, std::size_t>;
 
@@ -117,6 +118,22 @@ public:
 	 * @return optional indicating whether correct reinit data is available.
 	 */
 	std::optional<reinit_data_cref_t> reinit_get(
+	    session_id_t const& session_id,
+	    std::optional<std::chrono::milliseconds> grace_period = std::nullopt);
+
+	/**
+	 * Get a mutable reference to the given reinit_data_t if available.
+	 *
+	 * The reint_data_t will be requested if it was not requested up until now.
+	 * Please note that this function returning nullopt does _not_ mean that no
+	 * reinit is needed, but merely that it is not available yet.
+	 *
+	 * @param session_id The session for which to get reinit
+	 * @param grace_period optional grace period to wait for reinit (not given results in infinite
+	 * wait)
+	 * @return optional indicating whether correct reinit data is available.
+	 */
+	std::optional<reinit_data_ref_t> reinit_get_mutable(
 	    session_id_t const& session_id,
 	    std::optional<std::chrono::milliseconds> grace_period = std::nullopt);
 

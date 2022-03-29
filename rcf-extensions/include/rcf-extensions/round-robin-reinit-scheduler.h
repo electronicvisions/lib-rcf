@@ -54,8 +54,11 @@
  *  // The return type has to be default-constructable!
  *  MyReturnType work(MyWorkParameters const& work);
  *
- * // Function that
+ *  // Function that
  *  void perform_reinit(ReinitData const& reinit);
+ *
+ *  // Function that
+ *  void perform_reinit_snapshot(ReinitData const& reinit);
  *
  *  // function exectuted when the server is about to go idle
  *  // (should release all acuqired resources)

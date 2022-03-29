@@ -175,6 +175,13 @@ bool WorkerThreadReinit<W>::ensure_session_via_reinit(work_package_t const& pkg)
 				// request the reinit program for the old session if there is one registered
 				m_session_storage.reinit_request(*m_current_session_id);
 				m_session_storage.reinit_set_needed(*m_current_session_id);
+				// snapshot reinit program for the old session if there is one registered
+				if (!perform_reinit_snapshot(false)) {
+					// reinit snapshot failed, clear session
+					RCF_LOG_TRACE(wtr_t::m_log, "Resetting current session.");
+					m_current_session_id = std::nullopt;
+					return false;
+				}
 			}
 		} else {
 			log_trace("no active session");
@@ -300,6 +307,27 @@ bool WorkerThreadReinit<W>::perform_reinit()
 }
 
 template <typename W>
+bool WorkerThreadReinit<W>::perform_reinit_snapshot(bool const block)
+{
+	// check if we need to perform reinit snapshot for the new session (i.e. it has a reinit program
+	// requested)
+	// Active wait in case we have no other work left, otherwise block
+	auto reinit_data = m_session_storage.reinit_get_mutable(
+	    *m_current_session_id,
+	    (wtr_t::m_input.is_empty() && !block) ? std::make_optional(20ms) : std::nullopt);
+	if (reinit_data) {
+		RCF_LOG_TRACE(wtr_t::m_log, "Performing reinit snapshot..");
+		wtr_t::m_worker.perform_reinit_snapshot(*reinit_data);
+		return true;
+	} else {
+		RCF_LOG_WARN(
+		    wtr_t::m_log, "Reinit data needed but not available for session: "
+		                      << *m_current_session_id << ". Delaying execution..");
+		return false;
+	}
+}
+
+template <typename W>
 void WorkerThreadReinit<W>::perform_teardown()
 {
 	RCF_LOG_TRACE(wtr_t::m_log, "Performing teardown.");
@@ -310,6 +338,11 @@ void WorkerThreadReinit<W>::perform_teardown()
 	if (m_current_session_id) {
 		// request reinit for the current session
 		m_session_storage.reinit_request(*m_current_session_id);
+		if (!perform_reinit_snapshot(true)) {
+			// reinit snapshot failed, clear session
+			RCF_LOG_TRACE(wtr_t::m_log, "Resetting current session.");
+			m_current_session_id = std::nullopt;
+		}
 	}
 }
 

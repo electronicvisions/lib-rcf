@@ -93,6 +93,14 @@ protected:
 	bool perform_reinit();
 
 	/**
+	 * Perform reinit snapshot for the current session.
+	 *
+	 * @param block Block until reinits are available
+	 * @return true if reinit snapshot was successful.
+	 */
+	bool perform_reinit_snapshot(bool block);
+
+	/**
 	 * Perform a worker teardown.
 	 */
 	void perform_teardown();
