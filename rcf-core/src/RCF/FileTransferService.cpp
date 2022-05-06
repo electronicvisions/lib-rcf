@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2020, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 3.1
+// Version: 3.2
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -49,7 +49,7 @@ namespace SF {
         {
             if ( ar.getRuntimeVersion() <= 12 )
             {
-                std::string s = p.string();
+                std::string s = p.u8string();
                 ar & s;
             }
             else
@@ -227,7 +227,7 @@ namespace RCF {
             mUploadProgressCb(getCurrentRcfSession(), *uploadInfoPtr);
         }
 
-        RCF_LOG_3()(startPos.mFileIndex)(startPos.mOffset)(maxMessageLength)(uploadId)(bps)(uploadId)(uploadInfoPtr->mUploadDir.string())
+        RCF_LOG_3()(startPos.mFileIndex)(startPos.mOffset)(maxMessageLength)(uploadId)(bps)(uploadId)(uploadInfoPtr->mUploadDir.u8string())
             << "FileTransferService::BeginUpload() - exit.";
     }
 
@@ -292,11 +292,11 @@ namespace RCF {
             if ( !fs::exists( folder ) )
             {
                 
-                RCF_LOG_3()(filePath.string())(folder.string()) << "FileTransferService::UploadChunks() - creating folder.";
+                RCF_LOG_3()(filePath.u8string())(folder.u8string()) << "FileTransferService::UploadChunks() - creating folder.";
                 fs::create_directories( folder );
             }
 
-            RCF_LOG_3()(uploadInfo.mCurrentFile)(filePath.string()) 
+            RCF_LOG_3()(uploadInfo.mCurrentFile)(filePath.u8string())
                 << "FileTransferService::UploadChunks() - opening file.";
 
             if (uploadInfo.mResume)
@@ -391,7 +391,7 @@ namespace RCF {
 
     void FileTransferService::addFileTransfer(const std::string & transferId, const TransferInfo & transferInfo)
     {
-        RCF_LOG_3()(transferId)(transferInfo.mPath.string()) << "FileTransferService::addFileTransfer().";
+        RCF_LOG_3()(transferId)(transferInfo.mPath.u8string()) << "FileTransferService::addFileTransfer().";
 
         Lock lock(mFileTransfersInProgressMutex);
         mFileTransfersInProgress[transferId] = transferInfo;
@@ -639,7 +639,7 @@ namespace RCF {
             Path totalPath = manifestBase / filePath;
             std::uint64_t fileSize = currentFileInfo.mFileSize;
 
-            RCF_LOG_3()(di.mCurrentFile)(fileSize)(totalPath.string())
+            RCF_LOG_3()(di.mCurrentFile)(fileSize)(totalPath.u8string())
                 << "FileTransferService::DownloadChunks() - opening file.";
 
             di.mFileHandlePath = totalPath;

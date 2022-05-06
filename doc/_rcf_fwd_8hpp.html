@@ -78,7 +78,7 @@
  <tbody>
  <tr style="height: 56px;">
   <td id="projectalign" style="padding-left: 0.5em;">
-   <div id="projectname">Remote Call Framework 3.1
+   <div id="projectname">Remote Call Framework 3.2
    </div>
   </td>
    <td>        <div id="MSearchBox" class="MSearchBoxInactive">
@@ -144,6 +144,7 @@ $(document).ready(function(){initNavTree('_rcf_fwd_8hpp.html','');});
 <div class="contents">
 <div class="textblock"><code>#include &lt;functional&gt;</code><br />
 <code>#include &lt;memory&gt;</code><br />
+<code>#include &lt;vector&gt;</code><br />
 <code>#include &lt;<a class="el" href="_enums_8hpp_source.html">RCF/Enums.hpp</a>&gt;</code><br />
 </div>
 <p><a href="_rcf_fwd_8hpp_source.html">Go to the source code of this file.</a></p>
@@ -220,8 +221,11 @@ Typedefs</h2></td></tr>
 <tr class="memdesc:a061b0d31f21ea374dbb86be5c093e372"><td class="mdescLeft">&#160;</td><td class="mdescRight">Reference counted wrapper for <a class="el" href="class_r_c_f_1_1_win32_certificate.html" title="Represents an in-memory certificate, either from a remote peer or loaded from a local certificate sto...">RCF::Win32Certificate</a>.  <a href="_rcf_fwd_8hpp.html#a061b0d31f21ea374dbb86be5c093e372">More...</a><br /></td></tr>
 <tr class="separator:a061b0d31f21ea374dbb86be5c093e372"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a4fc3b8ba994021b8ba3f8ac0bb8e40dc"><td class="memItemLeft" align="right" valign="top">typedef std::function&lt; bool(int)&gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="_rcf_fwd_8hpp.html#a4fc3b8ba994021b8ba3f8ac0bb8e40dc">RCF::AccessControlCallback</a></td></tr>
-<tr class="memdesc:a4fc3b8ba994021b8ba3f8ac0bb8e40dc"><td class="mdescLeft">&#160;</td><td class="mdescRight">Describes user-provided function for determining whether a client connections should be able to access a server binding.  <a href="_rcf_fwd_8hpp.html#a4fc3b8ba994021b8ba3f8ac0bb8e40dc">More...</a><br /></td></tr>
+<tr class="memdesc:a4fc3b8ba994021b8ba3f8ac0bb8e40dc"><td class="mdescLeft">&#160;</td><td class="mdescRight">Describes a user-provided function for determining whether a client connections should be able to access a server binding.  <a href="_rcf_fwd_8hpp.html#a4fc3b8ba994021b8ba3f8ac0bb8e40dc">More...</a><br /></td></tr>
 <tr class="separator:a4fc3b8ba994021b8ba3f8ac0bb8e40dc"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a935372b03e0d06d52f882d9a4bd3586c"><td class="memItemLeft" align="right" valign="top">typedef std::function&lt; void(const std::string &amp;statusLine, const HttpHeaderList &amp;headerList)&gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="_rcf_fwd_8hpp.html#a935372b03e0d06d52f882d9a4bd3586c">RCF::HttpRedirectHandler</a></td></tr>
+<tr class="memdesc:a935372b03e0d06d52f882d9a4bd3586c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Describes a user-provided function for handling HTTP redirect responses when connecting to a HTTP/HTTPS server.  <a href="_rcf_fwd_8hpp.html#a935372b03e0d06d52f882d9a4bd3586c">More...</a><br /></td></tr>
+<tr class="separator:a935372b03e0d06d52f882d9a4bd3586c"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <h2 class="groupheader">Typedef Documentation</h2>
 <a id="file_a4cd75b3e4799256a3df402260f7891c8"></a>
@@ -540,7 +544,23 @@ Typedefs</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p>Describes user-provided function for determining whether a client connections should be able to access a server binding. </p>
+<p>Describes a user-provided function for determining whether a client connections should be able to access a server binding. </p>
+
+</div>
+</div>
+<a id="file_a935372b03e0d06d52f882d9a4bd3586c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#file_a935372b03e0d06d52f882d9a4bd3586c">&#9670;&nbsp;</a></span>HttpRedirectHandler</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">typedef std::function&lt;void(const std::string &amp; statusLine, const HttpHeaderList&amp; headerList)&gt; <a class="el" href="_rcf_fwd_8hpp.html#a935372b03e0d06d52f882d9a4bd3586c">RCF::HttpRedirectHandler</a></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Describes a user-provided function for handling HTTP redirect responses when connecting to a HTTP/HTTPS server. </p>
 
 </div>
 </div>
@@ -551,7 +571,7 @@ Typedefs</h2></td></tr>
 <div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
   <ul>
     <!-- <li class="navelem"><a class="el" href="dir_8280f998dc26ec5dd31941508c6328f9.html">RCF</a></li><li class="navelem"><a class="el" href="dir_8a9acbe5f7d38b7c272eddc6efaff71d.html">include</a></li><li class="navelem"><a class="el" href="dir_eddcfb5137e595f64d4ce457b3e03a62.html">RCF</a></li><li class="navelem"><a class="el" href="_rcf_fwd_8hpp.html">RcfFwd.hpp</a></li> -->
-    <li class="footer">Copyright (C) <a href="http://www.deltavsoft.com">Delta V Software</a> 2019</li>
+    <li class="footer">Copyright (C) <a href="http://www.deltavsoft.com">Delta V Software</a> 2020</li>
     <!-- <li class="footer">Generated by
     <a href="http://www.doxygen.org/index.html">
     <img class="footer" src="doxygen.png" alt="doxygen"/></a> 1.8.13 </li> -->

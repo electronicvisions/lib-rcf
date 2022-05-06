@@ -78,7 +78,7 @@
  <tbody>
  <tr style="height: 56px;">
   <td id="projectalign" style="padding-left: 0.5em;">
-   <div id="projectname">Remote Call Framework 3.1
+   <div id="projectname">Remote Call Framework 3.2
    </div>
   </td>
    <td>        <div id="MSearchBox" class="MSearchBoxInactive">
@@ -136,6 +136,7 @@ $(document).ready(function(){initNavTree('class_r_c_f_1_1_remote_call_progress_i
 
 <div class="header">
   <div class="summary">
+<a href="#pub-attribs">Public Attributes</a> &#124;
 <a href="class_r_c_f_1_1_remote_call_progress_info-members.html">List of all members</a>  </div>
   <div class="headertitle">
 <div class="title">RCF::RemoteCallProgressInfo Class Reference</div>  </div>
@@ -146,9 +147,71 @@ $(document).ready(function(){initNavTree('class_r_c_f_1_1_remote_call_progress_i
  <a href="class_r_c_f_1_1_remote_call_progress_info.html#details">More...</a></p>
 
 <p><code>#include &lt;<a class="el" href="_client_progress_8hpp_source.html">ClientProgress.hpp</a>&gt;</code></p>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-attribs"></a>
+Public Attributes</h2></td></tr>
+<tr class="memitem:a18957e9085b04eed09066e0e11717a39"><td class="memItemLeft" align="right" valign="top">std::size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_r_c_f_1_1_remote_call_progress_info.html#a18957e9085b04eed09066e0e11717a39">mBytesTransferred</a> = 0</td></tr>
+<tr class="memdesc:a18957e9085b04eed09066e0e11717a39"><td class="mdescLeft">&#160;</td><td class="mdescRight">Bytes transferred so far in this call.  <a href="#a18957e9085b04eed09066e0e11717a39">More...</a><br /></td></tr>
+<tr class="separator:a18957e9085b04eed09066e0e11717a39"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a8d45fcac3c6250481bb5a33088480aa0"><td class="memItemLeft" align="right" valign="top">std::size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_r_c_f_1_1_remote_call_progress_info.html#a8d45fcac3c6250481bb5a33088480aa0">mBytesTotal</a> = 0</td></tr>
+<tr class="memdesc:a8d45fcac3c6250481bb5a33088480aa0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Total number of bytes to transfer in this call.  <a href="#a8d45fcac3c6250481bb5a33088480aa0">More...</a><br /></td></tr>
+<tr class="separator:a8d45fcac3c6250481bb5a33088480aa0"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aca1a666f374e83c7caad0d62f55eb6f5"><td class="memItemLeft" align="right" valign="top"><a class="el" href="group___r_c_f.html#gaf887aaa875213b34a1534a0c19336e08">RemoteCallPhase</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_r_c_f_1_1_remote_call_progress_info.html#aca1a666f374e83c7caad0d62f55eb6f5">mPhase</a> = Rcp_Connect</td></tr>
+<tr class="memdesc:aca1a666f374e83c7caad0d62f55eb6f5"><td class="mdescLeft">&#160;</td><td class="mdescRight">Current phase of the remote call.  <a href="#aca1a666f374e83c7caad0d62f55eb6f5">More...</a><br /></td></tr>
+<tr class="separator:aca1a666f374e83c7caad0d62f55eb6f5"><td class="memSeparator" colspan="2">&#160;</td></tr>
+</table>
 <a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
 <div class="textblock"><p>Describes the status of a remote call while in progress. See <a class="el" href="class_r_c_f_1_1_client_stub.html#abf046b1173ece9d2a5c5ae5c6e408a65">RCF::ClientStub::setRemoteCallProgressCallback()</a>. </p>
-</div><hr/>The documentation for this class was generated from the following file:<ul>
+</div><h2 class="groupheader">Member Data Documentation</h2>
+<a id="a18957e9085b04eed09066e0e11717a39"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a18957e9085b04eed09066e0e11717a39">&#9670;&nbsp;</a></span>mBytesTransferred</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">std::size_t RCF::RemoteCallProgressInfo::mBytesTransferred = 0</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Bytes transferred so far in this call. </p>
+
+</div>
+</div>
+<a id="a8d45fcac3c6250481bb5a33088480aa0"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a8d45fcac3c6250481bb5a33088480aa0">&#9670;&nbsp;</a></span>mBytesTotal</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">std::size_t RCF::RemoteCallProgressInfo::mBytesTotal = 0</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Total number of bytes to transfer in this call. </p>
+
+</div>
+</div>
+<a id="aca1a666f374e83c7caad0d62f55eb6f5"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aca1a666f374e83c7caad0d62f55eb6f5">&#9670;&nbsp;</a></span>mPhase</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="group___r_c_f.html#gaf887aaa875213b34a1534a0c19336e08">RemoteCallPhase</a> RCF::RemoteCallProgressInfo::mPhase = Rcp_Connect</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Current phase of the remote call. </p>
+
+</div>
+</div>
+<hr/>The documentation for this class was generated from the following file:<ul>
 <li><a class="el" href="_client_progress_8hpp_source.html">ClientProgress.hpp</a></li>
 </ul>
 </div><!-- contents -->
@@ -158,7 +221,7 @@ $(document).ready(function(){initNavTree('class_r_c_f_1_1_remote_call_progress_i
 <div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
   <ul>
     <!-- <li class="navelem"><b>RCF</b></li><li class="navelem"><a class="el" href="class_r_c_f_1_1_remote_call_progress_info.html">RemoteCallProgressInfo</a></li> -->
-    <li class="footer">Copyright (C) <a href="http://www.deltavsoft.com">Delta V Software</a> 2019</li>
+    <li class="footer">Copyright (C) <a href="http://www.deltavsoft.com">Delta V Software</a> 2020</li>
     <!-- <li class="footer">Generated by
     <a href="http://www.doxygen.org/index.html">
     <img class="footer" src="doxygen.png" alt="doxygen"/></a> 1.8.13 </li> -->

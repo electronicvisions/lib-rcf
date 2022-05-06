@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2020, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 3.1
+// Version: 3.2
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -62,6 +62,7 @@
 #include "ServerTask.cpp"
 #include "ServerTransport.cpp"
 #include "Service.cpp"
+#include "SessionTimeoutService.cpp"
 #include "Tchar.cpp"
 #include "ThreadLibrary.cpp"
 #include "ThreadLocalData.cpp"
@@ -110,7 +111,6 @@
 #include "CallbackConnectionService.cpp"
 #include "PingBackService.cpp"
 #include "ServerObjectService.cpp"
-#include "SessionTimeoutService.cpp"
 #endif
 
 #if RCF_FEATURE_PROXYENDPOINT==1
@@ -150,6 +150,7 @@ namespace RCF {
 
 #if RCF_FEATURE_SSPI==1
 #include "Schannel.cpp"
+#include "SspiCredentials.cpp"
 #include "SspiFilter.cpp"
 #endif
 

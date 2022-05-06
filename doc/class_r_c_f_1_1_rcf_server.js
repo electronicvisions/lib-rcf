@@ -35,6 +35,8 @@ var class_r_c_f_1_1_rcf_server =
     [ "getConnectionIdleScanIntervalMs", "class_r_c_f_1_1_rcf_server.html#aadc5a684531b1dd84e9d3ee5c11de718", null ],
     [ "setHttpSessionTimeoutMs", "class_r_c_f_1_1_rcf_server.html#a3100e50834b44ec050d9c2956b1cf68b", null ],
     [ "getHttpSessionTimeoutMs", "class_r_c_f_1_1_rcf_server.html#aa3d6d8d638f4beaaaacec26a5790cc5b", null ],
+    [ "setHttpServerHeader", "class_r_c_f_1_1_rcf_server.html#a06a6632c767e421727678408689b7a53", null ],
+    [ "getHttpServerHeader", "class_r_c_f_1_1_rcf_server.html#a54a70a81042997756a11a792f54f8dc3", null ],
     [ "getServerObjectHarvestingIntervalS", "class_r_c_f_1_1_rcf_server.html#a2082baa94af942bc088ec0ab24c4bd56", null ],
     [ "setServerObjectHarvestingIntervalS", "class_r_c_f_1_1_rcf_server.html#a595212dae6993e8f14356a77d5031f46", null ],
     [ "queryServerObject", "class_r_c_f_1_1_rcf_server.html#af2c3199a5f10051422f7675ea37fff04", null ],

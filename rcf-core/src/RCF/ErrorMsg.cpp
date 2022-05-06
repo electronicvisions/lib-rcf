@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2020, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 3.1
+// Version: 3.2
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -231,6 +231,13 @@ namespace RCF
         case 185   /*RcfError_NonSSLResponse                 */: return "The server responded with a non-SSL response. The first bytes of the response were: '%1%'."; 
         case 186   /*RcfError_NoProxyConnection              */: return "Unable to establish connection to proxy endpoint '%1%'."; 
         case 187   /*RcfError_ProxyServerMultiThreaded       */: return "Proxy server must be multi-threaded, in order to service proxy requests."; 
+        case 188   /*RcfError_HttpRedirect                   */: return "The server returned a HTTP redirect response. The HTTP response was '%1%'."; 
+        case 189   /*RcfError_SetFileModTime                 */: return "Unable to set last modified time for file '%1%'. %2%"; 
+        case 190   /*RcfError_GetFileModTime                 */: return "Unable to retrieve last modified time for file '%1%'. %2%"; 
+        case 191   /*RcfError_HttpMessageVerification        */: return "HTTP message verification failed. "; 
+        case 192   /*RcfError_HttpMessageVerificationAdmin   */: return "HTTP message verification failed. %1%"; 
+        case 193   /*RcfError_HttpSessionNotAvailable        */: return "HTTP session not available."; 
+        case 194   /*RcfError_HttpInvalidMessage             */: return "Invalid HTTP message."; 
 
         //[[[end]]]
 

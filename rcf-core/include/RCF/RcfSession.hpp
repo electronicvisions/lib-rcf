@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2020, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 3.1
+// Version: 3.2
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -28,15 +28,13 @@
 
 #include <RCF/Any.hpp>
 #include <RCF/Export.hpp>
-#include <RCF/FileSystem.hpp>
 #include <RCF/MethodInvocation.hpp>
 #include <RCF/RcfFwd.hpp>
 #include <RCF/SerializationProtocol.hpp>
 #include <RCF/Tchar.hpp>
 
 #if RCF_FEATURE_FILETRANSFER==1
-//#include <RCF/FileDownload.hpp>
-//#include <RCF/FileUpload.hpp>
+#include <RCF/FileSystem.hpp>
 #endif
 
 #if RCF_FEATURE_SSPI==1
@@ -312,7 +310,6 @@ namespace RCF {
 
 #endif
 
-
         //*******************************
         // callback tables - synchronized
 
@@ -357,8 +354,10 @@ namespace RCF {
         void            setPingIntervalMs(std::uint32_t pingIntervalMs);
 
         std::uint32_t   getTouchTimestamp();
+        bool            getCallInProgress();
 
         void            touch();
+        void            setCallInProgress(bool callInProgress);
 
         void            sendPingBack();
         bool            getAutoSend();
@@ -448,6 +447,7 @@ namespace RCF {
 
         MethodInvocationRequest                 mRequest;
 
+        bool                                    mCallInProgress = false;
         bool                                    mCloseSessionAfterWrite;
         std::uint32_t                           mPingTimestamp;
         std::uint32_t                           mPingIntervalMs;
@@ -577,7 +577,7 @@ namespace RCF {
 
         time_t                  mConnectedAtTime;
 
-        std::size_t             mRemoteCallCount;
+        std::size_t             mRemoteCallCount;        
     };       
 
 } // namespace RCF

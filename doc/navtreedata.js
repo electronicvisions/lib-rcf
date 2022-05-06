@@ -1,6 +1,6 @@
 var NAVTREE =
 [
-  [ "Remote Call Framework 3.1", "index.html", [
+  [ "Remote Call Framework 3.2", "index.html", [
     [ "Introduction", "index.html", [
       [ "What is Remote Call Framework?", "index.html#WhatIsRcf", null ],
       [ "Why should I use RCF?", "index.html#WhoShouldUseRcf", null ],
@@ -47,6 +47,7 @@ var NAVTREE =
       ] ]
     ] ],
     [ "Release Notes", "_release_notes.html", [
+      [ "RCF 3.2.403 - 2020-07-12", "_release_notes.html#release_3_2_403", null ],
       [ "RCF 3.1.328 - 2019-05-11", "_release_notes.html#release_3_1_328", null ],
       [ "RCF 3.0.251 - 2018-05-13", "_release_notes.html#release_3_0_251", null ],
       [ "RCF 2.2.0.0 - 2016-04-13", "_release_notes.html#release_2_2_0_0", null ],
@@ -92,10 +93,10 @@ var NAVTREE =
 var NAVTREEINDEX =
 [
 ".html",
-"_rcf_fwd_8hpp.html#a4cd75b3e4799256a3df402260f7891c8",
-"class_r_c_f_1_1_client_stub.html#a23a4ae0937b17042cd740d9cd022119c",
-"class_r_c_f_1_1_rcf_session.html#a1632a13e375dcaabb28cc8df3e7926f3",
-"group___r_c_f.html#ggad63a8841e9cbf54719dabecb687b0b75a2c1dcce5a2a5d788908df0dc68e43885"
+"_rcf_fwd_8hpp.html#a0f26902b2404b33ac85ccdec757e3f3a",
+"class_r_c_f_1_1_client_stub.html#a1604d31b60b56f931ec44a0f866076cc",
+"class_r_c_f_1_1_rcf_server.html#aadc5a684531b1dd84e9d3ee5c11de718",
+"group___r_c_f.html#gga3f88ae1d5008805d5f75151296c2c9e8a3f11a72710a1277236322e1ecc34c418"
 ];
 
 var SYNCONMSG = 'click to disable panel synchronisation';

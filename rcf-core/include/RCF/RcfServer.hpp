@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2020, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 3.1
+// Version: 3.2
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -257,6 +257,17 @@ namespace RCF {
 
         /// Gets the HTTP session timeout value, in ms.
         std::uint32_t           getHttpSessionTimeoutMs();
+
+        /// Sets the value of the "Server" header in HTTP responses.
+        void                    setHttpServerHeader(const std::string & httpServerHeader);
+
+        /// Gets the value of the "Server" header in HTTP responses.
+        std::string             getHttpServerHeader() const;
+
+#if RCF_FEATURE_HTTP==1
+        void                    setHttpMessageVerifier(HttpMessageVerifierPtr verifierPtr);
+        HttpMessageVerifierPtr  getHttpMessageVerifier() const;
+#endif
 
         ///@}
 
@@ -608,6 +619,8 @@ namespace RCF {
 
         std::uint32_t                   mHttpSessionTimeoutMs;
 
+        std::string                     mHttpServerHeader;
+
         OnCallbackConnectionCreated     mOnCallbackConnectionCreated;
 
 #if RCF_FEATURE_SSPI==1
@@ -622,17 +635,20 @@ namespace RCF {
 
         std::uint32_t                           mServerObjectHarvestingIntervalS;
 
-#if RCF_FEATURE_HTTP==1
-        Mutex                                   mHttpSessionMapMutex;
-        std::map<std::string, HttpSessionPtr>   mHttpSessionMap;
-
         friend class HttpSessionFilter;
 
         HttpSessionPtr  attachHttpSession(const std::string & httpSessionId, bool allowCreate, ExceptionPtr & ePtr);
         void            detachHttpSession(HttpSessionPtr httpSessionPtr);
-
+        
         friend class ServerObjectService;
         void            harvestHttpSessions();
+
+#if RCF_FEATURE_HTTP==1
+        Mutex                                   mHttpSessionMapMutex;
+        std::map<std::string, HttpSessionPtr>   mHttpSessionMap;
+
+        HttpMessageVerifierPtr  mHttpMessageVerifierPtr;
+
 #endif
 
     public:

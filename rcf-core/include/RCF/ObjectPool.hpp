@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2020, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 3.1
+// Version: 3.2
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -19,7 +19,6 @@
 #ifndef INCLUDE_RCF_OBJECTPOOL_HPP
 #define INCLUDE_RCF_OBJECTPOOL_HPP
 
-#include <memory>
 #include <vector>
 #include <functional>
 #include <map>
@@ -76,7 +75,7 @@ namespace RCF {
 
         pointer allocate(
             size_type cnt, 
-            typename std::allocator<void>::value_type const* = 0)
+            typename std::allocator_traits<std::allocator<void>>::const_pointer = 0)
         {
             static_assert( sizeof(T) <= CbSize, "Invalid type T." );
             RCF_ASSERT(cnt == 1);
@@ -406,11 +405,9 @@ namespace RCF {
 
             // Use shared_ptr allocator to avoid all allocations when a buffer is requested.
 
-            using std::placeholders::_1;
-
             spt = std::shared_ptr<T>( 
                 pt, 
-                std::bind(pfn, this, _1), 
+                std::bind(pfn, this, std::placeholders::_1),
                 CbAllocator<void>(*this) );
 
         }

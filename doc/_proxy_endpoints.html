@@ -78,7 +78,7 @@
  <tbody>
  <tr style="height: 56px;">
   <td id="projectalign" style="padding-left: 0.5em;">
-   <div id="projectname">Remote Call Framework 3.1
+   <div id="projectname">Remote Call Framework 3.2
    </div>
   </td>
    <td>        <div id="MSearchBox" class="MSearchBoxInactive">
@@ -143,6 +143,7 @@ $(document).ready(function(){initNavTree('_proxy_endpoints.html','');});
 <ul><li class="level1"><a href="#ProxyServer">Configuring a Proxy Server</a></li>
 <li class="level1"><a href="#DestinationServer">Configuring a Destination Server</a></li>
 <li class="level1"><a href="#ClientProxy">Connecting Through a Proxy Server</a></li>
+<li class="level1"><a href="#TwoWayCommunication">Two-way communication using proxy endpoints</a></li>
 </ul>
 </div>
 <div class="textblock"><p>Proxy endpoints allow RCF clients to connect to RCF servers that they are otherwise unable to connect directly to.</p>
@@ -166,15 +167,21 @@ Configuring a Destination Server</h1>
 <h1><a class="anchor" id="ClientProxy"></a>
 Connecting Through a Proxy Server</h1>
 <p>Once the destination server and proxy server are up and running, a client can connect to the destination server by using a <code><a class="el" href="class_r_c_f_1_1_proxy_endpoint.html" title="Represents a proxy endpoint. ">RCF::ProxyEndpoint</a></code> and specifying the proxy server along with the name of the destination server.</p>
-<div class="fragment"><div class="line">    <span class="comment">// Client calling through to proxy server, using in-process access to the proxy server.</span></div><div class="line">    RcfClient&lt;I_PrintService&gt; client( <a class="code" href="class_r_c_f_1_1_proxy_endpoint.html">RCF::ProxyEndpoint</a>(proxyServer, <span class="stringliteral">&quot;RoamingPrintSvr&quot;</span>) );</div><div class="line">    client.Print(<span class="stringliteral">&quot;Calling I_PrintService through a proxy endpoint.&quot;</span>);</div></div><!-- fragment --> <div class="fragment"><div class="line">    <span class="comment">// Client calling through to proxy server, using network access to the proxy server.</span></div><div class="line">    RcfClient&lt;I_PrintService&gt; client(<a class="code" href="class_r_c_f_1_1_proxy_endpoint.html">RCF::ProxyEndpoint</a>(<a class="code" href="class_r_c_f_1_1_tcp_endpoint.html">RCF::TcpEndpoint</a>(proxyIp, proxyPort), <span class="stringliteral">&quot;RoamingPrintSvr&quot;</span>));</div><div class="line">    client.Print(<span class="stringliteral">&quot;Calling I_PrintService through a proxy endpoint.&quot;</span>);</div></div><!-- fragment --><p> Using a proxied connection, the client can make remote calls as usual, and is able to disconnect and re-connect, just as with an un-proxied connection. Distinct RCF clients will have distinct network connections to the destination server, and the lifetime of any session objects created on the destination server, will be mapped to the lifetime of the clients proxied network connection. </p>
-</div></div><!-- contents -->
+<div class="fragment"><div class="line">    <span class="comment">// Client calling through to destination server, using in-process access to the proxy server.</span></div><div class="line">    RcfClient&lt;I_PrintService&gt; client( <a class="code" href="class_r_c_f_1_1_proxy_endpoint.html">RCF::ProxyEndpoint</a>(proxyServer, <span class="stringliteral">&quot;RoamingPrintSvr&quot;</span>) );</div><div class="line">    client.Print(<span class="stringliteral">&quot;Calling I_PrintService through a proxy endpoint.&quot;</span>);</div></div><!-- fragment --> <div class="fragment"><div class="line">    <span class="comment">// Client calling through to destination server, using network access to the proxy server.</span></div><div class="line">    RcfClient&lt;I_PrintService&gt; client(<a class="code" href="class_r_c_f_1_1_proxy_endpoint.html">RCF::ProxyEndpoint</a>(<a class="code" href="class_r_c_f_1_1_tcp_endpoint.html">RCF::TcpEndpoint</a>(proxyIp, proxyPort), <span class="stringliteral">&quot;RoamingPrintSvr&quot;</span>));</div><div class="line">    client.Print(<span class="stringliteral">&quot;Calling I_PrintService through a proxy endpoint.&quot;</span>);</div></div><!-- fragment --><p> Using a proxied connection, the client can make remote calls as usual, and is able to disconnect and re-connect, just as with an un-proxied connection. Distinct RCF clients will have distinct network connections to the destination server, and the lifetime of any session objects created on the destination server, will be mapped to the lifetime of the clients proxied network connection.</p>
+<h1><a class="anchor" id="TwoWayCommunication"></a>
+Two-way communication using proxy endpoints</h1>
+<p>It's quite common to have a situation where clients connect to a server, but subsequently the server needs to be able to make remote calls in the opposite direction, back to the clients. We refer to this as two-way communication.</p>
+<p>Beginning with RCF 3.0, two-way communication is supported using proxy endpoints. For example, assume we have a server process and a client process, and we want to implement two-way communication between them. In the server process, you would enable proxy endpoint support on the <code>RcfServer</code>:</p>
+<div class="fragment"><div class="line">        <span class="comment">// Server process listening on port 50001, with proxy endpoint support enabled.</span></div><div class="line">        <a class="code" href="class_r_c_f_1_1_rcf_server.html">RCF::RcfServer</a> proxyServer(<a class="code" href="class_r_c_f_1_1_tcp_endpoint.html">RCF::TcpEndpoint</a>(<span class="stringliteral">&quot;0.0.0.0&quot;</span>, 50001));</div><div class="line">        proxyServer.setEnableProxyEndpoints(<span class="keyword">true</span>);</div></div><!-- fragment --><p> Any server-side code that needs to make a call to the client process, would do so by using a proxy endpoint:</p>
+<div class="fragment"><div class="line">        <span class="comment">// Server-side code, making calls to the client process.</span></div><div class="line">        RcfClient&lt;I_PrintService&gt; client(<a class="code" href="class_r_c_f_1_1_proxy_endpoint.html">RCF::ProxyEndpoint</a>(proxyServer, <span class="stringliteral">&quot;SomeUniqueClientId&quot;</span>));</div><div class="line">        client.Print(<span class="stringliteral">&quot;Making call from server to client.&quot;</span>);</div></div><!-- fragment --><p> In the client process, you need to start a <code>RcfServer</code>, configured with the relevant proxy endpoint, in order to receive calls from the server process:</p>
+<div class="fragment"><div class="line">        <span class="comment">// Client-side configuration code, to allow calls to be received from the server process.</span></div><div class="line">        PrintService printService;</div><div class="line">        std::string serverAddress;</div><div class="line">        <a class="code" href="class_r_c_f_1_1_tcp_endpoint.html">RCF::TcpEndpoint</a> serverEp(serverAddress, 50001);</div><div class="line">        <a class="code" href="class_r_c_f_1_1_rcf_server.html">RCF::RcfServer</a> server(<a class="code" href="class_r_c_f_1_1_proxy_endpoint.html">RCF::ProxyEndpoint</a>(serverEp, <span class="stringliteral">&quot;SomeUniqueClientId&quot;</span>) );</div><div class="line">        server.<a class="code" href="class_r_c_f_1_1_rcf_server.html#a3e8f6a060a87beb96b5690e9829c9c3f">bind</a>&lt;I_PrintService&gt;(printService);</div><div class="line">        server.<a class="code" href="class_r_c_f_1_1_rcf_server.html#a737d7cf9860b1d49209b2ebe891e4449">start</a>();</div></div><!-- fragment --></div></div><!-- contents -->
 </div><!-- doc-content -->
 <!-- HTML footer for doxygen 1.8.13-->
 <!-- start footer part -->
 <div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
   <ul>
     <!--  -->
-    <li class="footer">Copyright (C) <a href="http://www.deltavsoft.com">Delta V Software</a> 2019</li>
+    <li class="footer">Copyright (C) <a href="http://www.deltavsoft.com">Delta V Software</a> 2020</li>
     <!-- <li class="footer">Generated by
     <a href="http://www.doxygen.org/index.html">
     <img class="footer" src="doxygen.png" alt="doxygen"/></a> 1.8.13 </li> -->

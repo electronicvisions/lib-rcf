@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2020, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 3.1
+// Version: 3.2
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -27,6 +27,9 @@
 #include <RCF/ThreadLocalData.hpp>
 #include <RCF/Log.hpp>
 #include <RCF/Uuid.hpp>
+
+#include <iomanip>
+#include <time.h>
 
 #ifndef RCF_WINDOWS
 #define strnicmp strncasecmp
@@ -108,16 +111,31 @@ namespace RCF  {
         init();
     }
 
-    HttpFrameFilter::HttpFrameFilter(const std::string serverAddr, int serverPort) :
+    HttpFrameFilter::HttpFrameFilter(const std::string & serverAddr, int serverPort, const std::string & serverUrlPath) :
         mChunkedResponseMode(false),
         mChunkedResponseCounter(0),
         mServerAddr(serverAddr),
         mServerPort(serverPort),
+        mServerUrlPath(serverUrlPath),
         mClientSide(true),
         mHttpSessionIndex(0),
         mMaxMessageLength(0),
         mMaxMessageLengthSet(false)
     {
+
+        if ( mServerUrlPath.empty() )
+        {
+            mServerUrlPath = "/";
+        }
+        if ( mServerUrlPath.front() != '/' )
+        {
+            mServerUrlPath = "/" + mServerUrlPath;
+        }
+        if ( mServerUrlPath.back() != '/' )
+        {
+            mServerUrlPath += "/" ;
+        }
+
         init();
     }
 
@@ -329,7 +347,7 @@ namespace RCF  {
         trimLeft(httpStatus);
     }
 
-    void HttpMessage::getHeaderValue(const std::string& headerName, std::string& headerValue)
+    void HttpMessage::getHeaderValue(const std::string& headerName, std::string& headerValue) const
     {
         headerValue = "";
         for ( std::size_t i = 0; i < mHeaderList.size(); ++i )
@@ -366,6 +384,11 @@ namespace RCF  {
 
         // Split HTTP message into lines.
         splitString(mHttpMessageHeader, CrLf.c_str(), mMessageLines);
+
+        if ( mMessageLines.empty() )
+        {
+            return false;
+        }
 
         // Parse request/response line.
         const std::string & firstLine = mMessageLines.front();
@@ -435,6 +458,59 @@ namespace RCF  {
         return trimLeft(trimRight(s, t), t);
     }
 
+    void makeHttpDateHeaderValue(char * buf, std::size_t bufSize)
+    {
+
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4996) // warning C4996: 'gmtime': This function or variable may be unsafe. Consider using gmtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+#endif
+
+        time_t now = time(0);
+        struct tm tm = *gmtime(&now);
+        strftime(buf, bufSize, "%a, %d %b %Y %H:%M:%S %Z", &tm);
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+
+    }
+
+    // Drop in replacement for Linux strptime() function, for parsing HTTP date time strings.
+    char* RCF_strptime(
+        const char* szToParse,
+        const char* szFormat,
+        struct tm* tm) 
+    {
+        std::istringstream input(szToParse);
+        input.imbue(std::locale(setlocale(LC_ALL, nullptr)));
+        input >> std::get_time(tm, szFormat);
+        if ( input.fail() ) 
+        {
+            return nullptr;
+        }
+        return (char*)(szToParse + (std::size_t) input.tellg());
+    }
+
+    void HttpFrameFilter::sendHttpTextResponse(const std::string & httpStatus, const std::string & responseBody)
+    {
+        MemOstreamPtr osPtr(new MemOstream());
+
+        char dateHeader[1000] = {};
+        makeHttpDateHeaderValue(dateHeader, sizeof(dateHeader));
+
+        *osPtr
+            << "HTTP/1.1 " << httpStatus << "\r\n"
+            << "Content-Length: " << responseBody.length() << "\r\n"
+            << "Content-Type: text/plain\r\n"
+            << "Server: " << getServerHeader() << "\r\n"
+            << "Date: " << dateHeader << "\r\n"
+            << "\r\n"
+            << responseBody;
+
+        sendHttpErrorResponse(osPtr);
+    }
+
     bool HttpFrameFilter::tryParseHttpHeader()
     {
         // Sanity check that we are receiving a HTTP message.
@@ -454,41 +530,19 @@ namespace RCF  {
             {
                 if ( 0 == strncmp(pBuffer, "GET / ", 6) )
                 {
-                    MemOstreamPtr osPtr(new MemOstream());
-
-                    *osPtr
-                        << "HTTP/1.1 200 OK"
-                        << "\r\n\r\n"
-                        << "Server is online."
-                        << "\r\n\r\n";
-
-                    sendHttpErrorResponse(osPtr);
+                    sendHttpTextResponse("200 OK", "Server is online.");
                     return false;
                 }
                 else if ( 0 == strncmp(pBuffer, "GET", 3) )
                 {
-                    MemOstreamPtr osPtr(new MemOstream());
-
-                    *osPtr
-                        << "HTTP/1.1 404 Not Found"
-                        << "\r\n\r\n"
-                        << "Page not found."
-                        << "\r\n\r\n";
-
-                    sendHttpErrorResponse(osPtr);
+                    // Returning a 200 here, because although the server doesn't care what the URL path is, it may have been set 
+                    // by the client to a specific value in order to facilitate routing through a reverse proxy.
+                    sendHttpTextResponse("200 OK", "Server is online.");
                     return false;
                 }
                 else if ( 0 != strncmp(pBuffer, "POST", 4) )
                 {
-                    MemOstreamPtr osPtr(new MemOstream());
-
-                    *osPtr
-                        << "HTTP/1.1 400 Bad Request"
-                        << "\r\n\r\n"
-                        << "Bad request."
-                        << "\r\n\r\n";
-
-                    sendHttpErrorResponse(osPtr);
+                    sendHttpTextResponse("400 Bad Request", "Bad request.");
                     return false;
                 }
                 else
@@ -566,29 +620,11 @@ namespace RCF  {
             }
             else if ( iequals(headerName, SetCookie) )
             {
-                // Check for any cookies returned by server.
-                std::vector<std::string> parts;
-                splitString(headerValue, ";", parts);
-                if ( parts.size() > 0 )
-                {
-                    auto cookieKeyValue = parts[0];
-                    auto pos = cookieKeyValue.find('=');
-                    if ( pos != std::string::npos )
-                    {
-                        std::string cookieName = cookieKeyValue.substr(0, pos);
-                        cookieName = trimBoth(cookieName);
-
-                        std::string cookieValue = cookieKeyValue.substr(pos+1);
-                        cookieValue = trimBoth(cookieValue);
-
-                        ClientStub * pStub = RCF::getTlsClientStubPtr();
-                        if ( pStub )
-                        {
-                            std::map<std::string, HttpCookie> & cookieMap = pStub->getCookieMap();
-                            cookieMap[cookieName] = HttpCookie(cookieName, cookieValue);
-                        }
-                    }
-                }
+                processSetCookieHeader(headerValue);
+            }
+            else if ( iequals(headerName, "Location") )
+            {
+                processLocationHeader();
             }
         }
 
@@ -643,6 +679,112 @@ namespace RCF  {
         }
 
         return true;
+    }
+
+    void HttpFrameFilter::processLocationHeader()
+    {
+        // Check that we are dealing with a 3xx redirect response.
+        std::string status;
+        std::string statusMsg;
+        mHttpMessage.getHttpStatus(status, statusMsg);
+        int nStatus = atoi(status.c_str());
+        if ( nStatus / 100 == 3 )
+        {
+            ClientStub * pStub = RCF::getTlsClientStubPtr();
+            if ( pStub )
+            {
+                HttpRedirectHandler redirectHandler = pStub->getHttpRedirectHandler();
+                if ( redirectHandler )
+                {
+                    redirectHandler(mHttpMessage.mResponseLine, mHttpMessage.mHeaderList);
+                }
+                RCF_THROW(Exception(RcfError_HttpRedirect, mHttpMessage.mHttpMessageHeader));
+            }
+        }
+    }
+
+    void HttpFrameFilter::processSetCookieHeader(const std::string& headerValue)
+    {
+        // Check for any cookies returned by server.
+        std::string cookieName;
+        std::string cookieValue;
+        bool cookieExpired = false;
+
+        std::vector<std::string> parts;
+        splitString(headerValue, ";", parts);
+        if ( parts.size() > 0 )
+        {
+            for ( std::size_t j = 0; j < parts.size(); ++j )
+            {
+                auto pos = parts[j].find('=');
+                if ( pos != std::string::npos )
+                {
+                    std::string keyName = parts[j].substr(0, pos);
+                    keyName = trimBoth(keyName);
+
+                    std::string keyValue = parts[j].substr(pos + 1);
+                    keyValue = trimBoth(keyValue);
+
+                    if ( j == 0 )
+                    {
+                        cookieName = keyName;
+                        cookieValue = keyValue;
+                    }
+                    else
+                    {
+                        // Check for expiration, as that's how the server informs us that a cookie should be deleted.
+
+                        if ( iequals(keyName, "Expires") )
+                        {
+                            std::string expiry = keyValue;
+
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4996) // warning C4996: 'gmtime': This function or variable may be unsafe. Consider using gmtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+#endif
+
+                            struct tm tmExpiryGmt = {};
+                            char * ret = RCF_strptime(expiry.c_str(), "%a, %d-%b-%Y %H:%M:%S", &tmExpiryGmt);
+                            RCF_ASSERT(ret && "Couldn't parse cookie expiry date time.");
+                            if ( ret )
+                            {
+                                time_t secsNow = time(NULL);
+                                struct tm * tmNowGmt = gmtime(&secsNow);
+
+                                // Before comparing, increment both dates by a year so we don't encounter corner case of Jan 1 1970 as the expiry date, as mktime() may fail, depending on our timezome.
+                                tmExpiryGmt.tm_year += 1;
+                                tmNowGmt->tm_year += 1;
+                                time_t secsExpiryGmt = mktime(&tmExpiryGmt);
+                                time_t secsNowGmt = mktime(tmNowGmt);
+                                double secsDiff = difftime(secsExpiryGmt, secsNowGmt);
+                                if ( secsDiff < 0 )
+                                {
+                                    cookieExpired = true;
+                                }
+                            }
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+
+                        }
+                    }
+                }
+            }
+
+            ClientStub * pStub = RCF::getTlsClientStubPtr();
+            if ( pStub && cookieName.size() > 0 )
+            {
+                std::map<std::string, HttpCookie> & cookieMap = pStub->getCookieMap();
+                if ( cookieExpired )
+                {
+                    cookieMap.erase(cookieName);
+                }
+                else
+                {
+                    cookieMap[cookieName] = HttpCookie(cookieName, cookieValue);
+                }
+            }
+        }
     }
 
     void HttpFrameFilter::sendServerError(int error)
@@ -801,12 +943,57 @@ namespace RCF  {
                         }
                     }
 
+                    // Client side - verify message data if appropriate.
+                    if ( mClientSide )
+                    {
+                        verifyReceivedMessage();
+                    }
+
                     // Re-issue the original read.
                     mReadPos = mHttpMessage.mHeaderLen + mChunkHeaderLen;
                     read(mOrigReadBuffer, mOrigBytesRequested);
                 }
             }
         }
+    }
+
+    bool HttpFrameFilter::verifyReceivedMessage()
+    {
+        bool verified = false;
+        try
+        {
+            ByteBuffer messageData(ByteBuffer(mReadBufferPtr), mHttpMessage.mHeaderLen + mChunkHeaderLen, mHttpMessage.mContentLen);
+
+            // Verify message data if we have a verifier.
+            ClientStub* pStub = RCF::getTlsClientStubPtr();
+            RCF::RcfSession* pSession = getCurrentRcfSessionPtr();
+            HttpMessageVerifierPtr verifierPtr;
+            if ( pStub )
+            {
+                verifierPtr = pStub->getHttpMessageVerifier();
+            }
+            else if ( pSession )
+            {
+                verifierPtr = pSession->getRcfServer().getHttpMessageVerifier();
+            }
+            if ( verifierPtr )
+            {
+                verifierPtr->verifyHeader(mHttpMessage, messageData);
+            }
+
+            verified = true;
+        }
+        catch ( const std::exception & e )
+        {
+            verified = false;
+            std::string msg = e.what();
+
+            RCF_LOG_1() << Exception(RcfError_HttpMessageVerificationAdmin, msg).getErrorMessage();
+            onError(Exception(RcfError_HttpMessageVerification));
+
+        }
+
+        return verified;
     }
 
     std::size_t HttpFrameFilter::getFrameSize()
@@ -827,6 +1014,19 @@ namespace RCF  {
     const std::string & HttpFrameFilter::getConnectionHeader()
     {
         return mConnectionHeader;
+    }
+
+    const std::string & HttpFrameFilter::getServerHeader()
+    {
+        if ( mServerHeaderValue.empty() )
+        {
+            mServerHeaderValue = RCF::getCurrentRcfSession().getRcfServer().getHttpServerHeader();
+            if ( mServerHeaderValue.empty() )
+            {
+                mServerHeaderValue = std::string("Remote Call Framework/") + RCF_VERSION_STR_BASE;
+            }
+        }
+        return mServerHeaderValue;
     }
 
     void HttpFrameFilter::getHttpFrameInfo(
@@ -861,16 +1061,47 @@ namespace RCF  {
 
         mOsPtr->rewind();
 
+        // Check if a message verifier is in place.
+        ClientStub* pStub = RCF::getTlsClientStubPtr();
+        RCF::RcfSession* pSession = getCurrentRcfSessionPtr();
+        std::string verifierHeaderName;
+        std::string verifierHeaderValue;
+        HttpMessageVerifierPtr verifierPtr;
+        if ( pStub )
+        {
+            verifierPtr = pStub->getHttpMessageVerifier();
+        }
+        else if ( pSession )
+        {
+            verifierPtr = pSession->getRcfServer().getHttpMessageVerifier();
+        }
+        if ( verifierPtr )
+        {
+            verifierPtr->applyHeader(mWriteBuffers, verifierHeaderName, verifierHeaderValue);
+        }
+        
         if (mServerAddr.size() > 0)
         {
             // Client-side request.
 
             // This needs to work whether or not we are going through a proxy.
 
+            RCF_ASSERT(pStub);
+
             ++mHttpSessionIndex;
 
+            std::string parameterString;
+            if ( pStub )
+            {
+                parameterString = pStub->getHttpUrlParameterString();
+                if ( parameterString.size() > 0 && parameterString.front() != '?' )
+                {
+                    parameterString = "?" + parameterString;
+                }
+            }
+
             *mOsPtr <<
-                "POST / HTTP/1.1\r\n"
+                "POST " << mServerUrlPath << parameterString << " HTTP/1.1\r\n"
                 "Host: " << mServerAddr << ":" << mServerPort << "\r\n"
                 "Accept: */*\r\n"
                 "Connection: Keep-Alive\r\n"
@@ -878,9 +1109,13 @@ namespace RCF  {
                 "X-RCFSessionId: " << mHttpSessionId << "\r\n"
                 "X-RCFSessionIndex: " << mHttpSessionIndex << "\r\n";
 
+            if ( verifierHeaderName.size() > 0 )
+            {
+                *mOsPtr << verifierHeaderName << ": " << verifierHeaderValue << "\r\n";
+            }
+
             // Feed in any cookies we have received from the server.
-            ClientStub * pStub = RCF::getTlsClientStubPtr();
-            RCF_ASSERT(pStub);
+            
             if ( pStub )
             {
                 std::map<std::string, HttpCookie> & cookieMap = pStub->getCookieMap();
@@ -898,16 +1133,21 @@ namespace RCF  {
         {
             // Server-side response.
 
+            char dateHeader[1000] = {};
+            makeHttpDateHeaderValue(dateHeader, sizeof(dateHeader));
+
             if ( mChunkedResponseMode && mChunkedResponseCounter == 0 )
             {
-                *mOsPtr <<
-                    "HTTP/1.1 200 OK\r\n"
-                    "X-RCFSessionId: " << mHttpSessionId << "\r\n"
-                    "X-RCFSessionIndex: " << mHttpSessionIndex << "\r\n"
-                    "Connection: Keep-Alive\r\n"
-                    "Transfer-Encoding: chunked" << "\r\n"
-                    //"Connection: close\r\n"
-                    "\r\n";
+                *mOsPtr 
+                    << "HTTP/1.1 200 OK\r\n"
+                    << "X-RCFSessionId: " << mHttpSessionId << "\r\n"
+                    << "X-RCFSessionIndex: " << mHttpSessionIndex << "\r\n"
+                    << "Server: " << getServerHeader() << "\r\n"
+                    << "Date: " << dateHeader << "\r\n"
+                    << "Connection: Keep-Alive\r\n"
+                    << "Transfer-Encoding: chunked" << "\r\n"
+                    //<< "Connection: close\r\n"
+                    << "\r\n";
 
                 char buf[255] = { 0 };
                 sprintf(buf, "%x", messageLength);
@@ -921,13 +1161,22 @@ namespace RCF  {
             }
             else
             {
-                *mOsPtr <<
-                    "HTTP/1.1 200 OK\r\n"
-                    "X-RCFSessionId: " << mHttpSessionId << "\r\n"
-                    "X-RCFSessionIndex: " << mHttpSessionIndex << "\r\n"
-                    "Content-Length: " << messageLength << "\r\n"
-                    "Connection: Keep-Alive\r\n"
-                    "\r\n";
+                *mOsPtr
+                    << "HTTP/1.1 200 OK\r\n"
+                    << "X-RCFSessionId: " << mHttpSessionId << "\r\n"
+                    << "X-RCFSessionIndex: " << mHttpSessionIndex << "\r\n";
+
+                if ( verifierHeaderName.size() > 0 )
+                {
+                    *mOsPtr << verifierHeaderName << ": " << verifierHeaderValue << "\r\n";
+                }
+
+                *mOsPtr
+                    << "Server: " << getServerHeader() << "\r\n"
+                    << "Date: " << dateHeader << "\r\n"
+                    << "Content-Length: " << messageLength << "\r\n"
+                    << "Connection: Keep-Alive\r\n"
+                    << "\r\n";
             }
         }   
 
@@ -1022,14 +1271,18 @@ namespace RCF  {
         }
         else
         {
+            std::string msg = e.getErrorMessage();
+
             MemOstreamPtr osPtr(new MemOstream());
 
             *osPtr
                 << "HTTP/1.1 400 Bad Request\r\n"
-                << "X-RCFError: " << e.getErrorMessage()
-                << "\r\n\r\n"
-                << e.getErrorMessage()
-                << "\r\n\r\n";
+                << "Content-Length: " << msg.length() << "\r\n"
+                << "Content-Type: text/plain\r\n"
+                << "Server: " << getServerHeader() << "\r\n"
+                << "X-RCFError: " << e.getErrorMessage() << "\r\n"
+                << "\r\n"
+                << e.getErrorMessage();
 
             sendHttpErrorResponse(osPtr);
         }

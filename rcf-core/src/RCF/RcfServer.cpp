@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2020, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 3.1
+// Version: 3.2
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -37,6 +37,7 @@
 #include <RCF/ServerStub.hpp>
 #include <RCF/ServerTask.hpp>
 #include <RCF/Service.hpp>
+#include <RCF/SessionTimeoutService.hpp>
 #include <RCF/TcpClientTransport.hpp>
 #include <RCF/ThreadLocalData.hpp>
 #include <RCF/Tools.hpp>
@@ -351,6 +352,8 @@ namespace RCF {
         Lock lock(mStartStopMutex);
         if (!mStarted)
         {
+            mStarted = true;
+
             // open the server
 
             for (std::size_t i=0; i<mServices.size(); ++i)
@@ -375,8 +378,6 @@ namespace RCF {
 
             // notify anyone who was waiting on the stop event
             mStartEvent.notify_all();
-
-            mStarted = true;
         }
     }
 
@@ -842,11 +843,13 @@ namespace RCF {
     public:
         SessionTouch(RcfSession &rcfSession) : mRcfSession(rcfSession)
         {
+            mRcfSession.setCallInProgress(true);
             mRcfSession.touch();
         }
         ~SessionTouch()
         {
             mRcfSession.touch();
+            mRcfSession.setCallInProgress(false);
         }
 
     private:
@@ -979,10 +982,20 @@ namespace RCF {
     void RcfSession::processOob_RequestProxyConnection(OobMessage& msg)
     {
         OobRequestProxyConnection & rpcMsg = static_cast<OobRequestProxyConnection &>(msg);
+
+#if RCF_FEATURE_PROXYENDPOINT==1
         ClientTransportPtr transportPtr(mRcfServer.makeProxyEndpointConnection(rpcMsg.mProxyEndpointName).release());
         RCF_ASSERT(transportPtr);
         ProxyEndpointServicePtr proxySvcPtr = mRcfServer.mProxyEndpointServicePtr;
         addOnWriteCompletedCallback([=](RcfSession& rcfSession) { proxySvcPtr->setupProxiedConnection(rcfSession, transportPtr);  });
+
+#else
+
+        RCF_UNUSED_VARIABLE(rpcMsg);
+        Exception e(RcfError_NotSupportedInThisBuild, "Proxy endpoints");
+        RCF_THROW(e);
+
+#endif
     }
 
     void RcfSession::processOobMessages()
@@ -1420,10 +1433,8 @@ namespace RCF {
 
 #endif
 
-
     void RcfServer::setConnectionIdleTimeoutMs(std::uint32_t idleConnectionTimeoutMs)
     {
-        RCF_ASSERT(!mStarted);
         mSessionTimeoutMs = idleConnectionTimeoutMs;
     }
 
@@ -1434,8 +1445,11 @@ namespace RCF {
 
     void RcfServer::setConnectionIdleScanIntervalMs(std::uint32_t idleConnectionScanIntervalMs)
     {
-        RCF_ASSERT(!mStarted);
-        mSessionHarvestingIntervalMs = idleConnectionScanIntervalMs;
+        if ( mSessionHarvestingIntervalMs != idleConnectionScanIntervalMs )
+        {
+            mSessionHarvestingIntervalMs = idleConnectionScanIntervalMs;
+            getSessionTimeoutServicePtr()->restart();
+        }
     }
 
     std::uint32_t RcfServer::getConnectionIdleScanIntervalMs()
@@ -1445,7 +1459,6 @@ namespace RCF {
 
     void RcfServer::setHttpSessionTimeoutMs(std::uint32_t httpSessionTimeoutMs)
     {
-        RCF_ASSERT(!mStarted);
         mHttpSessionTimeoutMs = httpSessionTimeoutMs;
     }
 
@@ -1453,6 +1466,32 @@ namespace RCF {
     {
         return mHttpSessionTimeoutMs;
     }
+
+    void RcfServer::setHttpServerHeader(const std::string & httpServerHeader)
+    {
+        RCF_ASSERT(!mStarted);
+        mHttpServerHeader = httpServerHeader;
+    }
+
+    std::string RcfServer::getHttpServerHeader() const
+    {
+        return mHttpServerHeader;
+    }
+
+#if RCF_FEATURE_HTTP==1
+
+    void RcfServer::setHttpMessageVerifier(HttpMessageVerifierPtr verifierPtr)
+    {
+        RCF_ASSERT(!mStarted);
+        mHttpMessageVerifierPtr = verifierPtr;
+    }
+
+    HttpMessageVerifierPtr RcfServer::getHttpMessageVerifier() const
+    {
+        return mHttpMessageVerifierPtr;
+    }
+
+#endif
 
     void RcfServer::setOnCallbackConnectionCreated(OnCallbackConnectionCreated onCallbackConnectionCreated)
     {
@@ -1599,9 +1638,10 @@ namespace RCF {
                 httpSessionPtr = iter->second;
             }
 
-            RCF_ASSERT(!httpSessionPtr->mRequestInProgress);
             if ( httpSessionPtr->mRequestInProgress )
             {
+                // This can happen when modifying/replaying HTTP messages via Fiddler.
+                ePtr.reset(new Exception(RcfError_HttpInvalidMessage));
                 return HttpSessionPtr();
             }
             httpSessionPtr->mRequestInProgress = true;
@@ -1654,6 +1694,28 @@ namespace RCF {
         }
 
         RCF_LOG_3()(mHttpSessionMap.size()) << "RcfServer::harvestHttpSessions() - exit.";
+    }
+
+#else
+
+    HttpSessionPtr RcfServer::attachHttpSession(const std::string & httpSessionId, bool allowCreate, ExceptionPtr & ePtr)
+    {
+        RCF_UNUSED_VARIABLE(httpSessionId);
+        RCF_UNUSED_VARIABLE(allowCreate);
+        RCF_UNUSED_VARIABLE(ePtr);
+
+        RCF_THROW(Exception(RcfError_NotSupportedInThisBuild, "HTTP"));
+
+        return HttpSessionPtr();
+    }
+
+    void RcfServer::detachHttpSession(HttpSessionPtr httpSessionPtr)
+    {
+        RCF_UNUSED_VARIABLE(httpSessionPtr);
+    }
+
+    void RcfServer::harvestHttpSessions()
+    {
     }
 
 #endif

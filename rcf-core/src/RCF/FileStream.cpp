@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2020, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 3.1
+// Version: 3.2
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -162,7 +162,7 @@ namespace RCF {
         if ( ret != 0 )
         {
             int err = Platform::OS::BsdSockets::GetLastError();
-            RCF_THROW(RCF::Exception(RcfError_FileSeek, mFilePath.string(), newPos, Platform::OS::GetErrorString(err)));
+            RCF_THROW(RCF::Exception(RcfError_FileSeek, mFilePath.u8string(), newPos, Platform::OS::GetErrorString(err)));
         }
     }
 
@@ -187,7 +187,7 @@ namespace RCF {
             if ( ret == 0 )
             {
                 int err = Platform::OS::BsdSockets::GetLastError();
-                mErr = RCF::Exception(RcfError_FileRead, mFilePath.string(), Platform::OS::GetErrorString(err));
+                mErr = RCF::Exception(RcfError_FileRead, mFilePath.u8string(), Platform::OS::GetErrorString(err));
             }
         }
         return ret;
@@ -202,7 +202,7 @@ namespace RCF {
             if ( ret == 0 )
             {
                 int err = Platform::OS::BsdSockets::GetLastError();
-                mErr = RCF::Exception(RcfError_FileWrite, mFilePath.string(), Platform::OS::GetErrorString(err));
+                mErr = RCF::Exception(RcfError_FileWrite, mFilePath.u8string(), Platform::OS::GetErrorString(err));
             }
         }
         return ret;
@@ -293,17 +293,14 @@ namespace RCF {
     {
         bool isSaving = ar.isWrite(); 
 
-        using std::placeholders::_1;
-        using std::placeholders::_2;
-
         serializeGeneric( 
             isSaving,
             std::bind( 
                 &FileStreamImpl::serializeImplSf, 
                 this, 
                 std::ref(ar),
-                _1, 
-                _2) );
+                std::placeholders::_1,
+                std::placeholders::_2) );
     }
 
 #endif
@@ -719,7 +716,7 @@ namespace RCF {
 
             // Upload chunks to the server until we're done.
             
-            RCF_LOG_3()(filePath.string())
+            RCF_LOG_3()(filePath.u8string())
                 << "ClientStub::uploadFiles() - opening file.";
 
             FileHandlePtr fin( new FileHandle(filePath, FileHandle::Read));
@@ -995,7 +992,7 @@ namespace RCF {
         std::uint64_t startPosition,
         std::uint64_t endPosition)
     {
-        RCF_LOG_3()(downloadToPath.string())(chunkSize)(transferRateBps)(sessionLocalId)(downloadId)(startPosition)(endPosition)
+        RCF_LOG_3()(downloadToPath.u8string())(chunkSize)(transferRateBps)(sessionLocalId)(downloadId)(startPosition)(endPosition)
             << "ClientStub::downloadFiles() - entry.";
 
         ClientStub & clientStub = *this;
@@ -1016,7 +1013,7 @@ namespace RCF {
         std::uint32_t               serverMaxMessageLength = 0;
         std::uint32_t               serverBps = 0;
 
-        RCF_LOG_3()(downloadToPath.string())(chunkSize)(transferRateBps)(sessionLocalId)
+        RCF_LOG_3()(downloadToPath.u8string())(chunkSize)(transferRateBps)(sessionLocalId)
             << "ClientStub::downloadFiles() - calling BeginDownload().";
 
         {
@@ -1125,7 +1122,7 @@ namespace RCF {
         if ( resumeExisting )
         {
             // Append to existing file.
-            RCF_LOG_3()(filePath.string())
+            RCF_LOG_3()(filePath.u8string())
                 << "ClientStub::downloadFiles() - opening file (appending).";
 
             fout->open(filePath, FileHandle::WriteAppend);
@@ -1133,7 +1130,7 @@ namespace RCF {
         else
         {
             // Create new file.
-            RCF_LOG_3()(filePath.string())
+            RCF_LOG_3()(filePath.u8string())
                 << "ClientStub::downloadFiles() - opening file (truncating).";
 
             fout->open(filePath, FileHandle::WriteTruncate);

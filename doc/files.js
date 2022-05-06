@@ -28,7 +28,7 @@ var files =
     [ "CallbackConnectionService.hpp", "_callback_connection_service_8hpp_source.html", null ],
     [ "Certificate.hpp", "_certificate_8hpp_source.html", null ],
     [ "ClientProgress.hpp", "_client_progress_8hpp.html", [
-      [ "RemoteCallProgressInfo", "class_r_c_f_1_1_remote_call_progress_info.html", null ]
+      [ "RemoteCallProgressInfo", "class_r_c_f_1_1_remote_call_progress_info.html", "class_r_c_f_1_1_remote_call_progress_info" ]
     ] ],
     [ "ClientStub.hpp", "_client_stub_8hpp.html", [
       [ "HttpCookie", "class_r_c_f_1_1_http_cookie.html", null ],
@@ -70,7 +70,7 @@ var files =
     [ "HttpClientTransport.hpp", "_http_client_transport_8hpp_source.html", null ],
     [ "HttpConnectFilter.hpp", "_http_connect_filter_8hpp_source.html", null ],
     [ "HttpEndpoint.hpp", "_http_endpoint_8hpp_source.html", null ],
-    [ "HttpFrameFilter.hpp", "_http_frame_filter_8hpp_source.html", null ],
+    [ "HttpFrameFilter.hpp", "_http_frame_filter_8hpp.html", "_http_frame_filter_8hpp" ],
     [ "HttpsClientTransport.hpp", "_https_client_transport_8hpp_source.html", null ],
     [ "HttpsEndpoint.hpp", "_https_endpoint_8hpp_source.html", null ],
     [ "HttpServerTransport.hpp", "_http_server_transport_8hpp_source.html", null ],
@@ -163,7 +163,9 @@ var files =
     [ "boost/shared_ptr.hpp", "boost_2shared__ptr_8hpp_source.html", null ],
     [ "shared_ptr.hpp", "shared__ptr_8hpp_source.html", null ],
     [ "tr1/shared_ptr.hpp", "tr1_2shared__ptr_8hpp_source.html", null ],
+    [ "SspiCredentials.hpp", "_sspi_credentials_8hpp_source.html", null ],
     [ "SspiFilter.hpp", "_sspi_filter_8hpp_source.html", null ],
+    [ "StdFileSystem.hpp", "_std_file_system_8hpp_source.html", null ],
     [ "Stream.hpp", "_stream_8hpp_source.html", null ],
     [ "string.hpp", "string_8hpp_source.html", null ],
     [ "SubscriptionService.hpp", "_subscription_service_8hpp_source.html", null ],

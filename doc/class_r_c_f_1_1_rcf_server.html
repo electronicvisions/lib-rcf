@@ -78,7 +78,7 @@
  <tbody>
  <tr style="height: 56px;">
   <td id="projectalign" style="padding-left: 0.5em;">
-   <div id="projectname">Remote Call Framework 3.1
+   <div id="projectname">Remote Call Framework 3.2
    </div>
   </td>
    <td>        <div id="MSearchBox" class="MSearchBoxInactive">
@@ -283,6 +283,18 @@ Public Member Functions</h2></td></tr>
 <tr class="memitem:aa3d6d8d638f4beaaaacec26a5790cc5b"><td class="memItemLeft" align="right" valign="top">std::uint32_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_r_c_f_1_1_rcf_server.html#aa3d6d8d638f4beaaaacec26a5790cc5b">getHttpSessionTimeoutMs</a> ()</td></tr>
 <tr class="memdesc:aa3d6d8d638f4beaaaacec26a5790cc5b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the HTTP session timeout value, in ms.  <a href="#aa3d6d8d638f4beaaaacec26a5790cc5b">More...</a><br /></td></tr>
 <tr class="separator:aa3d6d8d638f4beaaaacec26a5790cc5b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a06a6632c767e421727678408689b7a53"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_r_c_f_1_1_rcf_server.html#a06a6632c767e421727678408689b7a53">setHttpServerHeader</a> (const std::string &amp;httpServerHeader)</td></tr>
+<tr class="memdesc:a06a6632c767e421727678408689b7a53"><td class="mdescLeft">&#160;</td><td class="mdescRight">Sets the value of the "Server" header in HTTP responses.  <a href="#a06a6632c767e421727678408689b7a53">More...</a><br /></td></tr>
+<tr class="separator:a06a6632c767e421727678408689b7a53"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a54a70a81042997756a11a792f54f8dc3"><td class="memItemLeft" align="right" valign="top">std::string&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_r_c_f_1_1_rcf_server.html#a54a70a81042997756a11a792f54f8dc3">getHttpServerHeader</a> () const</td></tr>
+<tr class="memdesc:a54a70a81042997756a11a792f54f8dc3"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the value of the "Server" header in HTTP responses.  <a href="#a54a70a81042997756a11a792f54f8dc3">More...</a><br /></td></tr>
+<tr class="separator:a54a70a81042997756a11a792f54f8dc3"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a8bd01c4bd4da988aaa476b3757385a78"><td class="memItemLeft" align="right" valign="top"><a id="a8bd01c4bd4da988aaa476b3757385a78"></a>
+void&#160;</td><td class="memItemRight" valign="bottom"><b>setHttpMessageVerifier</b> (<a class="el" href="_http_frame_filter_8hpp.html#adf89327b024fb33bbf0bd0f040e51f95">HttpMessageVerifierPtr</a> verifierPtr)</td></tr>
+<tr class="separator:a8bd01c4bd4da988aaa476b3757385a78"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a7cedb85e6e07b87e13ae625199674421"><td class="memItemLeft" align="right" valign="top"><a id="a7cedb85e6e07b87e13ae625199674421"></a>
+<a class="el" href="_http_frame_filter_8hpp.html#adf89327b024fb33bbf0bd0f040e51f95">HttpMessageVerifierPtr</a>&#160;</td><td class="memItemRight" valign="bottom"><b>getHttpMessageVerifier</b> () const</td></tr>
+<tr class="separator:a7cedb85e6e07b87e13ae625199674421"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr><td colspan="2"><div class="groupHeader">Server objects</div></td></tr>
 <tr><td colspan="2"><div class="groupText"><p>This section describes functions related to server objects. Server objects are created by server-side application code. Server objects can be of arbitrary type, and are associated with a string identifier which must be unique within the server. Server objects have an associated timeout value, which determines how long a server object can be idle before the server cleans it up. </p>
 </div></td></tr>
@@ -1061,6 +1073,45 @@ template&lt;typename InterfaceT &gt; </div>
 
 </div>
 </div>
+<a id="a06a6632c767e421727678408689b7a53"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a06a6632c767e421727678408689b7a53">&#9670;&nbsp;</a></span>setHttpServerHeader()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void RCF::RcfServer::setHttpServerHeader </td>
+          <td>(</td>
+          <td class="paramtype">const std::string &amp;&#160;</td>
+          <td class="paramname"><em>httpServerHeader</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Sets the value of the "Server" header in HTTP responses. </p>
+
+</div>
+</div>
+<a id="a54a70a81042997756a11a792f54f8dc3"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a54a70a81042997756a11a792f54f8dc3">&#9670;&nbsp;</a></span>getHttpServerHeader()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">std::string RCF::RcfServer::getHttpServerHeader </td>
+          <td>(</td>
+          <td class="paramname"></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Gets the value of the "Server" header in HTTP responses. </p>
+
+</div>
+</div>
 <a id="a2082baa94af942bc088ec0ab24c4bd56"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a2082baa94af942bc088ec0ab24c4bd56">&#9670;&nbsp;</a></span>getServerObjectHarvestingIntervalS()</h2>
 
@@ -1570,7 +1621,7 @@ template&lt;typename Interface , typename T &gt; </div>
 <div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
   <ul>
     <!-- <li class="navelem"><b>RCF</b></li><li class="navelem"><a class="el" href="class_r_c_f_1_1_rcf_server.html">RcfServer</a></li> -->
-    <li class="footer">Copyright (C) <a href="http://www.deltavsoft.com">Delta V Software</a> 2019</li>
+    <li class="footer">Copyright (C) <a href="http://www.deltavsoft.com">Delta V Software</a> 2020</li>
     <!-- <li class="footer">Generated by
     <a href="http://www.doxygen.org/index.html">
     <img class="footer" src="doxygen.png" alt="doxygen"/></a> 1.8.13 </li> -->

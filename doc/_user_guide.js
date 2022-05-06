@@ -83,7 +83,8 @@ var _user_guide =
     [ "Proxy Endpoints", "_proxy_endpoints.html", [
       [ "Configuring a Proxy Server", "_proxy_endpoints.html#ProxyServer", null ],
       [ "Configuring a Destination Server", "_proxy_endpoints.html#DestinationServer", null ],
-      [ "Connecting Through a Proxy Server", "_proxy_endpoints.html#ClientProxy", null ]
+      [ "Connecting Through a Proxy Server", "_proxy_endpoints.html#ClientProxy", null ],
+      [ "Two-way communication using proxy endpoints", "_proxy_endpoints.html#TwoWayCommunication", null ]
     ] ],
     [ "File Transfers", "_file_transfers.html", [
       [ "File Downloads", "_file_transfers.html#FileDownloads", null ],

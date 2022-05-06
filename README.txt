@@ -1,9 +1,9 @@
 
 ================================================================================
 
-Remote Call Framework 3.1
+Remote Call Framework 3.2
 
-Copyright (C) 2006-2019 Delta V Software. All rights reserved.
+Copyright (C) 2006-2020 Delta V Software. All rights reserved.
 
 ================================================================================
 

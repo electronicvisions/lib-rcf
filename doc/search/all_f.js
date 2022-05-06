@@ -9,6 +9,7 @@ var searchData=
   ['rcfserver_2ehpp',['RcfServer.hpp',['../_rcf_server_8hpp.html',1,'']]],
   ['rcfsession',['RcfSession',['../class_r_c_f_1_1_rcf_session.html',1,'RCF']]],
   ['rcfsession_2ehpp',['RcfSession.hpp',['../_rcf_session_8hpp.html',1,'']]],
+  ['rcp_5fconnect',['Rcp_Connect',['../group___r_c_f.html#ggaf887aaa875213b34a1534a0c19336e08a6e50c573d51825bc5b5bbca0bfb6d977',1,'RCF']]],
   ['rcp_5freceive',['Rcp_Receive',['../group___r_c_f.html#ggaf887aaa875213b34a1534a0c19336e08ae22a97ffe3fa1daf10f49ea78f35e3ff',1,'RCF']]],
   ['rcp_5fsend',['Rcp_Send',['../group___r_c_f.html#ggaf887aaa875213b34a1534a0c19336e08aa97f1310766bcb42170fcf46881fd298',1,'RCF']]],
   ['ready',['ready',['../class_r_c_f_1_1_client_stub.html#a585c0cc7f738e2c6016e5d88134bad76',1,'RCF::ClientStub::ready()'],['../class_r_c_f_1_1_future.html#a6062726e0e67d49b66ad4f1f94461ff7',1,'RCF::Future::ready()']]],

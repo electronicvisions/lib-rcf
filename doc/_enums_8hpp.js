@@ -47,6 +47,7 @@ var _enums_8hpp =
       [ "Sp_BsText", "_enums_8hpp.html#gga0f94fcdc3f984a4f8cd4f997fe8b9bb4a36fce734a53dd96623d21ec98b474058", null ]
     ] ],
     [ "RemoteCallPhase", "_enums_8hpp.html#gaf887aaa875213b34a1534a0c19336e08", [
+      [ "Rcp_Connect", "_enums_8hpp.html#ggaf887aaa875213b34a1534a0c19336e08a6e50c573d51825bc5b5bbca0bfb6d977", null ],
       [ "Rcp_Send", "_enums_8hpp.html#ggaf887aaa875213b34a1534a0c19336e08aa97f1310766bcb42170fcf46881fd298", null ],
       [ "Rcp_Receive", "_enums_8hpp.html#ggaf887aaa875213b34a1534a0c19336e08ae22a97ffe3fa1daf10f49ea78f35e3ff", null ]
     ] ],

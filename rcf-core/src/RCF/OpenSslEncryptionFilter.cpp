@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2020, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 3.1
+// Version: 3.2
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -48,28 +48,29 @@ namespace RCF {
 
         void loadFunctionPtrs();
 
-        typedef long            (*Pfn_SSL_get_verify_result)(const SSL *ssl);
-        typedef X509 *          (*Pfn_SSL_get_peer_certificate)(const SSL *s);
-        typedef int             (*Pfn_SSL_state)(const SSL *ssl);
-        typedef void            (*Pfn_SSL_set_bio)(SSL *s, BIO *rbio,BIO *wbio);
-        typedef void            (*Pfn_SSL_set_connect_state)(SSL *s);
-        typedef void            (*Pfn_SSL_set_accept_state)(SSL *s);
-        typedef void            (*Pfn_SSL_set_verify)(SSL *s, int mode, int (*callback)(int ok,X509_STORE_CTX *ctx));
-        typedef SSL *           (*Pfn_SSL_new)(SSL_CTX *ctx);
-        typedef void            (*Pfn_SSL_free)(SSL *ssl);
-        typedef SSL_CTX *       (*Pfn_SSL_CTX_new)(const SSL_METHOD *meth);
-        typedef void            (*Pfn_SSL_CTX_free)(SSL_CTX *);
-        typedef const SSL_METHOD *    (*Pfn_SSLv23_method)(void);
-        typedef BIO_METHOD *    (*Pfn_BIO_f_ssl)(void);
-        typedef int             (*Pfn_SSL_CTX_use_PrivateKey)(SSL_CTX *ctx, EVP_PKEY *pkey);
-        typedef int             (*Pfn_SSL_CTX_use_certificate_chain_file)(SSL_CTX *ctx, const char *file); /* PEM type */
-        typedef int             (*Pfn_SSL_CTX_load_verify_locations)(SSL_CTX *ctx, const char *CAfile, const char *CApath);
-        typedef void            (*Pfn_SSL_load_error_strings)(void );
-        typedef int             (*Pfn_SSL_library_init)(void );
+        typedef long                            (*Pfn_SSL_get_verify_result)(const SSL *ssl);
+        typedef X509 *                          (*Pfn_SSL_get_peer_certificate)(const SSL *s);
+        typedef OSSL_HANDSHAKE_STATE            (*Pfn_SSL_get_state)(const SSL *ssl);
+        typedef void                            (*Pfn_SSL_set_bio)(SSL *s, BIO *rbio,BIO *wbio);
+        typedef void                            (*Pfn_SSL_set_connect_state)(SSL *s);
+        typedef void                            (*Pfn_SSL_set_accept_state)(SSL *s);
+        typedef void                            (*Pfn_SSL_set_verify)(SSL *s, int mode, int (*callback)(int ok,X509_STORE_CTX *ctx));
+        typedef SSL *                           (*Pfn_SSL_new)(SSL_CTX *ctx);
+        typedef void                            (*Pfn_SSL_free)(SSL *ssl);
+        typedef SSL_CTX *                       (*Pfn_SSL_CTX_new)(const SSL_METHOD *meth);
+        typedef void                            (*Pfn_SSL_CTX_free)(SSL_CTX *);
+        typedef const SSL_METHOD *              (*Pfn_TLS_method)(void);
+        typedef const BIO_METHOD *              (*Pfn_BIO_f_ssl)(void);
+        typedef int                             (*Pfn_SSL_CTX_use_PrivateKey)(SSL_CTX *ctx, EVP_PKEY *pkey);
+        typedef int                             (*Pfn_SSL_CTX_use_certificate_chain_file)(SSL_CTX *ctx, const char *file); /* PEM type */
+        typedef int                             (*Pfn_SSL_CTX_load_verify_locations)(SSL_CTX *ctx, const char *CAfile, const char *CApath);
+        typedef int                             (*Pfn_OPENSSL_init_ssl)(uint64_t opts, const OPENSSL_INIT_SETTINGS *settings);
+
+        
 
         Pfn_SSL_get_verify_result               pfn_SSL_get_verify_result;
         Pfn_SSL_get_peer_certificate            pfn_SSL_get_peer_certificate;
-        Pfn_SSL_state                           pfn_SSL_state;
+        Pfn_SSL_get_state                       pfn_SSL_get_state;
         Pfn_SSL_set_bio                         pfn_SSL_set_bio;
         Pfn_SSL_set_connect_state               pfn_SSL_set_connect_state;
         Pfn_SSL_set_accept_state                pfn_SSL_set_accept_state;
@@ -78,13 +79,13 @@ namespace RCF {
         Pfn_SSL_free                            pfn_SSL_free;
         Pfn_SSL_CTX_new                         pfn_SSL_CTX_new;
         Pfn_SSL_CTX_free                        pfn_SSL_CTX_free;
-        Pfn_SSLv23_method                       pfn_SSLv23_method;
+        Pfn_TLS_method                          pfn_TLS_method;
         Pfn_BIO_f_ssl                           pfn_BIO_f_ssl;
         Pfn_SSL_CTX_use_PrivateKey              pfn_SSL_CTX_use_PrivateKey;
         Pfn_SSL_CTX_use_certificate_chain_file  pfn_SSL_CTX_use_certificate_chain_file;
         Pfn_SSL_CTX_load_verify_locations       pfn_SSL_CTX_load_verify_locations;
-        Pfn_SSL_load_error_strings              pfn_SSL_load_error_strings;
-        Pfn_SSL_library_init                    pfn_SSL_library_init;       
+        Pfn_OPENSSL_init_ssl                    pfn_OPENSSL_init_ssl;
+        
     };
 
     class OpenSslCryptoDll
@@ -96,32 +97,30 @@ namespace RCF {
 
         void loadFunctionPtrs();
 
-        typedef size_t          (*Pfn_BIO_ctrl_pending)(BIO *b);
-        typedef int             (*Pfn_BIO_write)(BIO *b, const void *data, int len);
-        typedef int             (*Pfn_BIO_read)(BIO *b, void *data, int len);
-        typedef int             (*Pfn_BIO_nread0)(BIO *bio, char **buf);
-        typedef int             (*Pfn_BIO_nwrite0)(BIO *bio, char **buf);
-        typedef size_t          (*Pfn_BIO_ctrl_get_read_request)(BIO *b);
-        typedef int             (*Pfn_BIO_nread)(BIO *bio, char **buf, int num);
-        typedef int             (*Pfn_BIO_nwrite)(BIO *bio, char **buf, int num);
-        typedef long            (*Pfn_BIO_ctrl)(BIO *bp,int cmd,long larg,void *parg);
-        typedef int             (*Pfn_BIO_new_bio_pair)(BIO **bio1, size_t writebuf1,BIO **bio2, size_t writebuf2);
-        typedef BIO *           (*Pfn_BIO_new)(BIO_METHOD *type);
-        typedef int             (*Pfn_BIO_free)(BIO *a);
-        typedef void            (*Pfn_EVP_PKEY_free)(EVP_PKEY *pkey);
-        typedef BIO_METHOD *    (*Pfn_BIO_s_file)(void );
-        typedef void            (*Pfn_ERR_print_errors_cb)(int (*cb)(const char *str, size_t len, void *u),void *u);
-        typedef void            (*Pfn_ERR_print_errors)(BIO *bp);
-        typedef BIO_METHOD *    (*Pfn_BIO_s_mem)(void);
-        typedef void            (*Pfn_ERR_load_crypto_strings)(void);
-        typedef int             (*Pfn_BIO_test_flags)(const BIO *b, int flags);
-        typedef void            (*Pfn_X509_free)(X509 *a);
-        typedef EVP_PKEY *      (*Pfn_PEM_read_bio_PrivateKey)(BIO *bp, EVP_PKEY **x, pem_password_cb *cb, void *u);
-        typedef void            (*Pfn_OPENSSL_add_all_algorithms_noconf)(void);
-
-        typedef X509_NAME *     (*Pfn_X509_get_subject_name)(X509 *a);
-        typedef X509_NAME *     (*Pfn_X509_get_issuer_name)(X509 *a);
-        typedef int             (*Pfn_X509_NAME_print_ex)(BIO *out, X509_NAME *nm, int indent, unsigned long flags);
+        typedef size_t                          (*Pfn_BIO_ctrl_pending)(BIO *b);
+        typedef int                             (*Pfn_BIO_write)(BIO *b, const void *data, int len);
+        typedef int                             (*Pfn_BIO_read)(BIO *b, void *data, int len);
+        typedef int                             (*Pfn_BIO_nread0)(BIO *bio, char **buf);
+        typedef int                             (*Pfn_BIO_nwrite0)(BIO *bio, char **buf);
+        typedef size_t                          (*Pfn_BIO_ctrl_get_read_request)(BIO *b);
+        typedef int                             (*Pfn_BIO_nread)(BIO *bio, char **buf, int num);
+        typedef int                             (*Pfn_BIO_nwrite)(BIO *bio, char **buf, int num);
+        typedef long                            (*Pfn_BIO_ctrl)(BIO *bp, int cmd, long larg, void *parg);
+        typedef int                             (*Pfn_BIO_new_bio_pair)(BIO **bio1, size_t writebuf1, BIO **bio2, size_t writebuf2);
+        typedef BIO *                           (*Pfn_BIO_new)(const BIO_METHOD *type);
+        typedef int                             (*Pfn_BIO_free)(BIO *a);
+        typedef void                            (*Pfn_EVP_PKEY_free)(EVP_PKEY *pkey);
+        typedef const BIO_METHOD *              (*Pfn_BIO_s_file)(void);
+        typedef void                            (*Pfn_ERR_print_errors_cb)(int(*cb)(const char *str, size_t len, void *u), void *u);
+        typedef void                            (*Pfn_ERR_print_errors)(BIO *bp);
+        typedef const BIO_METHOD *              (*Pfn_BIO_s_mem)(void);
+        typedef int                             (*Pfn_BIO_test_flags)(const BIO *b, int flags);
+        typedef void                            (*Pfn_X509_free)(X509 *a);
+        typedef EVP_PKEY *                      (*Pfn_PEM_read_bio_PrivateKey)(BIO *bp, EVP_PKEY **x, pem_password_cb *cb, void *u);
+        typedef X509_NAME *                     (*Pfn_X509_get_subject_name)(const X509 *a);
+        typedef X509_NAME *                     (*Pfn_X509_get_issuer_name)(const X509 *a);
+        typedef int                             (*Pfn_X509_NAME_print_ex)(BIO *out, const X509_NAME *nm, int indent, unsigned long flags);
+        typedef int                             (*Pfn_OPENSSL_init_crypto)(uint64_t opts, const OPENSSL_INIT_SETTINGS *settings);
 
         Pfn_BIO_ctrl_pending                    pfn_BIO_ctrl_pending;
         Pfn_BIO_write                           pfn_BIO_write;
@@ -140,14 +139,13 @@ namespace RCF {
         Pfn_ERR_print_errors_cb                 pfn_ERR_print_errors_cb;
         Pfn_ERR_print_errors                    pfn_ERR_print_errors;
         Pfn_BIO_s_mem                           pfn_BIO_s_mem;
-        Pfn_ERR_load_crypto_strings             pfn_ERR_load_crypto_strings;
         Pfn_BIO_test_flags                      pfn_BIO_test_flags;
         Pfn_X509_free                           pfn_X509_free;
         Pfn_PEM_read_bio_PrivateKey             pfn_PEM_read_bio_PrivateKey;
-        Pfn_OPENSSL_add_all_algorithms_noconf   pfn_OPENSSL_add_all_algorithms_noconf;
         Pfn_X509_get_subject_name               pfn_X509_get_subject_name;
         Pfn_X509_get_issuer_name                pfn_X509_get_issuer_name;
         Pfn_X509_NAME_print_ex                  pfn_X509_NAME_print_ex;
+        Pfn_OPENSSL_init_crypto                 pfn_OPENSSL_init_crypto;
     };
 
     // OpenSslDll
@@ -162,21 +160,21 @@ namespace RCF {
         loadFunctionPtrs();
 
         // Initialize OpenSSL.
-        pfn_SSL_library_init(); // always returns 1
-        pfn_SSL_load_error_strings(); // no return value
+        pfn_OPENSSL_init_ssl(0, NULL);
+        pfn_OPENSSL_init_ssl(OPENSSL_INIT_LOAD_SSL_STRINGS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, NULL);
     }
 
 #ifdef RCF_OPENSSL_STATIC
 
     // Load static function pointers.
-    // Requires linking to zlib or building with zlib source.
+    // Requires linking to OpenSSL or building with OpenSSL source.
 #define RCF_OPENSSL_LOAD_FUNCTION RCF_LOAD_LIB_FUNCTION
 
 #else
 
-    // Load dynamic function pointers directly from zlib DLL.
-    // Requires zlib DLL to be present at runtime.
-    // Does not require linking to zlib.
+    // Load dynamic function pointers directly from OpenSSL DLL.
+    // Requires OpenSSL DLL to be present at runtime.
+    // Does not require linking to OpenSSL.
 #define RCF_OPENSSL_LOAD_FUNCTION RCF_LOAD_DLL_FUNCTION
 
 #endif
@@ -190,7 +188,7 @@ namespace RCF {
 
         RCF_OPENSSL_LOAD_FUNCTION(SSL_get_verify_result);
         RCF_OPENSSL_LOAD_FUNCTION(SSL_get_peer_certificate);
-        RCF_OPENSSL_LOAD_FUNCTION(SSL_state);
+        RCF_OPENSSL_LOAD_FUNCTION(SSL_get_state);
         RCF_OPENSSL_LOAD_FUNCTION(SSL_set_bio);
         RCF_OPENSSL_LOAD_FUNCTION(SSL_set_connect_state);
         RCF_OPENSSL_LOAD_FUNCTION(SSL_set_accept_state);
@@ -199,13 +197,12 @@ namespace RCF {
         RCF_OPENSSL_LOAD_FUNCTION(SSL_free);
         RCF_OPENSSL_LOAD_FUNCTION(SSL_CTX_new);
         RCF_OPENSSL_LOAD_FUNCTION(SSL_CTX_free);
-        RCF_OPENSSL_LOAD_FUNCTION(SSLv23_method);
+        RCF_OPENSSL_LOAD_FUNCTION(TLS_method);
         RCF_OPENSSL_LOAD_FUNCTION(BIO_f_ssl);
         RCF_OPENSSL_LOAD_FUNCTION(SSL_CTX_use_PrivateKey);
         RCF_OPENSSL_LOAD_FUNCTION(SSL_CTX_use_certificate_chain_file);
         RCF_OPENSSL_LOAD_FUNCTION(SSL_CTX_load_verify_locations);
-        RCF_OPENSSL_LOAD_FUNCTION(SSL_load_error_strings);
-        RCF_OPENSSL_LOAD_FUNCTION(SSL_library_init);
+        RCF_OPENSSL_LOAD_FUNCTION(OPENSSL_init_ssl);
     }
 
     // OpenSslCryptoDll
@@ -220,9 +217,8 @@ namespace RCF {
         loadFunctionPtrs();
 
         // Initialize OpenSSL.
-        pfn_ERR_load_crypto_strings(); // no return value
-        pfn_OPENSSL_add_all_algorithms_noconf(); // no return value
-
+        pfn_OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CRYPTO_STRINGS, NULL);
+        pfn_OPENSSL_init_crypto(OPENSSL_INIT_ADD_ALL_CIPHERS | OPENSSL_INIT_ADD_ALL_DIGESTS, NULL);
     }
 
     void OpenSslCryptoDll::loadFunctionPtrs()
@@ -249,15 +245,14 @@ namespace RCF {
         RCF_OPENSSL_LOAD_FUNCTION(ERR_print_errors_cb);
         RCF_OPENSSL_LOAD_FUNCTION(ERR_print_errors);
         RCF_OPENSSL_LOAD_FUNCTION(BIO_s_mem);
-        RCF_OPENSSL_LOAD_FUNCTION(ERR_load_crypto_strings); 
 
         RCF_OPENSSL_LOAD_FUNCTION(BIO_test_flags);
         RCF_OPENSSL_LOAD_FUNCTION(X509_free);
         RCF_OPENSSL_LOAD_FUNCTION(PEM_read_bio_PrivateKey);
-        RCF_OPENSSL_LOAD_FUNCTION(OPENSSL_add_all_algorithms_noconf);
         RCF_OPENSSL_LOAD_FUNCTION(X509_get_subject_name);
         RCF_OPENSSL_LOAD_FUNCTION(X509_get_issuer_name);
         RCF_OPENSSL_LOAD_FUNCTION(X509_NAME_print_ex);
+        RCF_OPENSSL_LOAD_FUNCTION(OPENSSL_init_crypto);
         
     }
 
@@ -305,51 +300,50 @@ namespace RCF {
 
 #endif
 
-#define SSL_get_verify_result                   mSslDll.pfn_SSL_get_verify_result
-#define SSL_get_peer_certificate                mSslDll.pfn_SSL_get_peer_certificate
-#define SSL_state                               mSslDll.pfn_SSL_state
-#define SSL_set_bio                             mSslDll.pfn_SSL_set_bio
-#define SSL_set_connect_state                   mSslDll.pfn_SSL_set_connect_state
-#define SSL_set_accept_state                    mSslDll.pfn_SSL_set_accept_state
-#define SSL_set_verify                          mSslDll.pfn_SSL_set_verify
-#define SSL_new                                 mSslDll.pfn_SSL_new
-#define SSL_free                                mSslDll.pfn_SSL_free
-#define SSL_CTX_new                             mSslDll.pfn_SSL_CTX_new
-#define SSL_CTX_free                            mSslDll.pfn_SSL_CTX_free
-#define SSLv23_method                           mSslDll.pfn_SSLv23_method
-#define BIO_f_ssl                               mSslDll.pfn_BIO_f_ssl
-#define SSL_CTX_use_PrivateKey                  mSslDll.pfn_SSL_CTX_use_PrivateKey
-#define SSL_CTX_use_certificate_chain_file      mSslDll.pfn_SSL_CTX_use_certificate_chain_file
-#define SSL_CTX_load_verify_locations           mSslDll.pfn_SSL_CTX_load_verify_locations
-#define SSL_load_error_strings                  mSslDll.pfn_SSL_load_error_strings
-#define SSL_library_init                        mSslDll.pfn_SSL_library_init
+// Using RCF__ prefix here so we don't clash with defines in the OpenSSL headers.
 
-#define BIO_ctrl_pending                        mCryptoDll.pfn_BIO_ctrl_pending
-#define BIO_write                               mCryptoDll.pfn_BIO_write
-#define BIO_read                                mCryptoDll.pfn_BIO_read
-#define BIO_nread0                              mCryptoDll.pfn_BIO_nread0
-#define BIO_nwrite0                             mCryptoDll.pfn_BIO_nwrite0
-#define BIO_ctrl_get_read_request               mCryptoDll.pfn_BIO_ctrl_get_read_request
-#define BIO_nread                               mCryptoDll.pfn_BIO_nread
-#define BIO_nwrite                              mCryptoDll.pfn_BIO_nwrite
-#define BIO_ctrl                                mCryptoDll.pfn_BIO_ctrl
-#define BIO_new_bio_pair                        mCryptoDll.pfn_BIO_new_bio_pair
-#define BIO_new                                 mCryptoDll.pfn_BIO_new
-#define BIO_free                                mCryptoDll.pfn_BIO_free
-#define EVP_PKEY_free                           mCryptoDll.pfn_EVP_PKEY_free
-#define BIO_s_file                              mCryptoDll.pfn_BIO_s_file
-#define ERR_print_errors_cb                     mCryptoDll.pfn_ERR_print_errors_cb
-#define ERR_print_errors                        mCryptoDll.pfn_ERR_print_errors
-#define BIO_s_mem                               mCryptoDll.pfn_BIO_s_mem
-#define ERR_load_crypto_strings                 mCryptoDll.pfn_ERR_load_crypto_strings
+#define RCF__SSL_get_verify_result                      mSslDll.pfn_SSL_get_verify_result
+#define RCF__SSL_get_peer_certificate                   mSslDll.pfn_SSL_get_peer_certificate
+#define RCF__SSL_get_state                              mSslDll.pfn_SSL_get_state
+#define RCF__SSL_set_bio                                mSslDll.pfn_SSL_set_bio
+#define RCF__SSL_set_connect_state                      mSslDll.pfn_SSL_set_connect_state
+#define RCF__SSL_set_accept_state                       mSslDll.pfn_SSL_set_accept_state
+#define RCF__SSL_set_verify                             mSslDll.pfn_SSL_set_verify
+#define RCF__SSL_new                                    mSslDll.pfn_SSL_new
+#define RCF__SSL_free                                   mSslDll.pfn_SSL_free
+#define RCF__SSL_CTX_new                                mSslDll.pfn_SSL_CTX_new
+#define RCF__SSL_CTX_free                               mSslDll.pfn_SSL_CTX_free
+#define RCF__TLS_method                                 mSslDll.pfn_TLS_method
+#define RCF__BIO_f_ssl                                  mSslDll.pfn_BIO_f_ssl
+#define RCF__SSL_CTX_use_PrivateKey                     mSslDll.pfn_SSL_CTX_use_PrivateKey
+#define RCF__SSL_CTX_use_certificate_chain_file         mSslDll.pfn_SSL_CTX_use_certificate_chain_file
+#define RCF__SSL_CTX_load_verify_locations              mSslDll.pfn_SSL_CTX_load_verify_locations
+#define RCF__SSL_load_error_strings                     mSslDll.pfn_SSL_load_error_strings
+#define RCF__SSL_library_init                           mSslDll.pfn_SSL_library_init
 
-#define BIO_test_flags                          mCryptoDll.pfn_BIO_test_flags
-#define X509_free                               mCryptoDll.pfn_X509_free
-#define PEM_read_bio_PrivateKey                 mCryptoDll.pfn_PEM_read_bio_PrivateKey
-#define OPENSSL_add_all_algorithms_noconf       mCryptoDll.pfn_OPENSSL_add_all_algorithms_noconf
-#define X509_get_subject_name                   mCryptoDll.pfn_X509_get_subject_name
-#define X509_get_issuer_name                    mCryptoDll.pfn_X509_get_issuer_name
-#define X509_NAME_print_ex                      mCryptoDll.pfn_X509_NAME_print_ex
+#define RCF__BIO_ctrl_pending                           mCryptoDll.pfn_BIO_ctrl_pending
+#define RCF__BIO_write                                  mCryptoDll.pfn_BIO_write
+#define RCF__BIO_read                                   mCryptoDll.pfn_BIO_read
+#define RCF__BIO_nread0                                 mCryptoDll.pfn_BIO_nread0
+#define RCF__BIO_nwrite0                                mCryptoDll.pfn_BIO_nwrite0
+#define RCF__BIO_ctrl_get_read_request                  mCryptoDll.pfn_BIO_ctrl_get_read_request
+#define RCF__BIO_nread                                  mCryptoDll.pfn_BIO_nread
+#define RCF__BIO_nwrite                                 mCryptoDll.pfn_BIO_nwrite
+#define RCF__BIO_ctrl                                   mCryptoDll.pfn_BIO_ctrl
+#define RCF__BIO_new_bio_pair                           mCryptoDll.pfn_BIO_new_bio_pair
+#define RCF__BIO_new                                    mCryptoDll.pfn_BIO_new
+#define RCF__BIO_free                                   mCryptoDll.pfn_BIO_free
+#define RCF__EVP_PKEY_free                              mCryptoDll.pfn_EVP_PKEY_free
+#define RCF__BIO_s_file                                 mCryptoDll.pfn_BIO_s_file
+#define RCF__ERR_print_errors_cb                        mCryptoDll.pfn_ERR_print_errors_cb
+#define RCF__ERR_print_errors                           mCryptoDll.pfn_ERR_print_errors
+#define RCF__BIO_s_mem                                  mCryptoDll.pfn_BIO_s_mem
+#define RCF__BIO_test_flags                             mCryptoDll.pfn_BIO_test_flags
+#define RCF__X509_free                                  mCryptoDll.pfn_X509_free
+#define RCF__PEM_read_bio_PrivateKey                    mCryptoDll.pfn_PEM_read_bio_PrivateKey
+#define RCF__X509_get_subject_name                      mCryptoDll.pfn_X509_get_subject_name
+#define RCF__X509_get_issuer_name                       mCryptoDll.pfn_X509_get_issuer_name
+#define RCF__X509_NAME_print_ex                         mCryptoDll.pfn_X509_NAME_print_ex
 
 /*
     void printErrors(SSL * pSsl, int result)
@@ -517,32 +511,34 @@ namespace RCF {
 
     std::string X509Certificate::getCertificateName()
     {
-        X509_NAME *subject = X509_get_subject_name(mpX509);
+        X509_NAME *subject = RCF__X509_get_subject_name(mpX509);
 
         // Need a BIO to print the info to.
-        BIO *subjectBio = BIO_new(BIO_s_mem());
+        BIO *subjectBio = RCF__BIO_new(RCF__BIO_s_mem());
             
-        X509_NAME_print_ex(subjectBio, subject, 0, XN_FLAG_RFC2253);
+        RCF__X509_NAME_print_ex(subjectBio, subject, 0, XN_FLAG_RFC2253);
             
         // Copy the data out of the BIO.
         char * dataStart = NULL;
-        long nameLength = BIO_get_mem_data(subjectBio, &dataStart);
+        //long nameLength = BIO_get_mem_data(subjectBio, &dataStart);
+        long nameLength = RCF__BIO_ctrl(subjectBio, BIO_CTRL_INFO, 0, (char *)(&dataStart));
         std::string strCertName(dataStart, nameLength);
         return strCertName;
     }
 
     std::string X509Certificate::getIssuerName()
     {
-        X509_NAME *subject = X509_get_issuer_name(mpX509);
+        X509_NAME *subject = RCF__X509_get_issuer_name(mpX509);
 
         // Need a BIO to print the info to.
-        BIO *subjectBio = BIO_new(BIO_s_mem());
+        BIO *subjectBio = RCF__BIO_new(RCF__BIO_s_mem());
 
-        X509_NAME_print_ex(subjectBio, subject, 0, XN_FLAG_RFC2253);
+        RCF__X509_NAME_print_ex(subjectBio, subject, 0, XN_FLAG_RFC2253);
 
         // Copy the data out of the BIO.
         char * dataStart = NULL;
-        long nameLength = BIO_get_mem_data(subjectBio, &dataStart);
+        //long nameLength = BIO_get_mem_data(subjectBio, &dataStart);
+        long nameLength = RCF__BIO_ctrl(subjectBio, BIO_CTRL_INFO, 0, (char *)(&dataStart));
         std::string strIssuerName(dataStart, nameLength);
         return strIssuerName;
     }
@@ -822,7 +818,7 @@ namespace RCF {
             // completion, otherwise clear our buffers and issue a zero byte 
             // read on the next filter.
 
-            if (BIO_ctrl_pending(mIoBio.get()) == 0)
+            if ( RCF__BIO_ctrl_pending(mIoBio.get()) == 0)
             {
                 RCF_ASSERT(mPreState == Ready);
                 mPreState = Reading;
@@ -887,7 +883,7 @@ namespace RCF {
             }
             else
             {
-                if (mPreState == Writing && BIO_ctrl_pending(mIoBio.get()) > 0)
+                if (mPreState == Writing && RCF__BIO_ctrl_pending(mIoBio.get()) > 0)
                 {
                     if (mUseRecursionLimiter)
                     {
@@ -938,19 +934,19 @@ namespace RCF {
     {
         RCF_ASSERT(mPreState == Reading || mPreState == Writing);
 
-        int sslState = SSL_get_state(mSsl.get());
-        if (!mHandshakeOk && sslState == SSL_ST_OK)
+        int sslState = RCF__SSL_get_state(mSsl.get());
+        if ( !mHandshakeOk && sslState == TLS_ST_OK )
         {
             mHandshakeOk = true;
 
             mPeerCertPtr.reset(
-                SSL_get_peer_certificate(mSsl.get()),
-                X509_free);
+                RCF__SSL_get_peer_certificate(mSsl.get()),
+                RCF__X509_free);
 
             if (!mCaCertificate.empty())
             {
                 // verify the peers certificate against our CA's
-                int ret = SSL_get_verify_result(mSsl.get());
+                int ret = RCF__SSL_get_verify_result(mSsl.get());
                 bool verifyOk = (ret == X509_V_OK);
 
                 if (!verifyOk)
@@ -980,20 +976,21 @@ namespace RCF {
                 }
             }
         }
-        else if (mHandshakeOk && sslState != SSL_ST_OK)
+        else if ( mHandshakeOk && sslState != TLS_ST_OK )
         {
             mHandshakeOk = false;
         }
         
 
         int bioRet = (mPreState == Reading) ?
-            BIO_read(mSslBio.get(), mPreByteBuffer.getPtr(), static_cast<int>(mReadRequested)) :
-            BIO_write(mSslBio.get(), mPreByteBuffer.getPtr(), static_cast<int>(mPreByteBuffer.getLength()));
+            RCF__BIO_read(mSslBio.get(), mPreByteBuffer.getPtr(), static_cast<int>(mReadRequested)) :
+            RCF__BIO_write(mSslBio.get(), mPreByteBuffer.getPtr(), static_cast<int>(mPreByteBuffer.getLength()));
 
 
         RCF_ASSERT(-1 <= bioRet && bioRet <= static_cast<int>(mPreByteBuffer.getLength()));
 
-        if (bioRet == -1 && BIO_should_retry(mSslBio.get()))
+        //if (bioRet == -1 && BIO_should_retry(mSslBio.get()))
+        if ( bioRet == -1 && RCF__BIO_test_flags(mSslBio.get(), BIO_FLAGS_SHOULD_RETRY) )
         {
             // initiate io requests on underlying filters
             mRetry = true;
@@ -1017,7 +1014,7 @@ namespace RCF {
             if (mPreState == Writing)
             {
                 // TODO: maybe this is not always true
-                RCF_ASSERT(BIO_ctrl_pending(mIoBio.get()) > 0);
+                RCF_ASSERT(RCF__BIO_ctrl_pending(mIoBio.get()) > 0);
                 
                 if (mUseRecursionLimiter)
                 {
@@ -1053,14 +1050,14 @@ namespace RCF {
 
     void OpenSslEncryptionFilterImpl::transferData()
     {
-        if (BIO_ctrl_pending(mIoBio.get()) == 0)
+        if ( RCF__BIO_ctrl_pending(mIoBio.get()) == 0)
         {
             // move data from network to mIoBio
             mPostState = Reading;
             mPostBufferRequested =
-                static_cast<int>(BIO_ctrl_get_read_request(mIoBio.get()));
+                static_cast<int>(RCF__BIO_ctrl_get_read_request(mIoBio.get()));
 
-            mPostBufferLen = BIO_nwrite0(mIoBio.get(), &mPostBuffer);
+            mPostBufferLen = RCF__BIO_nwrite0(mIoBio.get(), &mPostBuffer);
            
             RCF_ASSERT(mPostBufferRequested <= mPostBufferLen);
 
@@ -1075,8 +1072,8 @@ namespace RCF {
         {
             // move data from mIoBio to network
             mPostState = Writing;
-            mPostBufferRequested = static_cast<int>(BIO_ctrl_pending(mIoBio.get()));
-            mPostBufferLen = BIO_nread0(mIoBio.get(), &mPostBuffer);
+            mPostBufferRequested = static_cast<int>(RCF__BIO_ctrl_pending(mIoBio.get()));
+            mPostBufferLen = RCF__BIO_nread0(mIoBio.get(), &mPostBuffer);
             // NB: completion routine will call BIO_nread(mIoBio, postBufferLen)
             mByteBuffers.resize(0);
             mByteBuffers.push_back( ByteBuffer(mPostBuffer, mPostBufferLen));
@@ -1099,7 +1096,7 @@ namespace RCF {
         if (mPostState == Reading)
         {
             // return value not documented
-            BIO_nwrite(
+            RCF__BIO_nwrite(
                 mIoBio.get(),
                 &mPostBuffer,
                 static_cast<int>(bytesTransferred));
@@ -1111,7 +1108,7 @@ namespace RCF {
         else if (mPostState == Writing)
         {
             // return value not documented
-            BIO_nread(
+            RCF__BIO_nread(
                 mIoBio.get(),
                 &mPostBuffer,
                 static_cast<int>(bytesTransferred));
@@ -1132,12 +1129,12 @@ namespace RCF {
         // TODO: sort out any OpenSSL-dependent order of destruction issues
 
         mSslBio = std::shared_ptr<BIO>(
-            BIO_new(BIO_f_ssl()),
-            BIO_free);
+            RCF__BIO_new(RCF__BIO_f_ssl()),
+            RCF__BIO_free);
 
         mSslCtx = std::shared_ptr<SSL_CTX>(
-            SSL_CTX_new(SSLv23_method()),
-            SSL_CTX_free);
+            RCF__SSL_CTX_new(RCF__TLS_method()),
+            RCF__SSL_CTX_free);
 
         RCF_ASSERT(mSslRole == SslServer || mSslRole == SslClient);
         
@@ -1152,32 +1149,33 @@ namespace RCF {
         }
 
         mSsl = std::shared_ptr<SSL>(
-            SSL_new(mSslCtx.get()),
-            SSL_free);
+            RCF__SSL_new(mSslCtx.get()),
+            RCF__SSL_free);
 
         bool requestClientCertificate = (mCaCertificate.size() > 0 || mVerifyFunctor);
         if (mSslRole == SslServer && requestClientCertificate)
         {
-            SSL_set_verify(mSsl.get(), SSL_VERIFY_PEER, NULL);
+            RCF__SSL_set_verify(mSsl.get(), SSL_VERIFY_PEER, NULL);
         }
 
         BIO *bio_temp = NULL;
         BIO *io_bio_temp = NULL;
-        BIO_new_bio_pair(&bio_temp, mBioBufferSize, &io_bio_temp, mBioBufferSize);
+        RCF__BIO_new_bio_pair(&bio_temp, mBioBufferSize, &io_bio_temp, mBioBufferSize);
         mBio = std::shared_ptr<BIO>(
             bio_temp,
-            BIO_free);
+            RCF__BIO_free);
         mIoBio = std::shared_ptr<BIO>(
             io_bio_temp,
-            BIO_free);
+            RCF__BIO_free);
 
         RCF_ASSERT(mSslRole == SslServer || mSslRole == SslClient);
         mSslRole == SslServer ?
-            SSL_set_accept_state(mSsl.get()) :
-            SSL_set_connect_state(mSsl.get());
+            RCF__SSL_set_accept_state(mSsl.get()) :
+            RCF__SSL_set_connect_state(mSsl.get());
 
-        SSL_set_bio(mSsl.get(), mBio.get(), mBio.get());
-        BIO_set_ssl(mSslBio.get(), mSsl.get(), BIO_NOCLOSE);
+        RCF__SSL_set_bio(mSsl.get(), mBio.get(), mBio.get());
+        //BIO_set_ssl(mSslBio.get(), mSsl.get(), BIO_NOCLOSE);
+        RCF__BIO_ctrl(mSslBio.get(), BIO_C_SET_SSL, BIO_NOCLOSE, mSsl.get());
 
         if (
             mSslCtx.get() == NULL ||
@@ -1198,25 +1196,26 @@ namespace RCF {
         const std::string &password)
     {
         RCF_ASSERT(ctx.get());
-        if (1 == SSL_CTX_use_certificate_chain_file(ctx.get(), file.c_str()))
+        if (1 == RCF__SSL_CTX_use_certificate_chain_file(ctx.get(), file.c_str()))
         {
             std::shared_ptr<BIO> bio(
-                BIO_new( BIO_s_file() ),
-                BIO_free );
+                RCF__BIO_new(RCF__BIO_s_file() ),
+                RCF__BIO_free );
             if (bio.get())
             {
-                if (1 == BIO_read_filename(bio.get(), file.c_str()))
+                //if (1 == BIO_read_filename(bio.get(), file.c_str()))
+                if ( 1 == RCF__BIO_ctrl(bio.get(), BIO_C_SET_FILENAME, BIO_CLOSE | BIO_FP_READ, (char*)file.c_str()) )
                 {
                     std::shared_ptr<EVP_PKEY> evp(
-                        PEM_read_bio_PrivateKey(
+                        RCF__PEM_read_bio_PrivateKey(
                             bio.get(),
                             NULL,
                             NULL,
                             (void *) password.c_str()),
-                        EVP_PKEY_free);
+                        RCF__EVP_PKEY_free);
                     if (evp.get())
                     {
-                        if (1 == SSL_CTX_use_PrivateKey(ctx.get(), evp.get()))
+                        if (1 == RCF__SSL_CTX_use_PrivateKey(ctx.get(), evp.get()))
                         {
                             return true;
                         }
@@ -1236,7 +1235,7 @@ namespace RCF {
     {
         RCF_ASSERT(ctx.get());
 
-        if (SSL_CTX_load_verify_locations(ctx.get(), file.c_str(), NULL) != 1)
+        if ( RCF__SSL_CTX_load_verify_locations(ctx.get(), file.c_str(), NULL) != 1)
         {
             std::string opensslErrors = getOpenSslErrors();
             Exception e(RcfError_OpenSslLoadCert, file, opensslErrors);

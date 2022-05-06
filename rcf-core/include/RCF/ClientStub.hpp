@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2020, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 3.1
+// Version: 3.2
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -426,6 +426,28 @@ namespace RCF {
 
         /// Clears the list of cookies to include in HTTP requests to the server.
         void                    clearHttpCookies();
+
+        /// Sets the redirect handler, to be called when the client receives a HTTP redirect response.
+        void                    setHttpRedirectHandler(HttpRedirectHandler redirectHandler);
+
+        /// Gets the redirect handler.
+        HttpRedirectHandler     getHttpRedirectHandler() const;
+
+        /// Sets the URL parameter string to append to the server URL when making a HTTP request.
+        void                    setHttpUrlParameterString(const std::string & urlParameterString);
+
+        /// Gets the URL parameter string to append to the server URL when making a HTTP request.
+        std::string             getHttpUrlParameterString() const;
+
+        HttpRedirectHandler     mHttpRedirectHandler;
+
+        /// Sets the HTTP message verification mechanism to use for HTTP connections.
+        void                    setHttpMessageVerifier(HttpMessageVerifierPtr verifierPtr);
+
+        /// Gets the HTTP message verification mechanism to use for HTTP connections.
+        HttpMessageVerifierPtr  getHttpMessageVerifier() const;
+
+        HttpMessageVerifierPtr  mHttpMessageVerifierPtr;
         
         ///@}       
 
@@ -463,6 +485,12 @@ namespace RCF {
 
         /// Gets the certificate validation callback.
         const CertificateValidationCallback &     getCertificateValidationCallback() const;
+
+        // Sets the TLS SNI server name value. Only applicable to HTTPS connections.
+        void                    setTlsSniName(const tstring & serverName);
+
+        // Gets the TLS SNI server name value.  Only applicable to HTTPS connections.
+        tstring                 getTlsSniName() const;
 
         /// Sets the SSL implementation in use by this ClientStub (OpenSSL or Schannel).
         void                    setSslImplementation(SslImplementation sslImplementation);
@@ -627,7 +655,7 @@ namespace RCF {
         void                            setAsyncException(std::unique_ptr<Exception>);
 
         std::uint32_t                   generatePollingTimeout(std::uint32_t timeoutMs);
-        void                            onPollingTimeout();
+        void                            onPollingTimeout(bool eventBased = false);
         void                            onUiMessage();
 
         void                            setSubRcfClientPtr(RcfClientPtr clientStubPtr);
@@ -876,6 +904,7 @@ namespace RCF {
         tstring                                 mPassword;
         tstring                                 mHttpProxyUsername;
         tstring                                 mHttpProxyPassword;
+        std::string                             mHttpUrlParameterString;
         tstring                                 mKerberosSpn;
         bool                                    mEnableCompression;
         SspiMessageProtection                   mSspiMessageProtection = Smp_Encryption;
@@ -886,6 +915,8 @@ namespace RCF {
         tstring                                 mSchannelCertificateValidation;
 
         std::string                             mOpenSslCipherSuite;
+
+        tstring                                 mTlsSniName;
 
         SslImplementation                       mSslImplementation;
 

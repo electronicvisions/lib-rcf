@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2020, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 3.1
+// Version: 3.2
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -27,24 +27,14 @@
 #include <RCF/RcfSession.hpp>
 #include <RCF/Schannel.hpp>
 #include <RCF/ServerTransport.hpp>
+#include <RCF/SspiCredentials.hpp>
 #include <RCF/ThreadLocalData.hpp>
 #include <RCF/Tools.hpp>
+#include <RCF/Win32Certificate.hpp>
 #include <RCF/Win32Username.hpp>
 #include <RCF/Log.hpp>
 
 #include <tchar.h>
-
-#ifdef _UNICODE
-
-#define INIT_SEC_INTERFACE_NAME       "InitSecurityInterfaceW"
-typedef unsigned short UTCHAR;
-
-#else
-
-#define INIT_SEC_INTERFACE_NAME       "InitSecurityInterfaceA"
-typedef unsigned char UTCHAR;
-
-#endif
 
 #include <sspi.h>
 
@@ -53,58 +43,21 @@ namespace RCF {
     PSecurityFunctionTable getSft();
 
     SspiFilter::SspiFilter(
+        SspiCredentialsPtr credentialsPtr,
         ClientStub * pClientStub,
+        SspiMessageProtection qop,
+        ULONG contextRequirements,
+        SspiRole clientOrServer,
+        SspiType sspiType,
         const tstring & packageName,
-        const tstring & packageList,
-        bool server,
-        bool schannel) :
-            mpClientStub(pClientStub),
+        const tstring & packageList) :
+            mCredentialsPtr(credentialsPtr),
             mPackageName(packageName),
             mPackageList(packageList),
-            mQop(Smp_None),
-            mContextRequirements(),
-            mServer(server),
-            mPreState(Ready),
-            mBytesRequestedOrig(0),
-            mWriteBuffer(0),
-            mWriteBufferPos(0),
-            mWriteBufferLen(0),
-            mReadBuffer(0),
-            mReadBufferPos(0),
-            mReadBufferLen(0),
-            mPostState(Ready),
-            mHaveContext(false),
-            mHaveCredentials(false),
-            mImplicitCredentials(true),
-            mContext(),
-            mCredentials(),
-            mPkgInfo(),
-            mContextState(AuthContinue),
-            mEvent(ReadIssued),
-            mLimitRecursion(!server),
-            mSchannel(schannel),
-            mMaxMessageLength(),
-            mReadAheadChunkSize(schannel ? 0x10000 : 4),
-            mRemainingDataPos(0),
-            mEnabledProtocols(0)
-    {
-        init();
-    }
-
-    SspiFilter::SspiFilter(
-        ClientStub * pClientStub,
-        SspiMessageProtection qop,
-        ULONG contextRequirements,
-        const tstring &packageName,
-        const tstring &packageList,
-        bool server,
-        bool schannel) :
             mpClientStub(pClientStub),
-            mPackageName(packageName),
-            mPackageList(packageList),
             mQop(qop),
             mContextRequirements(contextRequirements),
-            mServer(server),
+            mClientOrServer(clientOrServer),
             mPreState(Ready),
             mBytesRequestedOrig(),
             mWriteBuffer(),
@@ -115,84 +68,22 @@ namespace RCF {
             mReadBufferLen(),
             mPostState(Ready),
             mHaveContext(),
-            mHaveCredentials(),
-            mImplicitCredentials(true),
             mContext(),
-            mCredentials(),
-            mPkgInfo(),
             mContextState(AuthContinue),
             mEvent(ReadIssued),
-            mLimitRecursion(!server),
-            mSchannel(schannel),
+            mLimitRecursion(clientOrServer == Sr_Client),
+            mSspiType(sspiType),
             mMaxMessageLength(),
-            mReadAheadChunkSize(schannel ? 0x10000 : 4),
-            mRemainingDataPos(),
-            mEnabledProtocols(0)
+            mReadAheadChunkSize(sspiType == St_Schannel ? 0x10000 : 4),
+            mRemainingDataPos()
     {
         init();
-    }
-
-    // client mode ctor, accessible to the public
-    SspiFilter::SspiFilter(
-        ClientStub * pClientStub,
-        SspiMessageProtection qop,
-        ULONG contextRequirements,
-        const tstring &packageName,
-        const tstring &packageList,
-        bool server) :
-            mpClientStub(pClientStub),
-            mPackageName(packageName),
-            mPackageList(packageList),
-            mQop(qop),
-            mContextRequirements(contextRequirements),
-            mServer(server),
-            mPreState(Ready),
-            mBytesRequestedOrig(),
-            mWriteBuffer(),
-            mWriteBufferPos(),
-            mWriteBufferLen(),
-            mReadBuffer(),
-            mReadBufferPos(),
-            mReadBufferLen(),
-            mPostState(Ready),
-            mHaveContext(),
-            mHaveCredentials(),
-            mImplicitCredentials(),
-            mContext(),
-            mCredentials(),
-            mPkgInfo(),
-            mContextState(AuthContinue),
-            mEvent(ReadIssued),
-            mLimitRecursion(!server),
-            mSchannel(false),
-            mMaxMessageLength(),
-            mReadAheadChunkSize(4),
-            mRemainingDataPos(),
-            mEnabledProtocols(0)
-    {
-        init();
-
-        RCF_ASSERT(pClientStub);
-        tstring usernameAndDomain = pClientStub->getUserName();
-        
-        tstring userName = usernameAndDomain;
-        tstring domain = RCF_T("");
-        std::size_t pos = usernameAndDomain.find(RCF_T("\\"));
-        if (pos != tstring::npos && pos != usernameAndDomain.size()-1)
-        {
-            domain = usernameAndDomain.substr(0, pos);
-            userName = usernameAndDomain.substr(pos+1);
-        }
-        tstring password = pClientStub->getPassword();
-
-        acquireCredentials(userName, password, domain);
     }
 
     SspiFilter::~SspiFilter()
     {
         RCF_DTOR_BEGIN
             deinit();
-            freePackageInfo();
         RCF_DTOR_END
     }
 
@@ -218,40 +109,6 @@ namespace RCF {
         memset(&mContext, 0, sizeof(mContext));
     }
 
-    void SspiFilter::freeCredentials()
-    {
-        if (mHaveCredentials)
-        {
-            SECURITY_STATUS status = 0;
-            status = getSft()->FreeCredentialsHandle(&mCredentials);
-
-            RCF_VERIFY(
-                status == SEC_E_OK || status == SEC_E_INVALID_HANDLE,
-                Exception(RcfError_Sspi, "FreeCredentialsHandle()", osError(status)));
-
-            mHaveCredentials = false;
-        }
-
-        memset(&mCredentials, 0, sizeof(mCredentials));
-    }
-
-    void SspiFilter::freePackageInfo()
-    {
-        if ( mPkgInfo.Name )
-        {
-            delete[] mPkgInfo.Name;
-            mPkgInfo.Name = NULL;
-        }
-
-        if ( mPkgInfo.Comment )
-        {
-            delete[] mPkgInfo.Comment;
-            mPkgInfo.Comment = NULL;
-        }
-
-        memset(&mPkgInfo, 0, sizeof(mPkgInfo));
-    }
-
     void SspiFilter::resetState()
     {
         init();
@@ -260,13 +117,16 @@ namespace RCF {
     void SspiFilter::deinit()
     {
         freeContext();
-        if ( mSchannel )
-        {
-            freeCredentials();
-        }
 
         mReadBufferVectorPtr.reset();
         mWriteBufferVectorPtr.reset();
+
+        // We no longer reset the credentials, as I'm not aware of any reason to.
+        
+        //if ( mClientOrServer == Sr_Client )
+        //{
+        //    mCredentialsPtr.reset();
+        //}
     }
 
     void SspiFilter::init()
@@ -282,6 +142,35 @@ namespace RCF {
 
         resizeReadBuffer(0);
         resizeWriteBuffer(0);
+
+        // Server filter must have credentials supplied by the filter factory.
+        RCF_ASSERT(mCredentialsPtr || (!mCredentialsPtr && mClientOrServer == Sr_Client));
+
+    }
+
+    void SspiFilter::createClientCredentials()
+    {
+        if ( !mCredentialsPtr && mClientOrServer == Sr_Client && mpClientStub )
+        {
+            if ( mSspiType == St_Schannel )
+            {
+                mCredentialsPtr.reset(new SspiCredentials(
+                    Sr_Client,
+                    mpClientStub->getCertificateValidationCallback() ? true : false,
+                    mpClientStub->getSchannelEnabledProtocols() ? mpClientStub->getSchannelEnabledProtocols() : DefaultSchannelClientProtocols,
+                    mpClientStub->getCertificate()));
+            }
+            else
+            {
+                mCredentialsPtr.reset( new SspiCredentials(
+                    Sr_Client,
+                    mPackageName,
+                    mPackageList,
+                    mpClientStub->getUserName(),
+                    mpClientStub->getPassword())
+                );
+            }
+        }
     }
 
     void SspiFilter::read(
@@ -289,7 +178,7 @@ namespace RCF {
         std::size_t bytesRequested)
     {
         // Client-side - cache the current max message length setting.
-        if (!mServer)
+        if ( mClientOrServer == Sr_Client )
         {
             ClientStub * pClientStub = getTlsClientStubPtr();
             if (pClientStub)
@@ -353,7 +242,7 @@ namespace RCF {
     void SspiFilter::write(const std::vector<ByteBuffer> &byteBuffers)
     {
         // Client-side - cache the current max message length setting.
-        if (!mServer)
+        if ( mClientOrServer == Sr_Client )
         {
             ClientStub * pClientStub = getTlsClientStubPtr();
             if (pClientStub)
@@ -376,7 +265,7 @@ namespace RCF {
         // Schannel SSL won't do more than ~16536 bytes in one message.
         // So it can't be used above a HTTP frame filter.
         const std::size_t MaxSchannelLen = 16000;
-        if ( mSchannel )
+        if ( mSspiType == St_Schannel )
         {
             MaxMergeBufferLen = MaxSchannelLen;
         }
@@ -414,7 +303,7 @@ namespace RCF {
             mWriteByteBufferOrig = byteBuffers.front();
         }
         
-        if (mSchannel)
+        if ( mSspiType == St_Schannel )
         {
             mWriteByteBufferOrig = ByteBuffer( 
                 mWriteByteBufferOrig, 
@@ -444,7 +333,7 @@ namespace RCF {
 
             RCF_ASSERT(mReadBufferPos <= mReadBufferLen);
 
-            if ( mSchannel && mServer && !mProtocolChecked && mReadBufferPos >= 1 )
+            if ( mSspiType == St_Schannel && mClientOrServer == Sr_Server && !mProtocolChecked && mReadBufferPos >= 1 )
             {
                 // SSL 3.0 starts with \x16. SSL 2.0 starts with \x80.
                 unsigned char firstByte = mReadBuffer[0];
@@ -578,7 +467,7 @@ namespace RCF {
                     }
                     else if (mRemainingDataPos)
                     {
-                        RCF_ASSERT(mSchannel);
+                        RCF_ASSERT(mSspiType == St_Schannel);
                         shiftReadBuffer();
                         handleEvent(ReadCompleted);
                     }
@@ -592,7 +481,7 @@ namespace RCF {
 
                 case WriteIssued:
 
-                    mSchannel ?
+                    (mSspiType == St_Schannel) ?
                         encryptWriteBufferSchannel() :
                         encryptWriteBuffer();
 
@@ -602,7 +491,7 @@ namespace RCF {
                 case ReadCompleted:
 
                     {
-                        bool ok = mSchannel ?
+                        bool ok = (mSspiType == St_Schannel) ?
                             decryptReadBufferSchannel() :
                             decryptReadBuffer();
 
@@ -616,6 +505,14 @@ namespace RCF {
 
                 case WriteCompleted:
 
+                    // mResumeUserIoAfterWrite is set if a handshake completes with us (the client) sending the last 
+                    // block. In this case, we need to resume sending application data.
+                    if (mResumeUserIoAfterWrite)
+                    {
+                        mResumeUserIoAfterWrite = false;
+                        resumeUserIo();
+                    }
+                    else
                     {
                         std::size_t bytesTransferred =
                             mWriteByteBufferOrig.getLength();
@@ -653,7 +550,7 @@ namespace RCF {
 
     bool SspiFilter::completeReadBlock()
     {
-        if (mSchannel)
+        if ( mSspiType == St_Schannel )
         {
             return true;
         }
@@ -675,7 +572,7 @@ namespace RCF {
             // Check the length against the max message length.
             if (mMaxMessageLength && len > mMaxMessageLength)
             {
-                int rcfError = mServer ? 
+                int rcfError = (mClientOrServer == Sr_Server) ? 
                     RcfError_ServerMessageLength_Id :
                     RcfError_ClientMessageLength_Id;
 
@@ -686,7 +583,7 @@ namespace RCF {
 
             RCF_ASSERT( !(integrity && encryption) );
 
-            if (mServer)
+            if ( mClientOrServer == Sr_Server )
             {
                 if (integrity)
                 {
@@ -774,12 +671,16 @@ namespace RCF {
         RCF_ASSERT(mWriteBufferLen == newSize);
     }
 
-    void SspiFilter::shiftReadBuffer()
+    void SspiFilter::shiftReadBuffer(bool shiftEntireBuffer)
     {
         RCF_ASSERT(     0 < mRemainingDataPos 
                     &&  mRemainingDataPos < mReadBufferVectorPtr->size());
 
-        mReadBufferPos = mReadBufferVectorPtr->size();
+        // Do we shift the entire buffer, or only up to mReadBufferPos.
+        if ( shiftEntireBuffer )
+        {
+            mReadBufferPos = mReadBufferVectorPtr->size();
+        }
         std::size_t bytesToMove = mReadBufferPos - mRemainingDataPos;
         char * pchFrom = mReadBuffer + mRemainingDataPos;
         char * pchTo = mReadBuffer;
@@ -816,7 +717,7 @@ namespace RCF {
             DWORD cbMsgLength       = 4;
             DWORD cbMsg             = static_cast<DWORD>(mWriteByteBufferOrig.getLength());
             DWORD cbSignature       = sizes.cbMaxSignature;
-            DWORD cbPacket            = cbMsgLength + cbMsg + cbSignature;
+            DWORD cbPacket          = cbMsgLength + cbMsg + cbSignature;
 
             resizeWriteBuffer(cbPacketLength + cbPacket);
             memcpy(mWriteBuffer+cbPacketLength, &cbMsg, cbMsgLength);
@@ -848,13 +749,13 @@ namespace RCF {
                 status == SEC_E_OK,
                 Exception(RcfError_SspiEncrypt, "MakeSignature()", osError(status)));
 
-            cbSignature                = rgsb[1].cbBuffer;
-            cbPacket                = cbMsgLength + cbMsg + cbSignature;
+            cbSignature                 = rgsb[1].cbBuffer;
+            cbPacket                    = cbMsgLength + cbMsg + cbSignature;
             resizeWriteBuffer(cbPacketLength + cbPacket);
-            DWORD encodedLength        = cbPacket;
+            DWORD encodedLength         = cbPacket;
             RCF_ASSERT(encodedLength < (1<<30));
-            encodedLength            = encodedLength | (1<<30);
-            * (DWORD*) mWriteBuffer = encodedLength;
+            encodedLength               = encodedLength | (1<<30);
+            * (DWORD*) mWriteBuffer     = encodedLength;
         }
         else if (mQop == Smp_Encryption)
         {
@@ -868,7 +769,7 @@ namespace RCF {
             DWORD cbMsgLength       = 4;
             DWORD cbMsg             = static_cast<DWORD>(mWriteByteBufferOrig.getLength());
             DWORD cbTrailer         = sizes.cbSecurityTrailer;
-            DWORD cbPacket            = cbMsgLength + cbMsg + cbTrailer;
+            DWORD cbPacket          = cbMsgLength + cbMsg + cbTrailer;
 
             resizeWriteBuffer(cbPacketLength + cbPacket);
             memcpy(mWriteBuffer+cbPacketLength, &cbMsg, cbMsgLength);
@@ -877,7 +778,7 @@ namespace RCF {
                 mWriteByteBufferOrig.getPtr(),
                 mWriteByteBufferOrig.getLength());
 
-            BYTE *pEncryptedMsg     =((BYTE *) mWriteBuffer) + 4;
+            BYTE *pEncryptedMsg     = ((BYTE *) mWriteBuffer) + 4;
             SecBuffer rgsb[2]       = {0,0};
             rgsb[0].cbBuffer        = cbMsg;
             rgsb[0].BufferType      = SECBUFFER_DATA;
@@ -1101,15 +1002,11 @@ namespace RCF {
    
     bool SspiServerFilter::doHandshake()
     {
-        // use the block in the read buffer to proceed through the handshake procedure
+        // Use the block in the read buffer to proceed through the handshake procedure.
 
-        // lazy acquiring of implicit credentials
-        if (mImplicitCredentials && !mHaveCredentials)
-        {
-            acquireCredentials();
-        }
+        RCF_ASSERT(mCredentialsPtr);
 
-        DWORD cbPacket          = mPkgInfo.cbMaxToken;
+        DWORD cbPacket          = mCredentialsPtr->mpPkgInfo->cbMaxToken;
         DWORD cbPacketLength    = 4;
 
         std::vector<char> vec(cbPacketLength + cbPacket);
@@ -1128,7 +1025,7 @@ namespace RCF {
             mReadBufferLen == 0 || mReadBufferLen > 4)
             (mReadBufferLen);
 
-        RCF_ASSERT(!mServer || (mServer && mReadBufferLen > 4));
+        RCF_ASSERT(mClientOrServer == Sr_Client || (mClientOrServer == Sr_Server && mReadBufferLen > 4));
 
         SecBufferDesc ibd       = {0};
         SecBuffer ib            = {0};
@@ -1145,7 +1042,7 @@ namespace RCF {
         DWORD   CtxtAttr        = 0;
         TimeStamp Expiration    = {0};
         SECURITY_STATUS status  = getSft()->AcceptSecurityContext(
-            &mCredentials,
+            &mCredentialsPtr->mCredentials,
             mHaveContext ? &mContext : NULL,
             &ibd,
             mContextRequirements,
@@ -1255,7 +1152,7 @@ namespace RCF {
            
             // process inbound block and write outbound block
             {
-                bool written = mSchannel ? 
+                bool written = (mSspiType == St_Schannel) ? 
                     doHandshakeSchannel() : 
                     doHandshake();
 
@@ -1296,11 +1193,12 @@ namespace RCF {
     {
         // Use the block in the read buffer to proceed through the handshake procedure.
 
-        // Lazy acquiring of implicit credentials.
-        if (!mHaveCredentials)
+        if ( !mCredentialsPtr )
         {
-            acquireCredentials();
+            createClientCredentials();
         }
+
+        RCF_ASSERT(mCredentialsPtr);
 
         if (mContextState == AuthOk)
         {
@@ -1312,9 +1210,9 @@ namespace RCF {
                 {
                     mContextState = AuthOkAck;
 
-                    if (mUserName.size() > 0)
+                    if (mCredentialsPtr->mUserName.size() > 0)
                     {
-                        RCF_LOG_2() << "SSPI login succeeded, using explicit credentials for user: " << mUserName << " . SSPI message protection level: " << (int)mQop;
+                        RCF_LOG_2() << "SSPI login succeeded, using explicit credentials for user: " << mCredentialsPtr->mUserName << " . SSPI message protection level: " << (int)mQop;
                     }
                     else
                     {
@@ -1339,7 +1237,7 @@ namespace RCF {
         }
        
         DWORD cbPacketLength    = 4;
-        DWORD cbPacket          = mPkgInfo.cbMaxToken;
+        DWORD cbPacket          = mCredentialsPtr->mpPkgInfo->cbMaxToken;
         std::vector<char> vec(cbPacket + cbPacketLength);
 
         BYTE *pPacket           = (BYTE*) &vec[0];
@@ -1354,7 +1252,7 @@ namespace RCF {
 
         RCF_ASSERT(mReadBufferLen == 0 || mReadBufferLen > 4);
 
-        RCF_ASSERT(!mServer || (mServer && mReadBufferLen > 4));
+        RCF_ASSERT(mClientOrServer == Sr_Client || (mClientOrServer == Sr_Server && mReadBufferLen > 4));
 
         SecBuffer ib            = {0};
         SecBufferDesc ibd       = {0};
@@ -1377,7 +1275,7 @@ namespace RCF {
         ULONG CtxtReq =  mContextRequirements;
 
         SECURITY_STATUS status  = getSft()->InitializeSecurityContext(
-            &mCredentials,
+            &mCredentialsPtr->mCredentials,
             mHaveContext ? &mContext : NULL,
             (TCHAR *) target,
             CtxtReq,
@@ -1449,7 +1347,7 @@ namespace RCF {
            
             // create first block to send to server
             //resizeReadBuffer(0);
-            mSchannel ? 
+            (mSspiType == St_Schannel) ?
                 doHandshakeSchannel() : 
                 doHandshake();
 
@@ -1460,7 +1358,7 @@ namespace RCF {
 
             // process a block, and send any emitted output block
             {
-            bool written = mSchannel ? 
+            bool written = (mSspiType == St_Schannel) ?
                 doHandshakeSchannel() : 
                 doHandshake();
 
@@ -1483,151 +1381,15 @@ namespace RCF {
         }
     }
 
-    void SspiFilter::setupCredentials(
-        const tstring &userName,
-        const tstring &password,
-        const tstring &domain)
-    {
 
-        SEC_WINNT_AUTH_IDENTITY_EX identity     = {0};
-
-        UTCHAR *pDomain = reinterpret_cast<UTCHAR*>(const_cast<TCHAR*>(domain.c_str()));
-        unsigned long pDomainLen = static_cast<unsigned long>(domain.length());
-
-        UTCHAR *pUsername = reinterpret_cast<UTCHAR*>(const_cast<TCHAR*>(userName.c_str()));
-        unsigned long pUsernameLen = static_cast<unsigned long>(userName.length());
-
-        UTCHAR *pPassword = reinterpret_cast<UTCHAR*>(const_cast<TCHAR*>(password.c_str()));
-        unsigned long pPasswordLen = static_cast<unsigned long>(password.length());
-
-        UTCHAR *pPackages = reinterpret_cast<UTCHAR*>(const_cast<TCHAR*>(mPackageList.c_str()));
-        unsigned long pPackagesLen = static_cast<unsigned long>(mPackageList.length());
-
-        if (!userName.empty())
-        {
-            if (!domain.empty())
-            {
-                identity.Domain                 = pDomain;
-                identity.DomainLength           = pDomainLen;
-            }
-            if (!userName.empty())
-            {
-                identity.User                   = pUsername;
-                identity.UserLength             = pUsernameLen;
-            }
-            if (!password.empty())
-            {
-                identity.Password               = pPassword;
-                identity.PasswordLength         = pPasswordLen;
-            }
-        }
-
-#ifdef _UNICODE
-        identity.Flags                          = SEC_WINNT_AUTH_IDENTITY_UNICODE;
-#else
-        identity.Flags                          = SEC_WINNT_AUTH_IDENTITY_ANSI;
-#endif
-
-        identity.Version                        = SEC_WINNT_AUTH_IDENTITY_VERSION;
-        identity.Length                         = sizeof(identity);
-        if (!mPackageList.empty())
-        {
-            identity.PackageList                = pPackages;
-            identity.PackageListLength          = pPackagesLen;
-        }
-        SEC_WINNT_AUTH_IDENTITY_EX *pIdentity = &identity;
-
-        TimeStamp Expiration                    = {0};
-
-        SECURITY_STATUS status = getSft()->AcquireCredentialsHandle(
-            NULL,
-            mPkgInfo.Name,
-            mServer ? SECPKG_CRED_INBOUND : SECPKG_CRED_OUTBOUND ,
-            NULL,
-            pIdentity,
-            NULL, NULL,
-            &mCredentials,
-            &Expiration);
-
-        if (status != SEC_E_OK)
-        {
-            Exception e(RcfError_Sspi, "AcquireCredentialsHandle()", osError(status));
-            RCF_THROW(e);
-        }
-
-        mHaveCredentials = true;
-
-        if (domain.size() > 0)
-        {
-            mUserName = domain + _T("\\");
-        }
-        if (userName.size() > 0)
-        {
-            mUserName += userName;
-        }
-    }
-
-    void SspiFilter::acquireCredentials(
-        const tstring &userName,
-        const tstring &password,
-        const tstring &domain)
-    {
-        // acquire credentials, implicitly (currently logged on user),
-        // or explicitly (supply username and password)
-
-        RCF_ASSERT(!mHaveCredentials);
-
-        // TODO: whats with copying pPackage here?
-
-        // setup security package
-        SecPkgInfo *pPackage = NULL;
-       
-        SECURITY_STATUS status = getSft()->QuerySecurityPackageInfo(
-            (TCHAR*) mPackageName.c_str(),
-            &pPackage);
-
-        if ( status != SEC_E_OK )
-        {
-            Exception e(RcfError_Sspi, "QuerySecurityPackageInfo()", osError(status));
-            RCF_THROW(e);
-        }
-
-#ifdef _MSC_VER
-#pragma warning( push )
-#pragma warning( disable : 4995 )  // warning C4995: '...': name was marked as #pragma deprecated
-#pragma warning( disable : 4996 )  // warning C4996: '...' was declared deprecated
-#endif
-
-        TCHAR *pName = new TCHAR[ _tcslen(pPackage->Name) + 1 ];
-        _tcscpy(pName, pPackage->Name);
-
-        TCHAR *pComment = new TCHAR[ _tcslen(pPackage->Comment) + 1 ];
-        _tcscpy(pComment, pPackage->Comment);
-
-#ifdef _MSC_VER
-#pragma warning( pop )
-#endif
-
-        memcpy ( (void*)&mPkgInfo, (void*)pPackage, sizeof(SecPkgInfo) );
-        mPkgInfo.Name = pName;
-        mPkgInfo.Comment = pComment;
-
-        getSft()->FreeContextBuffer( (void*) pPackage );
-
-        mSchannel ?
-            setupCredentialsSchannel() :
-            setupCredentials(userName, password, domain);
-
-    }
 
     //**************************************************************************
     // Server filters.
 
     SspiServerFilter::SspiServerFilter(
-        const tstring &packageName,
-        const tstring &packageList,
-        bool schannel) :
-            SspiFilter(NULL, packageName, packageList, BoolServer, schannel)
+        SspiCredentialsPtr credentialsPtr,
+        SspiType sspiType) :
+            SspiFilter(credentialsPtr, NULL, SspiMessageProtection::Smp_None, 0, Sr_Server, sspiType)
     {
         RcfSession * pRcfSession = RCF::getTlsRcfSessionPtr();
         if (pRcfSession)
@@ -1640,8 +1402,8 @@ namespace RCF {
     }
 
     // NTLM
-    NtlmServerFilter::NtlmServerFilter() :
-        SspiServerFilter(RCF_T("NTLM"), RCF_T(""))
+    NtlmServerFilter::NtlmServerFilter(SspiCredentialsPtr credentialsPtr) :
+        SspiServerFilter(credentialsPtr, St_WindowsAuth)
     {}
 
     int NtlmServerFilter::getFilterId() const
@@ -1650,8 +1412,8 @@ namespace RCF {
     }
 
     // Kerberos
-    KerberosServerFilter::KerberosServerFilter() :
-        SspiServerFilter(RCF_T("Kerberos"), RCF_T(""))
+    KerberosServerFilter::KerberosServerFilter(SspiCredentialsPtr credentialsPtr) :
+        SspiServerFilter(credentialsPtr, St_WindowsAuth)
     {}
 
     int KerberosServerFilter::getFilterId() const
@@ -1660,9 +1422,8 @@ namespace RCF {
     }
 
     // Negotiate
-    NegotiateServerFilter::NegotiateServerFilter(
-        const tstring &packageList) :
-            SspiServerFilter(RCF_T("Negotiate"), packageList)
+    NegotiateServerFilter::NegotiateServerFilter(SspiCredentialsPtr credentialsPtr) :
+            SspiServerFilter(credentialsPtr, St_WindowsAuth)
     {}
 
     int NegotiateServerFilter::getFilterId() const
@@ -1680,9 +1441,21 @@ namespace RCF {
     // Filter factories
 
     // NTLM
+    NtlmFilterFactory::NtlmFilterFactory()
+    {
+    }
+
     FilterPtr NtlmFilterFactory::createFilter(RcfServer &)
     {
-        return FilterPtr( new NtlmServerFilter() );
+        {
+            Lock lock(mCredentialsMutex);
+            if ( !mCredentialsPtr )
+            {
+                mCredentialsPtr.reset(new SspiCredentials(Sr_Server, RCF_T("NTLM"), RCF_T("")));
+            }
+        }
+
+        return FilterPtr( new NtlmServerFilter(mCredentialsPtr) );
     }
 
     int NtlmFilterFactory::getFilterId()
@@ -1691,9 +1464,22 @@ namespace RCF {
     }
 
     // Kerberos
+
+    KerberosFilterFactory::KerberosFilterFactory()
+    {
+    }
+
     FilterPtr KerberosFilterFactory::createFilter(RcfServer &)
     {
-        return FilterPtr( new KerberosServerFilter() );
+        {
+            Lock lock(mCredentialsMutex);
+            if ( !mCredentialsPtr )
+            {
+                mCredentialsPtr.reset(new SspiCredentials(Sr_Server, RCF_T("Kerberos"), RCF_T("")));
+            }
+        }
+
+        return FilterPtr( new KerberosServerFilter(mCredentialsPtr) );
     }
 
     int KerberosFilterFactory::getFilterId()
@@ -1705,11 +1491,19 @@ namespace RCF {
     NegotiateFilterFactory::NegotiateFilterFactory(
         const tstring &packageList) :
             mPackageList(packageList)
-    {}
+    {
+    }
 
     FilterPtr NegotiateFilterFactory::createFilter(RcfServer &)
     {
-        return FilterPtr( new NegotiateServerFilter(mPackageList) );
+        {
+            Lock lock(mCredentialsMutex);
+            if ( !mCredentialsPtr )
+            {
+                mCredentialsPtr.reset(new SspiCredentials(Sr_Server, RCF_T("Negotiate"), mPackageList));
+            }
+        }
+        return FilterPtr( new NegotiateServerFilter(mCredentialsPtr) );
     }
 
     int NegotiateFilterFactory::getFilterId()
@@ -1729,12 +1523,14 @@ namespace RCF {
     // NTLM
     NtlmClientFilter::NtlmClientFilter(
         ClientStub *            pClientStub,
-        SspiMessageProtection     qop,
+        SspiMessageProtection   qop,
         ULONG                   contextRequirements) :
             SspiClientFilter(
+                SspiCredentialsPtr(),
                 pClientStub,
                 qop, 
-                contextRequirements, 
+                contextRequirements,
+                St_WindowsAuth,
                 RCF_T("NTLM"), 
                 RCF_T(""))
     {}
@@ -1747,12 +1543,14 @@ namespace RCF {
     // Kerberos
     KerberosClientFilter::KerberosClientFilter(
         ClientStub *            pClientStub,
-        SspiMessageProtection     qop,
+        SspiMessageProtection   qop,
         ULONG                   contextRequirements) :
             SspiClientFilter(
+                SspiCredentialsPtr(),
                 pClientStub,
                 qop, 
-                contextRequirements, 
+                contextRequirements,
+                St_WindowsAuth,
                 RCF_T("Kerberos"), 
                 RCF_T(""))
     {}
@@ -1765,12 +1563,14 @@ namespace RCF {
     // Negotiate
     NegotiateClientFilter::NegotiateClientFilter(
         ClientStub *            pClientStub,
-        SspiMessageProtection     qop,
+        SspiMessageProtection   qop,
         ULONG                   contextRequirements) :
             SspiClientFilter(
+                SspiCredentialsPtr(),
                 pClientStub,
                 qop, 
-                contextRequirements, 
+                contextRequirements,
+                St_WindowsAuth,
                 RCF_T("Negotiate"), 
                 RCF_T("Kerberos,NTLM"))
     {}

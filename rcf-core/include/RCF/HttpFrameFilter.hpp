@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2020, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,10 +11,12 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 3.1
+// Version: 3.2
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
+
+/// \file
 
 #ifndef INCLUDE_RCF_HTTPFRAMEFILTER_HPP
 #define INCLUDE_RCF_HTTPFRAMEFILTER_HPP
@@ -33,6 +35,8 @@ namespace RCF {
     class MemOstream;
     class MemIstream;
     class ReallocBuffer;
+    class HttpMessage;
+    class HttpCookie;
 
     typedef std::shared_ptr<MemOstream> MemOstreamPtr;
     typedef std::shared_ptr<ReallocBuffer> ReallocBufferPtr;
@@ -42,8 +46,21 @@ namespace RCF {
         const char * splitAt,
         std::vector<std::string> & lines);
 
+    /// HTTP message verification mechanism, to allow applications to verify HTTP message payloads using custom HTTP headers.
+    class HttpMessageVerifier
+    {
+    public:
 
-    class HttpMessage
+        /// Set verification header on an outgoing HTTP message, based on the message payload passed in messageBuffers.
+        virtual void applyHeader(const std::vector<ByteBuffer>& messageBuffers, std::string& headerName, std::string& headerValue) = 0;
+
+        /// Check verification header on an incoming HTTP message, based on the message payload passed in msgData.
+        virtual void verifyHeader(const HttpMessage& msg, ByteBuffer msgData) = 0;
+    };
+
+    typedef std::shared_ptr<HttpMessageVerifier> HttpMessageVerifierPtr;
+
+    class RCF_EXPORT HttpMessage
     {
     public:
 
@@ -61,7 +78,7 @@ namespace RCF {
         bool parseHttpMessage(const char * pFrame, std::size_t bytesAvailable);
 
         void getHttpStatus(std::string& httpStatus, std::string& httpStatusMsg);
-        void getHeaderValue(const std::string& headerName, std::string& headerValue);
+        void getHeaderValue(const std::string& headerName, std::string& headerValue) const;
 
         typedef std::vector< std::pair< std::string, std::string > > HeaderList;
         HeaderList                              mHeaderList;
@@ -84,8 +101,9 @@ namespace RCF {
 
         // Client-side constructor.
         HttpFrameFilter(
-            const std::string       serverAddr, 
-            int                     serverPort);
+            const std::string &     serverAddr, 
+            int                     serverPort,
+            const std::string &     serverUrlPath);
         
         ~HttpFrameFilter();
 
@@ -110,6 +128,7 @@ namespace RCF {
         std::uint32_t           getHttpSessionIndex();
         const std::string &     getConnectionHeader();
 
+        void                    sendHttpTextResponse(const std::string & httpStatus, const std::string & responseText);
         void                    sendHttpErrorResponse(MemOstreamPtr osPtr);
         void                    onError(const Exception& e);
 
@@ -118,21 +137,31 @@ namespace RCF {
         std::size_t             mChunkedResponseCounter;
 
         bool                    tryParseHttpHeader();
+        
         bool                    tryParseHttpChunkHeader();
 
         void                    getHttpFrameInfo(
                                     std::string&                                            requestLine,
                                     std::vector< std::pair<std::string, std::string> >&     headers);
 
+        bool                    verifyReceivedMessage();
 
     private:
+
+        void                    processSetCookieHeader(const std::string& headerValue);
+        void                    processLocationHeader();
+
 
         void                    sendServerError(int error);
 
         void                    resizeReadBuffer(std::size_t newSize);
 
+        const std::string &     getServerHeader();
+
         std::string                         mServerAddr;
         int                                 mServerPort;
+        std::string                         mServerUrlPath;
+        std::string                         mServerHeaderValue;
 
         bool                                mClientSide;
         std::string                         mHttpSessionId;

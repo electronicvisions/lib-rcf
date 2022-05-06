@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2020, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 3.1
+// Version: 3.2
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -56,24 +56,21 @@ namespace RCF {
 
         void                    read(const ByteBuffer &byteBuffer_, std::size_t bytesRequested);
         void                    write(const std::vector<ByteBuffer> &byteBuffers);
-        std::size_t             timedSend(const std::vector<ByteBuffer> &data);
-        std::size_t             timedReceive(ByteBuffer &byteBuffer, std::size_t bytesRequested);
 
         void                    setTransportFilters(const std::vector<FilterPtr> &filters);
         void                    getTransportFilters(std::vector<FilterPtr> &filters);
-        void                    connectTransportFilters();
 
         void                    getWireFilters(std::vector<FilterPtr> &        filters);
         
         void                    connect(ClientTransportCallback &clientStub, unsigned int timeoutMs);
         void                    disconnect(unsigned int timeoutMs);
-        int                     timedSend(const char *buffer, std::size_t bufferLen);
-        int                     timedReceive(char *buffer, std::size_t bufferLen);
 
     protected:
 
         void                    onReadCompleted(const ByteBuffer &byteBuffer);
         void                    onWriteCompleted(std::size_t bytes);
+
+        void                    getProgressInfo(RemoteCallProgressInfo & info);
 
         friend class HttpServerTransport;
         friend class AsioServerTransport;
@@ -83,17 +80,13 @@ namespace RCF {
         bool                                    mOwn;
         bool                                    mClosed;
         std::size_t                             mMaxSendSize;
-        std::size_t                             mBytesTransferred;
-        std::size_t                             mBytesSent;
-        std::size_t                             mBytesRead;
-        std::size_t                             mBytesTotal;
         int                                     mError;
         bool                                    mNoTimeout;
         unsigned int                            mEndTimeMs;
 
         std::vector<FilterPtr>                  mTransportFilters;
         std::vector<FilterPtr>                  mWireFilters;
-        std::vector<ByteBuffer>                 mByteBuffers;
+        std::vector<ByteBuffer>                 mWriteBuffers;
         std::vector<ByteBuffer>                 mSlicedByteBuffers;
         ReallocBufferPtr                        mReadBufferPtr;
         ReallocBufferPtr                        mReadBuffer2Ptr;
@@ -147,13 +140,12 @@ namespace RCF {
         ByteBuffer                  mReadBuffer;
         std::size_t                 mBytesToRead;
         std::size_t                 mBytesRequested;
-        ByteBuffer                  mByteBuffer;        
+        ByteBuffer                  mReadBuffer2;        
 
     protected:
         friend class Subscription;
         OverlappedAmiPtr            mOverlappedPtr;
 
-        
         MutexPtr                    mSocketOpsMutexPtr;
 
         AsioBuffers                 mAsioBuffers;
@@ -179,6 +171,8 @@ namespace RCF {
     private:
         RecursionState<std::size_t, int> mRecursionState;
 
+        void        fireProgressEvent();
+
         // TODO: Access control.
     public:
 
@@ -188,7 +182,7 @@ namespace RCF {
         void        onTimedRecvCompleted(int ret, int err);
         void        onTimedSendCompleted(int ret, int err);
         void        onConnectCompleted(int err);
-
+        
         void        transition();
         void        onTransitionCompleted_(std::size_t bytesTransferred);
         void        issueRead(const ByteBuffer &buffer, std::size_t bytesToRead);

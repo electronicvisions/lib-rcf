@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2020, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 3.1
+// Version: 3.2
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -40,6 +40,9 @@ namespace RCF {
         /// Constructs an HTTPS endpoint on the given IP address and port number.
         HttpsEndpoint(const std::string & ip, int port);
 
+        /// Constructs an HTTPS endpoint on the given IP address, port number and URL path component.
+        HttpsEndpoint(const std::string & ip, int port, const std::string & urlPath);
+
         // *** SWIG END ***
 
         /// Returns a string representation of the HTTP endpoint.
@@ -48,6 +51,11 @@ namespace RCF {
         ServerTransportUniquePtr createServerTransport() const;
         ClientTransportUniquePtr createClientTransport() const;
         EndpointPtr clone() const;
+
+        std::string getUrlPath() const;
+
+    private:
+        std::string mUrlPath;
     };
 
 } // namespace RCF

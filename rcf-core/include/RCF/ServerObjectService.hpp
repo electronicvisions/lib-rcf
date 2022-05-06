@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2020, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 3.1
+// Version: 3.2
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -92,8 +92,7 @@ namespace RCF {
                 holder.mLastTouchMs = getCurrentTimeMs();
                 RCF_ASSERT(holder.mUseCount >= 0);
                 ++holder.mUseCount;
-                using namespace std::placeholders;
-                TPtr ptr(pt, std::bind(&ServerObjectService::customDeleter, this, objectKey, _1));
+                TPtr ptr(pt, std::bind(&ServerObjectService::customDeleter, this, objectKey, std::placeholders::_1));
                 return ptr;
             }
             else if (createIfDoesntExist)
@@ -107,8 +106,7 @@ namespace RCF {
                 holder.mLastTouchMs = getCurrentTimeMs();
                 RCF_ASSERT(holder.mUseCount >= 0);
                 ++holder.mUseCount;
-                using namespace std::placeholders;
-                TPtr ptr(pt, std::bind(&ServerObjectService::customDeleter, this, objectKey, _1));
+                TPtr ptr(pt, std::bind(&ServerObjectService::customDeleter, this, objectKey, std::placeholders::_1));
                 return ptr;
             }
             else

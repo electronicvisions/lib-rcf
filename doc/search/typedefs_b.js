@@ -1,5 +1,5 @@
 var searchData=
 [
-  ['uploadbandwidthquotacallback',['UploadBandwidthQuotaCallback',['../_rcf_fwd_8hpp.html#a78f40aa1e90363b760d1316452061b4f',1,'RCF']]],
-  ['uploadprogresscallback',['UploadProgressCallback',['../_rcf_fwd_8hpp.html#addc94c2db7498c5a8f372e4335bc5e12',1,'RCF']]]
+  ['serverbindingptr',['ServerBindingPtr',['../_rcf_fwd_8hpp.html#aa7df27075475c362966afe6407a3df07',1,'RCF']]],
+  ['servertransportptr',['ServerTransportPtr',['../_rcf_fwd_8hpp.html#a7fbe9b62d3c8757bf98182f8c789b872',1,'RCF']]]
 ];

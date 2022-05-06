@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2020, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 3.1
+// Version: 3.2
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -240,6 +240,13 @@ namespace RCF
     #define RcfError_NonSSLResponse                  ErrorMsg(185) // The server responded with a non-SSL response. The first bytes of the response were: '%1%'.
     #define RcfError_NoProxyConnection               ErrorMsg(186) // Unable to establish connection to proxy endpoint '%1%'.
     #define RcfError_ProxyServerMultiThreaded        ErrorMsg(187) // Proxy server must be multi-threaded, in order to service proxy requests.
+    #define RcfError_HttpRedirect                    ErrorMsg(188) // The server returned a HTTP redirect response. The HTTP response was '%1%'.
+    #define RcfError_SetFileModTime                  ErrorMsg(189) // Unable to set last modified time for file '%1%'. %2%
+    #define RcfError_GetFileModTime                  ErrorMsg(190) // Unable to retrieve last modified time for file '%1%'. %2%
+    #define RcfError_HttpMessageVerification         ErrorMsg(191) // HTTP message verification failed. 
+    #define RcfError_HttpMessageVerificationAdmin    ErrorMsg(192) // HTTP message verification failed. %1%
+    #define RcfError_HttpSessionNotAvailable         ErrorMsg(193) // HTTP session not available.
+    #define RcfError_HttpInvalidMessage              ErrorMsg(194) // Invalid HTTP message.
 
     static const int RcfError_Ok_Id                           =   0;
     static const int RcfError_ServerMessageLength_Id          =   2;
@@ -419,6 +426,13 @@ namespace RCF
     static const int RcfError_NonSSLResponse_Id               = 185;
     static const int RcfError_NoProxyConnection_Id            = 186;
     static const int RcfError_ProxyServerMultiThreaded_Id     = 187;
+    static const int RcfError_HttpRedirect_Id                 = 188;
+    static const int RcfError_SetFileModTime_Id               = 189;
+    static const int RcfError_GetFileModTime_Id               = 190;
+    static const int RcfError_HttpMessageVerification_Id      = 191;
+    static const int RcfError_HttpMessageVerificationAdmin_Id = 192;
+    static const int RcfError_HttpSessionNotAvailable_Id      = 193;
+    static const int RcfError_HttpInvalidMessage_Id           = 194;
 
     //[[[end]]]
 

@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2020, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 3.1
+// Version: 3.2
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -58,8 +58,25 @@ namespace RCF {
     void SessionTimeoutService::onServerStop(RcfServer &server)
     {
         RCF_UNUSED_VARIABLE(server);
-        mpRcfServer = NULL;
         mPeriodicTimer.stop();
+        mpRcfServer = NULL;
+    }
+
+    void SessionTimeoutService::restart()
+    {
+        if ( mpRcfServer )
+        {
+            mPeriodicTimer.stop();
+
+            mSessionTimeoutMs = mpRcfServer->getConnectionIdleTimeoutMs();
+            mReapingIntervalMs = mpRcfServer->getConnectionIdleScanIntervalMs();
+
+            if ( mSessionTimeoutMs )
+            {
+                mPeriodicTimer.setIntervalMs(mReapingIntervalMs);
+                mPeriodicTimer.start();
+            }
+        }
     }
 
     void SessionTimeoutService::onTimer()
@@ -67,6 +84,8 @@ namespace RCF {
         mSessionsTemp.resize(0);
 
         mpRcfServer->enumerateSessions(std::back_inserter(mSessionsTemp));
+
+        mSessionTimeoutMs = mpRcfServer->getConnectionIdleTimeoutMs();
 
         for (std::size_t i=0; i<mSessionsTemp.size(); ++i)
         {
@@ -76,8 +95,9 @@ namespace RCF {
                 RcfSessionPtr rcfSessionPtr = networkSessionPtr->getSessionPtr();
                 if (rcfSessionPtr)
                 {
+                    bool callInProgress = rcfSessionPtr->getCallInProgress();
                     std::uint32_t lastTouched = rcfSessionPtr->getTouchTimestamp();
-                    if (lastTouched)
+                    if (!callInProgress && lastTouched)
                     {
                         RCF::Timer lastTouchedTimer( lastTouched );
                         if (lastTouchedTimer.elapsed(mSessionTimeoutMs))

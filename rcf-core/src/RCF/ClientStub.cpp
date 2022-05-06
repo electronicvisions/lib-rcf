@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2020, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 3.1
+// Version: 3.2
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -191,6 +191,7 @@ namespace RCF {
             mHttpProxyUsername              = rhs.mHttpProxyUsername;
             mHttpProxyRealm                 = rhs.mHttpProxyRealm;      
             mHttpCookies                    = rhs.mHttpCookies;
+            mHttpMessageVerifierPtr         = rhs.mHttpMessageVerifierPtr;
 
 #if RCF_FEATURE_SSPI==1
             mSchannelContextRequirements    = rhs.mSchannelContextRequirements;
@@ -685,28 +686,34 @@ namespace RCF {
                 timeoutMs);
     }
 
-    void ClientStub::onPollingTimeout()
+    void ClientStub::onPollingTimeout(bool eventBased)
     {
         // Check whether we need to fire a client progress timer callback.
 
-        if (mNextTimerCallbackMs && 0 == generateTimeoutMs(mNextTimerCallbackMs))
+        bool timerExpired = mNextTimerCallbackMs && 0 == generateTimeoutMs(mNextTimerCallbackMs);
+
+        if ( eventBased || timerExpired )
         {
             RemoteCallProgressInfo progressInfo;
-            progressInfo.mBytesTransferred = 0;
-            progressInfo.mBytesTotal = 0;
-            progressInfo.mPhase = RCF::Rcp_Receive;
+            mTransport->getProgressInfo(progressInfo);
 
-            RemoteCallAction action = RemoteCallAction::Rca_Continue;
-            mProgressCallback(progressInfo, action);
+            if ( mProgressCallback )
+            {
+                RemoteCallAction action = RemoteCallAction::Rca_Continue;
+                mProgressCallback(progressInfo, action);
 
-            RCF_VERIFY(
-                action == RemoteCallAction::Rca_Continue,
-                Exception(RcfError_ClientCancel));
+                RCF_VERIFY(
+                    action == RemoteCallAction::Rca_Continue,
+                    Exception(RcfError_ClientCancel));
+            }
 
-            mNextTimerCallbackMs = 
-                RCF::getCurrentTimeMs() + mProgressCallbackIntervalMs;
+            if ( timerExpired )
+            {
+                mNextTimerCallbackMs =
+                    RCF::getCurrentTimeMs() + mProgressCallbackIntervalMs;
 
-            mNextTimerCallbackMs |= 1;
+                mNextTimerCallbackMs |= 1;
+            }
         }
 
         // Check that pingbacks have been received.
@@ -812,8 +819,17 @@ namespace RCF {
         stub.setOutofBandResponse(ByteBuffer());
         msg.decodeResponse(controlResponse);
 
-        int ret = msg.mResponseError; 
-        RCF_VERIFY(ret == RcfError_Ok_Id, RemoteException(ErrorMsg(ret)));
+        if ( msg.mResponseError != RcfError_Ok_Id )
+        {
+            if ( msg.mResponseErrorString.size() > 0 )
+            {
+                RCF_THROW(RemoteException(msg.mResponseErrorString));
+            }
+            else
+            {
+                RCF_THROW(RemoteException(ErrorMsg(msg.mResponseError)));
+            }
+        }
 
         for (std::size_t i=0; i<filters.size(); ++i)
         {
@@ -875,10 +891,14 @@ namespace RCF {
             rtfStubPtr->setOutofBandResponse(ByteBuffer());
             msg.decodeResponse(controlResponse);
 
-            int ret = msg.mResponseError; 
-            if ( ret != RcfError_Ok_Id )
+            if ( msg.mResponseErrorString.size() > 0 )
             {
-                ePtr.reset( new RemoteException(ErrorMsg(ret)) );
+                ePtr.reset(new RemoteException(msg.mResponseErrorString));
+                clientStubOrig.setAsyncException(std::move(ePtr));
+            }
+            else if ( msg.mResponseError != RcfError_Ok_Id )
+            {
+                ePtr.reset( new RemoteException(ErrorMsg(msg.mResponseError)) );
                 clientStubOrig.setAsyncException(std::move(ePtr));
             }
             else
@@ -1128,6 +1148,36 @@ namespace RCF {
         return mHttpCookies;
     }
 
+    void ClientStub::setHttpRedirectHandler(HttpRedirectHandler redirectHandler)
+    {
+        mHttpRedirectHandler = redirectHandler;
+    }
+
+    HttpRedirectHandler ClientStub::getHttpRedirectHandler() const
+    {
+        return mHttpRedirectHandler;
+    }
+
+    void ClientStub::setHttpUrlParameterString(const std::string & urlParameterString)
+    {
+        mHttpUrlParameterString = urlParameterString;
+    }
+
+    std::string ClientStub::getHttpUrlParameterString() const
+    {
+        return mHttpUrlParameterString;
+    }
+
+    void ClientStub::setHttpMessageVerifier(HttpMessageVerifierPtr verifierPtr)
+    {
+        mHttpMessageVerifierPtr = verifierPtr;
+    }
+
+    HttpMessageVerifierPtr  ClientStub::getHttpMessageVerifier() const
+    {
+        return mHttpMessageVerifierPtr;
+    }
+
     void ClientStub::setTransportProtocol(TransportProtocol protocol)
     {
         if (mTransportProtocol != protocol)
@@ -1295,6 +1345,16 @@ namespace RCF {
     std::string ClientStub::getOpenSslCipherSuite() const
     {
         return mOpenSslCipherSuite;
+    }
+
+    void ClientStub::setTlsSniName(const tstring & serverName)
+    {
+        mTlsSniName = serverName;
+    }
+
+    tstring ClientStub::getTlsSniName() const
+    {
+        return mTlsSniName;
     }
 
     void ClientStub::setSslImplementation(SslImplementation sslImplementation)

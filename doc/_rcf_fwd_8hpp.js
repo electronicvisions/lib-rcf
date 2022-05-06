@@ -22,5 +22,6 @@ var _rcf_fwd_8hpp =
     [ "DownloadBandwidthQuotaCallback", "_rcf_fwd_8hpp.html#ae1e1a16cf24a143b8c18a5f91bf7f520", null ],
     [ "ServerBindingPtr", "_rcf_fwd_8hpp.html#aa7df27075475c362966afe6407a3df07", null ],
     [ "Win32CertificatePtr", "_rcf_fwd_8hpp.html#a061b0d31f21ea374dbb86be5c093e372", null ],
-    [ "AccessControlCallback", "_rcf_fwd_8hpp.html#a4fc3b8ba994021b8ba3f8ac0bb8e40dc", null ]
+    [ "AccessControlCallback", "_rcf_fwd_8hpp.html#a4fc3b8ba994021b8ba3f8ac0bb8e40dc", null ],
+    [ "HttpRedirectHandler", "_rcf_fwd_8hpp.html#a935372b03e0d06d52f882d9a4bd3586c", null ]
 ];

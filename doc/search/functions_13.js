@@ -1,7 +1,8 @@
 var searchData=
 [
-  ['_7ercfinit',['~RcfInit',['../class_r_c_f_1_1_rcf_init.html#a210073eb83b2792638838bd259fb5cc7',1,'RCF::RcfInit']]],
-  ['_7ercfserver',['~RcfServer',['../class_r_c_f_1_1_rcf_server.html#ae917adb2cf4d15676a7c78e904a7b128',1,'RCF::RcfServer']]],
-  ['_7esspiimpersonator',['~SspiImpersonator',['../class_r_c_f_1_1_sspi_impersonator.html#a12a7d6992adc7d19e0e9ddc22af0308f',1,'RCF::SspiImpersonator']]],
-  ['_7ewin32namedpipeimpersonator',['~Win32NamedPipeImpersonator',['../class_r_c_f_1_1_win32_named_pipe_impersonator.html#afd049e1a4cdaae05ec63d2b74237cc9e',1,'RCF::Win32NamedPipeImpersonator']]]
+  ['wait',['wait',['../class_r_c_f_1_1_future.html#aa0f8a62c86da3d61bc1160885d302b97',1,'RCF::Future']]],
+  ['waitforready',['waitForReady',['../class_r_c_f_1_1_client_stub.html#ae1a8146630e6af509fbb1008d14c5268',1,'RCF::ClientStub']]],
+  ['what',['what',['../class_r_c_f_1_1_exception.html#a5a2c72e082c71c795a9a906441c5751d',1,'RCF::Exception']]],
+  ['win32namedpipeendpoint',['Win32NamedPipeEndpoint',['../class_r_c_f_1_1_win32_named_pipe_endpoint.html#ac9b7760e40566ca6ba3a249ea1ba1a83',1,'RCF::Win32NamedPipeEndpoint']]],
+  ['win32namedpipeimpersonator',['Win32NamedPipeImpersonator',['../class_r_c_f_1_1_win32_named_pipe_impersonator.html#ad38a91c19f2d9056ee8548be4da5f6e3',1,'RCF::Win32NamedPipeImpersonator']]]
 ];

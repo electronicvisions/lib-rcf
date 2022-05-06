@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2020, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 3.1
+// Version: 3.2
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -23,6 +23,7 @@
 
 #include <functional>
 #include <memory>
+#include <vector>
 
 #include <RCF/Enums.hpp>
 
@@ -323,8 +324,19 @@ namespace RCF
     /// Reference counted wrapper for RCF::ServerBinding.
     typedef std::shared_ptr<ServerBinding> ServerBindingPtr;
 
-    /// Describes user-provided function for determining whether a client connections should be able to access a server binding.
+    /// Describes a user-provided function for determining whether a client connections should be able to access a server binding.
     typedef std::function<bool(int)> AccessControlCallback;
+
+    // List of HTTP headers in a HTTP message.
+    typedef std::vector< std::pair< std::string, std::string > > HttpHeaderList;
+
+    /// Describes a user-provided function for handling HTTP redirect responses when connecting to a HTTP/HTTPS server.
+    typedef std::function<void(const std::string & statusLine, const HttpHeaderList& headerList)> HttpRedirectHandler;
+
+    class HttpMessageVerifier;
+
+    /// Reference counted wrapper for RCF::HttpMessageVerifier.
+    typedef std::shared_ptr<HttpMessageVerifier> HttpMessageVerifierPtr;
 
 } // namespace RCF
 

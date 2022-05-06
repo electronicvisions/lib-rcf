@@ -37,6 +37,7 @@ var hierarchy =
     [ "RCF::FutureConverter< T >", "class_r_c_f_1_1_future_converter.html", null ],
     [ "RCF::Globals", "class_r_c_f_1_1_globals.html", null ],
     [ "RCF::HttpCookie", "class_r_c_f_1_1_http_cookie.html", null ],
+    [ "RCF::HttpMessageVerifier", "class_r_c_f_1_1_http_message_verifier.html", null ],
     [ "RCF::I_RcfClient", "class_r_c_f_1_1_i___rcf_client.html", null ],
     [ "RCF::IpClientTransport", "class_r_c_f_1_1_ip_client_transport.html", null ],
     [ "RCF::IpServerTransport", "class_r_c_f_1_1_ip_server_transport.html", null ],

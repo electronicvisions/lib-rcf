@@ -2,7 +2,7 @@
 //******************************************************************************
 // RCF - Remote Call Framework
 //
-// Copyright (c) 2005 - 2019, Delta V Software. All rights reserved.
+// Copyright (c) 2005 - 2020, Delta V Software. All rights reserved.
 // http://www.deltavsoft.com
 //
 // RCF is distributed under dual licenses - closed source or GPL.
@@ -11,7 +11,7 @@
 // If you have not purchased a commercial license, you are using RCF 
 // under GPL terms.
 //
-// Version: 3.1
+// Version: 3.2
 // Contact: support <at> deltavsoft.com 
 //
 //******************************************************************************
@@ -168,6 +168,10 @@ namespace RCF {
             if ( !mHttpSessionPtr )
             {
                 RCF_ASSERT(ePtr);
+                if ( !ePtr )
+                {
+                    ePtr.reset(new Exception(RcfError_HttpSessionNotAvailable));
+                }
                 httpFrame.onError(*ePtr);
                 return;
             }
@@ -191,6 +195,15 @@ namespace RCF {
             RCF_ASSERT(mHttpSessionPtr->mRcfSessionPtr);
             mHttpSessionPtr->mRcfSessionPtr->setNetworkSession(mNetworkSession);
             mNetworkSession.mRcfSessionPtr = mHttpSessionPtr->mRcfSessionPtr;
+
+            {
+                // RCF session must be available to user code that gets called as part of verification.
+                CurrentRcfSessionSentry guard(mHttpSessionPtr->mRcfSessionPtr);
+                if ( !httpFrame.verifyReceivedMessage() )
+                {
+                    return;
+                }
+            }
 
             if ( mHttpSessionPtr->mCachedReadBytesRequested )
             {
