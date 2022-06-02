@@ -4,6 +4,7 @@ Map<String, Object> pipelineOptions = [
 		projects: ["lib-rcf"],
 		container: [app: "dls-core"],
 		notificationChannel: "#dls-software",
+		enableClangFormat: false,
 		configureInstallOptions: "--build-profile=ci"
 ]
 
