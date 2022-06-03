@@ -213,7 +213,7 @@ private:
 
 	static constexpr std::size_t num_errors_max = 10;
 	// Period with which the client checks if he should terminate.
-	static constexpr auto period_client_progress_callback = std::chrono::milliseconds(1000);
+	static constexpr auto period_client_progress_callback = std::chrono::milliseconds(10);
 	// Delay to wait after an error occurs
 	static constexpr auto delay_after_error = std::chrono::milliseconds(1000);
 };
