@@ -157,7 +157,7 @@ public:
 	}
 
 private:
-	log4cxx::Logger* m_log;
+	log4cxx::LoggerPtr m_log;
 	std::mutex m_mutex_upload;
 	std::condition_variable m_cv_upload;
 	std::unique_ptr<pending_context_t> m_upload;

@@ -14,6 +14,8 @@ namespace log4cxx {
 
 class Logger;
 
+typedef std::shared_ptr<Logger> LoggerPtr;
+
 } // namespace log4cxx
 
 namespace rcf_extensions::detail::round_robin_scheduler {
@@ -42,7 +44,7 @@ public:
 	void push_back(work_context_t&& context);
 
 private:
-	log4cxx::Logger* m_log;
+	log4cxx::LoggerPtr m_log;
 
 	mutable std::mutex m_mutex;
 	std::atomic<int> m_thread_count;

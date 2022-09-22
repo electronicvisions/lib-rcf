@@ -63,7 +63,7 @@ public:
 	}
 
 private:
-	log4cxx::Logger* m_log;
+	log4cxx::LoggerPtr m_log;
 	size_t m_job_count;
 };
 

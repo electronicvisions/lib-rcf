@@ -195,7 +195,7 @@ public:
 	std::optional<std::size_t> get_reinit_id_notified(session_id_t const& session_id) const;
 
 private:
-	log4cxx::Logger* m_log;
+	log4cxx::LoggerPtr m_log;
 
 	/**
 	 * Time interval after which to perform a clean up of old sessions.

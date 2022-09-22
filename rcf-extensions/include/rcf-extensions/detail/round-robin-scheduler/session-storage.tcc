@@ -250,10 +250,10 @@ std::optional<typename SessionStorage<W>::reinit_data_cref_t> SessionStorage<W>:
 {
 	std::shared_lock lk{m_mutex};
 	if (reinit_is_up_to_date_while_locked(session_id)) {
-		RCF_LOG_TRACE(m_log, "Getting reinit for session: " << session_id)
+		RCF_LOG_TRACE(m_log, "Getting reinit for session: " << session_id);
 		return hate::cget(m_session_to_reinit_data, session_id);
 	} else if (reinit_is_pending_while_locked(session_id)) {
-		RCF_LOG_TRACE(m_log, "Reinit for session not up to date, requesting: " << session_id)
+		RCF_LOG_TRACE(m_log, "Reinit for session not up to date, requesting: " << session_id);
 		// If there is a pending request -> request it and move to next
 		lk.unlock();
 		reinit_request(session_id);
@@ -264,7 +264,7 @@ std::optional<typename SessionStorage<W>::reinit_data_cref_t> SessionStorage<W>:
 		} else {
 			m_cv_new_reinit.wait_for(lk, *grace_period);
 			if (reinit_is_up_to_date_while_locked(session_id)) {
-				RCF_LOG_TRACE(m_log, "Getting reinit for session: " << session_id)
+				RCF_LOG_TRACE(m_log, "Getting reinit for session: " << session_id);
 				return hate::cget(m_session_to_reinit_data, session_id);
 			} else {
 				return std::nullopt;
@@ -282,10 +282,10 @@ std::optional<typename SessionStorage<W>::reinit_data_ref_t> SessionStorage<W>::
 {
 	std::shared_lock lk{m_mutex};
 	if (reinit_is_up_to_date_while_locked(session_id)) {
-		RCF_LOG_TRACE(m_log, "Getting reinit for session: " << session_id)
+		RCF_LOG_TRACE(m_log, "Getting reinit for session: " << session_id);
 		return hate::get(m_session_to_reinit_data, session_id);
 	} else if (reinit_is_pending_while_locked(session_id)) {
-		RCF_LOG_TRACE(m_log, "Reinit for session not up to date, requesting: " << session_id)
+		RCF_LOG_TRACE(m_log, "Reinit for session not up to date, requesting: " << session_id);
 		// If there is a pending request -> request it and move to next
 		lk.unlock();
 		reinit_request(session_id);
@@ -295,12 +295,12 @@ std::optional<typename SessionStorage<W>::reinit_data_ref_t> SessionStorage<W>::
 			while (!reinit_is_up_to_date_while_locked(session_id)) {
 				m_cv_new_reinit.wait(lk);
 			}
-			RCF_LOG_TRACE(m_log, "Getting reinit for session: " << session_id)
+			RCF_LOG_TRACE(m_log, "Getting reinit for session: " << session_id);
 			return hate::get(m_session_to_reinit_data, session_id);
 		} else {
 			m_cv_new_reinit.wait_for(lk, *grace_period);
 			if (reinit_is_up_to_date_while_locked(session_id)) {
-				RCF_LOG_TRACE(m_log, "Getting reinit for session: " << session_id)
+				RCF_LOG_TRACE(m_log, "Getting reinit for session: " << session_id);
 				return hate::get(m_session_to_reinit_data, session_id);
 			} else {
 				return std::nullopt;

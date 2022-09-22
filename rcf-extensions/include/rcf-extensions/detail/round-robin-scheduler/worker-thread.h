@@ -8,11 +8,14 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <memory>
 #include <thread>
 
 namespace log4cxx {
 
 class Logger;
+
+typedef std::shared_ptr<Logger> LoggerPtr;
 
 } // namespace log4cxx
 
@@ -115,7 +118,7 @@ public:
 	auto visit_set_up_const(VisitorT);
 
 protected:
-	log4cxx::Logger* m_log;
+	log4cxx::LoggerPtr m_log;
 
 	/**
 	 * If the worker is set up it holds resources required to perform its task (e.g. slurm

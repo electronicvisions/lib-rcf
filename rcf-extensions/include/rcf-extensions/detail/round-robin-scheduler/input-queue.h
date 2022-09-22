@@ -15,6 +15,8 @@ namespace log4cxx {
 
 class Logger;
 
+typedef std::shared_ptr<Logger> LoggerPtr;
+
 } // namespace log4cxx
 
 namespace rcf_extensions::detail::round_robin_scheduler {
@@ -114,7 +116,7 @@ public:
 private:
 	mutable std::mutex m_mutex;
 
-	log4cxx::Logger* m_log;
+	log4cxx::LoggerPtr m_log;
 
 	using queue_t = std::deque<work_package_t>;
 	using user_to_queue_t = std::unordered_map<user_id_t, queue_t>;

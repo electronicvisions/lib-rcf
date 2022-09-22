@@ -44,7 +44,7 @@ public:
 
 private:
 	mutable std::mutex m_mutex;
-	log4cxx::Logger* m_log;
+	log4cxx::LoggerPtr m_log;
 
 	bool m_stop_flag;
 	worker_thread_t& m_worker_thread;

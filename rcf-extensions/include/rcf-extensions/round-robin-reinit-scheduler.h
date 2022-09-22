@@ -288,7 +288,7 @@ protected:
 	std::unique_ptr<RCF::RcfServer> m_server;
 
 private:
-	log4cxx::Logger* m_log;
+	log4cxx::LoggerPtr m_log;
 
 	using input_queue_t = detail::round_robin_scheduler::InputQueue<worker_t>;
 	std::unique_ptr<input_queue_t> m_input_queue;
