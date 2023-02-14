@@ -69,7 +69,7 @@ private:
 template <typename... Args, typename VerifierT>
 auto get_verified_user_data(VerifierT& verifier)
 {
-	static auto log = log4cxx::Logger::getLogger("lib-rcf.get_verified_user_data");
+	auto log = log4cxx::Logger::getLogger("lib-rcf.get_verified_user_data");
 	RCF_LOG_TRACE(log, "Getting current RCF session.");
 	std::string user_data = RCF::getCurrentRcfSession().getRequestUserData();
 	RCF_LOG_TRACE(log, "Verifying user data.");
