@@ -108,6 +108,11 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 		wtr_t::set_busy();
 		try {
 			auto retval = wtr_t::m_worker.work(work);
+			// In case a timeout was encountered connection is reset which requires performing
+			// a reinit to bring chip back in usable state
+			if (wtr_t::m_worker.check_for_timeout(std::get<0>(retval))) {
+				perform_reinit();
+			}
 			[[maybe_unused]] auto const time_stop = std::chrono::system_clock::now();
 			[[maybe_unused]] const std::time_t t_c =
 			    std::chrono::system_clock::to_time_t(time_start);
