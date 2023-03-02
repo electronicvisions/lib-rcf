@@ -296,7 +296,7 @@ bool WorkerThreadReinit<W>::perform_reinit()
 	// requested)
 	// Active wait in case we have no other work left (current use case: Synchronous PyNN)
 	auto reinit_data = m_session_storage.reinit_get(
-	    *m_current_session_id, wtr_t::m_input.is_empty() ? std::make_optional(20ms) : std::nullopt);
+	    *m_current_session_id, wtr_t::m_input.is_empty() ? std::make_optional(100ms) : std::nullopt);
 	if (reinit_data) {
 		RCF_LOG_TRACE(wtr_t::m_log, "Performing reinit..");
 		wtr_t::m_worker.perform_reinit(*reinit_data);
