@@ -174,7 +174,7 @@ void RoundRobinReinitScheduler<W>::reinit_enforce()
 
 	auto session_id = detail::round_robin_scheduler::get_session_id(verified_user_session_id);
 	m_session_storage->ensure_registered(session_id);
-	m_session_storage->reinit_set_needed(session_id);
+	m_session_storage->reinit_set_force(session_id);
 
 	RCF_LOG_TRACE(
 	    m_log, "[" << detail::round_robin_scheduler::get_user_id(verified_user_session_id) << "@"

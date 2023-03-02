@@ -111,7 +111,7 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 			// In case a timeout was encountered connection is reset which requires performing
 			// a reinit to bring chip back in usable state
 			if (wtr_t::m_worker.check_for_timeout(std::get<0>(retval))) {
-				perform_reinit();
+				perform_reinit(true);
 			}
 			[[maybe_unused]] auto const time_stop = std::chrono::system_clock::now();
 			[[maybe_unused]] const std::time_t t_c =
@@ -179,7 +179,6 @@ bool WorkerThreadReinit<W>::ensure_session_via_reinit(work_package_t const& pkg)
 			if (m_session_storage.reinit_is_registered(*m_current_session_id)) {
 				// request the reinit program for the old session if there is one registered
 				m_session_storage.reinit_request(*m_current_session_id);
-				m_session_storage.reinit_set_needed(*m_current_session_id);
 				// snapshot reinit program for the old session if there is one registered
 				if (!perform_reinit_snapshot(false)) {
 					// reinit snapshot failed, clear session
@@ -203,8 +202,11 @@ bool WorkerThreadReinit<W>::ensure_session_via_reinit(work_package_t const& pkg)
 		}
 	}
 
-	if ((session_switched || reinit_id_changed) && m_session_storage.reinit_is_needed(*m_current_session_id)) {
-		if (!perform_reinit()) {
+	if (m_session_storage.reinit_is_registered(*m_current_session_id) &&
+	    (session_switched || reinit_id_changed ||
+	     m_session_storage.reinit_is_force(*m_current_session_id))) {
+		if (!perform_reinit(
+		        session_switched || m_session_storage.reinit_is_force(*m_current_session_id))) {
 			// reinit failed, clear session
 			RCF_LOG_TRACE(wtr_t::m_log, "Resetting current session.");
 			m_current_session_id = std::nullopt;
@@ -290,16 +292,16 @@ bool WorkerThreadReinit<W>::check_invalidity(work_package_t& pkg)
 }
 
 template <typename W>
-bool WorkerThreadReinit<W>::perform_reinit()
+bool WorkerThreadReinit<W>::perform_reinit(bool force)
 {
 	// check if we need to perform reinit for the new session (i.e. it has a reinit program
 	// requested)
 	// Active wait in case we have no other work left (current use case: Synchronous PyNN)
-	auto reinit_data = m_session_storage.reinit_get(
+	auto reinit_data = m_session_storage.reinit_get_mutable(
 	    *m_current_session_id, wtr_t::m_input.is_empty() ? std::make_optional(100ms) : std::nullopt);
 	if (reinit_data) {
 		RCF_LOG_TRACE(wtr_t::m_log, "Performing reinit..");
-		wtr_t::m_worker.perform_reinit(*reinit_data);
+		wtr_t::m_worker.perform_reinit(*reinit_data, force);
 		m_session_storage.reinit_set_done(*m_current_session_id);
 		m_current_reinit_id = m_session_storage.get_reinit_id_notified(*m_current_session_id);
 		return true;

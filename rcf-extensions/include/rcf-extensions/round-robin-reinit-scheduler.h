@@ -55,7 +55,7 @@
  *  MyReturnType work(MyWorkParameters const& work);
  *
  *  // Function that
- *  void perform_reinit(ReinitData const& reinit);
+ *  void perform_reinit(ReinitData const& reinit, bool force);
  *
  *  // Function that
  *  void perform_reinit_snapshot(ReinitData const& reinit);

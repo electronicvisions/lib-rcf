@@ -92,14 +92,14 @@ public:
 	 */
 	bool reinit_is_registered(session_id_t const& session_id) const;
 	/**
-	 * @return whether a reinit program is needed.
+	 * @return whether a reinit program is set to be forcefully executed.
 	 */
-	bool reinit_is_needed(session_id_t const& session_id) const;
+	bool reinit_is_force(session_id_t const& session_id) const;
 
 	/**
 	 * Indicate that a reinit is mandatory for the given session_id.
 	 */
-	void reinit_set_needed(session_id_t const& session_id);
+	void reinit_set_force(session_id_t const& session_id);
 
 	/**
 	 * Indicate that the reinit for the given session_id was performed.
@@ -243,10 +243,9 @@ private:
 	// -> actually is uploaded and stored
 	session_to_reinit_id_t m_session_to_reinit_id_stored;
 
-	// Track if the user has indicated that a reinit program is needed (so we know
-	// if we have to wait or not).
+	// Track if the user has indicated that the whole reinit program should be executed
 	using session_set_t = std::unordered_set<session_id_t>;
-	session_set_t m_session_reinit_needed;
+	session_set_t m_session_reinit_force;
 
 	using session_to_sequence_num_t = std::unordered_map<session_id_t, SequenceNumber>;
 	session_to_sequence_num_t m_session_to_sequence_num;

@@ -125,7 +125,7 @@ void SessionStorage<W>::erase_session_while_locked(session_id_t const& session_i
 	m_session_to_reinit_id_pending.erase(session_id);
 	m_session_to_reinit_id_stored.erase(session_id);
 
-	m_session_reinit_needed.erase(session_id);
+	m_session_reinit_force.erase(session_id);
 
 	m_session_to_sequence_num.erase(session_id);
 }
@@ -216,21 +216,20 @@ bool SessionStorage<W>::reinit_is_registered(session_id_t const& session_id) con
 }
 
 template <typename W>
-bool SessionStorage<W>::reinit_is_needed(session_id_t const& session_id) const
+bool SessionStorage<W>::reinit_is_force(session_id_t const& session_id) const
 {
 	std::shared_lock const lk{m_mutex};
-	return m_session_reinit_needed.contains(session_id) ||
-	       m_session_to_reinit_id_notified.contains(session_id);
+	return m_session_reinit_force.contains(session_id);
 }
 
 template <typename W>
-void SessionStorage<W>::reinit_set_needed(session_id_t const& session_id)
+void SessionStorage<W>::reinit_set_force(session_id_t const& session_id)
 {
 	std::lock_guard const lk{m_mutex};
-	RCF_LOG_TRACE(m_log, "[" << session_id << "] Setting reinit needed.");
-	m_session_reinit_needed.insert(session_id);
+	RCF_LOG_TRACE(m_log, "[" << session_id << "] Setting reinit force.");
+	m_session_reinit_force.insert(session_id);
 
-	// as the reinit will be needed in any case: request it
+	// as the reinit will be forced in any case: request it
 	if (reinit_is_pending_while_locked(session_id)) {
 		request_pending_upload_while_locked(session_id);
 	}
@@ -241,7 +240,7 @@ void SessionStorage<W>::reinit_set_done(session_id_t const& session_id)
 {
 	std::lock_guard const lk{m_mutex};
 	RCF_LOG_TRACE(m_log, "[" << session_id << "] Setting reinit done.");
-	m_session_reinit_needed.erase(session_id);
+	m_session_reinit_force.erase(session_id);
 }
 
 template <typename W>

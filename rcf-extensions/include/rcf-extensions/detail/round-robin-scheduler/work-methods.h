@@ -403,8 +403,8 @@ struct work_methods_reinit : public work_methods_base<Worker>
 {
 	// *this-pointer counts toward arity
 	static_assert(
-	    (boost::function_types::function_arity<trait::method_perform_reinit_t<Worker>>::value == 2),
-	    "perform_reinit-method of Worker has to take exactly one argument!");
+	    (boost::function_types::function_arity<trait::method_perform_reinit_t<Worker>>::value == 3),
+	    "perform_reinit-method of Worker has to take exactly two arguments!");
 
 	static_assert(trait::has_session_id_v<Worker>, "Worker has no session id!");
 

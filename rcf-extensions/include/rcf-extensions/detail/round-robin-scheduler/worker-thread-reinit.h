@@ -88,9 +88,11 @@ protected:
 	/**
 	 * Perform reinit for the current session.
 	 *
+	 * @param force execute whole reinit stack regardless if reinit for individual entries is
+	 *              pending or not
 	 * @return true if reinit was successful.
 	 */
-	bool perform_reinit();
+	bool perform_reinit(bool force);
 
 	/**
 	 * Perform reinit snapshot for the current session.
