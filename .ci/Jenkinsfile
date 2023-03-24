@@ -1,7 +1,8 @@
-@Library("jenlib") _
+@Library("jenlib@ebrains-4.0") _
 
 Map<String, Object> pipelineOptions = [
 		projects: ["lib-rcf"],
+		setupOptions: "--release-branch=ebrains-4.0",
 		container: [app: "dls-core"],
 		notificationChannel: "#dls-software",
 		enableClangFormat: false,
