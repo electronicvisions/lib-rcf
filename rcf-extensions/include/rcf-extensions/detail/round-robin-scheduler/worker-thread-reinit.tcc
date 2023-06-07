@@ -106,6 +106,12 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 		auto work = context.parameters().a1.get();
 
 		wtr_t::set_busy();
+		std::string hw_id;
+		try {
+			hw_id = wtr_t::m_worker.get_unique_identifier();
+		} catch (std::runtime_error& e) {
+			hw_id = "mockmode";
+		}
 		try {
 			auto retval = wtr_t::m_worker.work(work);
 			// In case a timeout was encountered connection is reset which requires performing
@@ -120,15 +126,18 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 			    std::chrono::duration_cast<std::chrono::milliseconds>(time_start.time_since_epoch())
 			        .count() %
 			    1000;
+			size_t const duration =
+			    std::chrono::duration_cast<std::chrono::milliseconds>(time_stop - time_start)
+			        .count();
+			m_session_storage.accumulate_wallclock_runtime(pkg.session_id, duration);
+			m_session_storage.set_session_meta_info(pkg.session_id, pkg.user_id, hw_id);
 			RCF_LOG_INFO(
 			    wtr_t::m_log,
 			    "Executed: " << pkg
 			                 << " Start time: " << std::put_time(std::localtime(&t_c), "%F %T,")
 			                 << std::setw(3) << std::setfill('0') << millis << " Duration: "
-			                 << std::chrono::duration_cast<std::chrono::milliseconds>(
-			                        time_stop - time_start)
-			                        .count()
-			                 << "ms");
+			                 << duration << "ms");
+
 			context.parameters().r.set(retval);
 
 			wtr_t::m_output.push_back(std::move(context));

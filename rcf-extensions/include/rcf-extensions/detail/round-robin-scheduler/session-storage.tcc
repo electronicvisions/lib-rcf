@@ -4,6 +4,10 @@
 #include <deque>
 #include <thread>
 #include <RCF/RCF.hpp>
+extern "C"
+{
+#include <syslog.h>
+}
 
 namespace rcf_extensions::detail::round_robin_scheduler {
 
@@ -115,7 +119,10 @@ template <typename W>
 void SessionStorage<W>::erase_session_while_locked(session_id_t const& session_id)
 {
 	RCF_LOG_TRACE(m_log, "Erasing session: " << session_id);
-
+	log_session(session_id);
+	m_session_user_id.erase(session_id);
+	m_session_hw_id.erase(session_id);
+	m_session_duration.erase(session_id);
 	m_session_to_refcount.erase(session_id);
 
 	m_session_to_reinit_data.erase(session_id);
@@ -406,6 +413,7 @@ void SessionStorage<W>::register_new_session_while_locked(session_id_t const& se
 	RCF_LOG_TRACE(m_log, "Registering new connection for session: " << session_id);
 	m_session_to_refcount.insert(std::make_pair(session_id, refcount_type(1)));
 	m_session_to_sequence_num.insert(std::make_pair(session_id, 0));
+	m_session_duration.insert(std::make_pair(session_id, 0));
 
 	auto total_refs = get_total_refcount_while_locked();
 
@@ -499,6 +507,33 @@ void SessionStorage<W>::signal_pending_upload_while_locked(
 		dispatch.detach();
 	}
 	m_session_to_deferred.erase(session_id);
+}
+
+template <typename W>
+void SessionStorage<W>::accumulate_wallclock_runtime(
+    session_id_t const& session_id, size_t const duration)
+{
+	m_session_duration.at(session_id) += duration;
+}
+
+template <typename W>
+void SessionStorage<W>::set_session_meta_info(session_id_t const& session_id, user_id_t const user_id, std::string const hw_id)
+{
+	m_session_user_id[session_id] = user_id;
+	m_session_hw_id[session_id] = hw_id;
+}
+
+template <typename W>
+void SessionStorage<W>::log_session(session_id_t const& session_id)
+{
+	std::stringstream msg;
+	msg << "hxlog hw_id=" << m_session_hw_id.at(session_id)
+	    << " user_id=" << m_session_user_id.at(session_id) << " session=" << session_id
+	    << " duration=" << m_session_duration.at(session_id)
+	    << " runs=" << m_session_to_sequence_num.at(session_id);
+	openlog(NULL, (LOG_NDELAY | LOG_PID | LOG_CONS), LOG_USER);
+	syslog(LOG_NOTICE, "%s", msg.str().c_str());
+	closelog();
 }
 
 } // namespace rcf_extensions::detail::round_robin_scheduler

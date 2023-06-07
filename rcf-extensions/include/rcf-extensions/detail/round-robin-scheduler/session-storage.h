@@ -30,6 +30,7 @@ public:
 	using reinit_data_t = typename work_methods<worker_t>::reinit_data_t;
 	using session_id_t = typename work_methods<worker_t>::session_id_t;
 	using work_package_t = typename work_methods<worker_t>::work_package_t;
+	using user_id_t = typename work_methods<worker_t>::user_id_t;
 
 	using reinit_data_cref_t = std::reference_wrapper<reinit_data_t const>;
 	using reinit_data_ref_t = std::reference_wrapper<reinit_data_t>;
@@ -194,6 +195,18 @@ public:
 	 */
 	std::optional<std::size_t> get_reinit_id_notified(session_id_t const& session_id) const;
 
+	/**
+	 * increase accumulated wallclock hardware allocation time of session
+	 */
+	void accumulate_wallclock_runtime(session_id_t const& session_id, size_t const duration);
+
+	/**
+	 * Set meta information of a session
+	 */
+	void set_session_meta_info(
+	    session_id_t const& session_id, user_id_t const user_id, std::string const hw_id);
+
+
 private:
 	log4cxx::LoggerPtr m_log;
 
@@ -243,6 +256,15 @@ private:
 	// -> actually is uploaded and stored
 	session_to_reinit_id_t m_session_to_reinit_id_stored;
 
+	// accumulated wall-clock hardware execution duration of each session
+	std::unordered_map<session_id_t, std::size_t> m_session_duration;
+
+	// user_id to session lookup
+	std::unordered_map<session_id_t, user_id_t> m_session_user_id;
+
+	// hardware identifier to session lookup
+	std::unordered_map<session_id_t, std::string> m_session_hw_id;
+
 	// Track if the user has indicated that the whole reinit program should be executed
 	using session_set_t = std::unordered_set<session_id_t>;
 	session_set_t m_session_reinit_force;
@@ -290,6 +312,8 @@ private:
 	void request_pending_upload_while_locked(session_id_t const& session_id);
 
 	void signal_pending_upload_while_locked(session_id_t const& session_id, bool);
+
+	void log_session(session_id_t const& session_id);
 
 	std::size_t get_total_refcount_while_locked() const;
 };
