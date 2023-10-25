@@ -531,6 +531,7 @@ void SessionStorage<W>::log_session(session_id_t const& session_id)
 	    << " user_id=" << m_session_user_id.at(session_id) << " session=" << session_id
 	    << " duration=" << m_session_duration.at(session_id)
 	    << " runs=" << m_session_to_sequence_num.at(session_id);
+	RCF_LOG_INFO(m_log, msg.str());
 	openlog(NULL, (LOG_NDELAY | LOG_PID | LOG_CONS), LOG_USER);
 	syslog(LOG_NOTICE, "%s", msg.str().c_str());
 	closelog();
