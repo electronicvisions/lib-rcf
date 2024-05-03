@@ -313,7 +313,7 @@ private:
 
 	void signal_pending_upload_while_locked(session_id_t const& session_id, bool);
 
-	void log_session(session_id_t const& session_id);
+	void log_session_while_locked(session_id_t const& session_id);
 
 	std::size_t get_total_refcount_while_locked() const;
 };
