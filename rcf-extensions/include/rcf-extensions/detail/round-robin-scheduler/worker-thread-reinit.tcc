@@ -113,7 +113,7 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 			hw_id = "mockmode";
 		}
 		try {
-			auto retval = wtr_t::m_worker.work(work);
+			auto retval = wtr_t::m_worker.work(work, pkg.session_id);
 			// In case a timeout was encountered connection is reset which requires performing
 			// a reinit to bring chip back in usable state
 			if (wtr_t::m_worker.check_for_timeout(std::get<0>(retval))) {
@@ -310,7 +310,7 @@ bool WorkerThreadReinit<W>::perform_reinit(bool force)
 	    *m_current_session_id, wtr_t::m_input.is_empty() ? std::make_optional(100ms) : std::nullopt);
 	if (reinit_data) {
 		RCF_LOG_TRACE(wtr_t::m_log, "Performing reinit..");
-		wtr_t::m_worker.perform_reinit(*reinit_data, force);
+		wtr_t::m_worker.perform_reinit(*reinit_data, *m_current_session_id, force);
 		m_session_storage.reinit_set_done(*m_current_session_id);
 		m_current_reinit_id = m_session_storage.get_reinit_id_notified(*m_current_session_id);
 		return true;
@@ -333,7 +333,7 @@ bool WorkerThreadReinit<W>::perform_reinit_snapshot(bool const block)
 	    (wtr_t::m_input.is_empty() && !block) ? std::make_optional(20ms) : std::nullopt);
 	if (reinit_data) {
 		RCF_LOG_TRACE(wtr_t::m_log, "Performing reinit snapshot..");
-		wtr_t::m_worker.perform_reinit_snapshot(*reinit_data);
+		wtr_t::m_worker.perform_reinit_snapshot(*reinit_data, *m_current_session_id);
 		return true;
 	} else {
 		RCF_LOG_WARN(

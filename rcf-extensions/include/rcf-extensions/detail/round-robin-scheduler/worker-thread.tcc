@@ -104,8 +104,16 @@ void WorkerThread<W>::main_thread(std::stop_token st)
 
 		set_busy();
 		try {
-			auto retval = m_worker.work(work);
-			pkg.context.parameters().r.set(retval);
+			// For workers with reinit functionality (which we test via availability of the perform_reinit
+			// method), we expect two arguments, since in addition to the work, we get the session id. For
+			// workers without reinit functionality, we expect one argument, the work.
+			if constexpr (trait::has_method_perform_reinit<W>::value) {
+				auto retval = m_worker.work(work, pkg.session_id);
+				pkg.context.parameters().r.set(retval);
+			} else {
+				auto retval = m_worker.work(work);
+				pkg.context.parameters().r.set(retval);
+			}
 			m_output.push_back(std::move(pkg.context));
 		} catch (std::exception& e) {
 			RCF_LOG_ERROR(m_log, pkg << " encountered exception: " << e.what());

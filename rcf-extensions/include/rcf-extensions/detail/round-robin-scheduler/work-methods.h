@@ -372,9 +372,14 @@ template <typename Worker>
 struct work_methods_base
 {
 	// *this-pointer counts toward arity
+	// For workers with reinit functionality (which we test via availability of the perform_reinit
+	// method), we expect two arguments, since in addition to the work, we get the session id. For
+	// workers without reinit functionality, we expect one argument, the work.
 	static_assert(
-	    (boost::function_types::function_arity<trait::method_work_t<Worker>>::value == 2),
-	    "work-method of Worker has to take exactly one argument!");
+	    (trait::has_method_perform_reinit<Worker>::value &&
+	     boost::function_types::function_arity<trait::method_work_t<Worker>>::value == 3) ||
+	        (boost::function_types::function_arity<trait::method_work_t<Worker>>::value == 2),
+	    "work-method of Worker has to take exactly one (or two) argument(s)!");
 
 	// *this-pointer counts toward arity
 	static_assert(
@@ -403,7 +408,7 @@ struct work_methods_reinit : public work_methods_base<Worker>
 {
 	// *this-pointer counts toward arity
 	static_assert(
-	    (boost::function_types::function_arity<trait::method_perform_reinit_t<Worker>>::value == 3),
+	    (boost::function_types::function_arity<trait::method_perform_reinit_t<Worker>>::value == 4),
 	    "perform_reinit-method of Worker has to take exactly two arguments!");
 
 	static_assert(trait::has_session_id_v<Worker>, "Worker has no session id!");
