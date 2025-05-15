@@ -270,6 +270,17 @@ protected:
 	}
 
 	/**
+	 * Apply visitor to worker object.
+	 *
+	 * Extends the RCF-interface with write operation.
+	 */
+	template <typename VisitorT>
+	auto visit_worker(VisitorT visit) const
+	{
+		return m_worker_thread->visit(std::forward<VisitorT>(visit));
+	}
+
+	/**
 	 * Apply const visitor to worker object that is set up.
 	 *
 	 * This is useful to extend the RCF-interface if there are some read-only

@@ -173,6 +173,14 @@ auto WorkerThread<W>::visit_const(VisitorT visitor) const
 
 template <typename W>
 template <typename VisitorT>
+auto WorkerThread<W>::visit(VisitorT visitor)
+{
+	worker_t& ref{m_worker};
+	return visitor(ref);
+}
+
+template <typename W>
+template <typename VisitorT>
 auto WorkerThread<W>::visit_set_up_const(VisitorT visitor)
 {
 	if (!is_set_up()) {

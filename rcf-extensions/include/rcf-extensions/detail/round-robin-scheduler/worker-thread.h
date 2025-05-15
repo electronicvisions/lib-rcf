@@ -109,6 +109,12 @@ public:
 	auto visit_const(VisitorT) const;
 
 	/**
+	 * Apply a visitor to the worker object and return the result.
+	 */
+	template <typename VisitorT>
+	auto visit(VisitorT);
+
+	/**
 	 * Apply a visitor to the const worker object and return the result.
 	 * The worker is guaranteed to be set up while being visited.
 	 *
