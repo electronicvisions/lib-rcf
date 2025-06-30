@@ -106,17 +106,17 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 		auto work = context.parameters().a1.get();
 
 		wtr_t::set_busy();
-		std::string hw_id;
+		std::vector<std::string> hw_ids;
 		try {
-			hw_id = wtr_t::m_worker.get_unique_identifier();
+			hw_ids = wtr_t::m_worker.get_unique_identifier();
 		} catch (std::runtime_error& e) {
-			hw_id = "mockmode";
+			hw_ids = std::vector<std::string>{"mockmode"};
 		}
 		try {
 			auto retval = wtr_t::m_worker.work(work, pkg.session_id);
 			// In case a timeout was encountered connection is reset which requires performing
 			// a reinit to bring chip back in usable state
-			if (wtr_t::m_worker.check_for_timeout(std::get<0>(retval))) {
+			if (wtr_t::m_worker.check_for_timeout(retval)) {
 				perform_reinit(true);
 			}
 			[[maybe_unused]] auto const time_stop = std::chrono::system_clock::now();
@@ -130,13 +130,12 @@ void WorkerThreadReinit<W>::main_thread(std::stop_token st)
 			    std::chrono::duration_cast<std::chrono::milliseconds>(time_stop - time_start)
 			        .count();
 			m_session_storage.accumulate_wallclock_runtime(pkg.session_id, duration);
-			m_session_storage.set_session_meta_info(pkg.session_id, pkg.user_id, hw_id);
+			m_session_storage.set_session_meta_info(pkg.session_id, pkg.user_id, hw_ids);
 			RCF_LOG_INFO(
-			    wtr_t::m_log,
-			    "Executed: " << pkg
-			                 << " Start time: " << std::put_time(std::localtime(&t_c), "%F %T,")
-			                 << std::setw(3) << std::setfill('0') << millis << " Duration: "
-			                 << duration << "ms");
+			    wtr_t::m_log, "Executed: " << pkg << " Start time: "
+			                               << std::put_time(std::localtime(&t_c), "%F %T,")
+			                               << std::setw(3) << std::setfill('0') << millis
+			                               << " Duration: " << duration << "ms");
 
 			context.parameters().r.set(retval);
 
@@ -206,7 +205,8 @@ bool WorkerThreadReinit<W>::ensure_session_via_reinit(work_package_t const& pkg)
 	if (!m_current_reinit_id) {
 		m_current_reinit_id = m_session_storage.get_reinit_id_notified(*m_current_session_id);
 	} else {
-		if (m_current_reinit_id != m_session_storage.get_reinit_id_notified(*m_current_session_id)) {
+		if (m_current_reinit_id !=
+		    m_session_storage.get_reinit_id_notified(*m_current_session_id)) {
 			reinit_id_changed = true;
 		}
 	}
@@ -307,7 +307,8 @@ bool WorkerThreadReinit<W>::perform_reinit(bool force)
 	// requested)
 	// Active wait in case we have no other work left (current use case: Synchronous PyNN)
 	auto reinit_data = m_session_storage.reinit_get_mutable(
-	    *m_current_session_id, wtr_t::m_input.is_empty() ? std::make_optional(100ms) : std::nullopt);
+	    *m_current_session_id,
+	    wtr_t::m_input.is_empty() ? std::make_optional(100ms) : std::nullopt);
 	if (reinit_data) {
 		RCF_LOG_TRACE(wtr_t::m_log, "Performing reinit..");
 		wtr_t::m_worker.perform_reinit(*reinit_data, *m_current_session_id, force);

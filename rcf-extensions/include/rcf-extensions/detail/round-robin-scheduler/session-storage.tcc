@@ -121,7 +121,7 @@ void SessionStorage<W>::erase_session_while_locked(session_id_t const& session_i
 	RCF_LOG_TRACE(m_log, "Erasing session: " << session_id);
 	log_session_while_locked(session_id);
 	m_session_user_id.erase(session_id);
-	m_session_hw_id.erase(session_id);
+	m_session_hw_ids.erase(session_id);
 	m_session_duration.erase(session_id);
 	m_session_to_refcount.erase(session_id);
 
@@ -450,7 +450,8 @@ bool SessionStorage<W>::is_active(session_id_t const& session_id) const
 }
 
 template <typename W>
-std::optional<std::size_t> SessionStorage<W>::get_reinit_id_notified(session_id_t const& session_id) const
+std::optional<std::size_t> SessionStorage<W>::get_reinit_id_notified(
+    session_id_t const& session_id) const
 {
 	std::shared_lock const lk{m_mutex};
 	return hate::cget(m_session_to_reinit_id_notified, session_id);
@@ -517,16 +518,18 @@ void SessionStorage<W>::accumulate_wallclock_runtime(
 	try {
 		m_session_duration.at(session_id) += duration;
 	} catch (std::out_of_range const& error) {
-		RCF_LOG_ERROR(m_log, "accumulate_wallclock_runtime(): Didn't find session id: " << session_id << ".");
+		RCF_LOG_ERROR(
+		    m_log, "accumulate_wallclock_runtime(): Didn't find session id: " << session_id << ".");
 	}
 }
 
 template <typename W>
-void SessionStorage<W>::set_session_meta_info(session_id_t const& session_id, user_id_t const user_id, std::string const hw_id)
+void SessionStorage<W>::set_session_meta_info(
+    session_id_t const& session_id, user_id_t const user_id, std::vector<std::string> const hw_ids)
 {
 	std::lock_guard const lk{m_mutex};
 	m_session_user_id[session_id] = user_id;
-	m_session_hw_id[session_id] = hw_id;
+	m_session_hw_ids[session_id] = hw_ids;
 }
 
 template <typename W>
@@ -534,12 +537,16 @@ void SessionStorage<W>::log_session_while_locked(session_id_t const& session_id)
 {
 	std::stringstream msg;
 	try {
-		msg << "hxlog hw_id=" << m_session_hw_id.at(session_id)
-			<< " user_id=" << m_session_user_id.at(session_id) << " session=" << session_id
-			<< " duration=" << m_session_duration.at(session_id)
-			<< " runs=" << m_session_to_sequence_num.at(session_id);
+		msg << "hxlog hw_ids=";
+		for (auto hw_id : m_session_hw_ids.at(session_id)) {
+			msg << hw_id << ",";
+		}
+		msg << " user_id=" << m_session_user_id.at(session_id) << " session=" << session_id
+		    << " duration=" << m_session_duration.at(session_id)
+		    << " runs=" << m_session_to_sequence_num.at(session_id);
 	} catch (std::out_of_range const& error) {
-		RCF_LOG_ERROR(m_log, "log_session_while_locked(): Didn't find session id: " << session_id << ".");
+		RCF_LOG_ERROR(
+		    m_log, "log_session_while_locked(): Didn't find session id: " << session_id << ".");
 	}
 	RCF_LOG_INFO(m_log, msg.str());
 	openlog(NULL, (LOG_NDELAY | LOG_PID | LOG_CONS), LOG_USER);

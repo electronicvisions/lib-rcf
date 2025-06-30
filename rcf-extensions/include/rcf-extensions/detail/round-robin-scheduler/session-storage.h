@@ -204,7 +204,9 @@ public:
 	 * Set meta information of a session
 	 */
 	void set_session_meta_info(
-	    session_id_t const& session_id, user_id_t const user_id, std::string const hw_id);
+	    session_id_t const& session_id,
+	    user_id_t const user_id,
+	    std::vector<std::string> const hw_id);
 
 
 private:
@@ -263,7 +265,7 @@ private:
 	std::unordered_map<session_id_t, user_id_t> m_session_user_id;
 
 	// hardware identifier to session lookup
-	std::unordered_map<session_id_t, std::string> m_session_hw_id;
+	std::unordered_map<session_id_t, std::vector<std::string>> m_session_hw_ids;
 
 	// Track if the user has indicated that the whole reinit program should be executed
 	using session_set_t = std::unordered_set<session_id_t>;
