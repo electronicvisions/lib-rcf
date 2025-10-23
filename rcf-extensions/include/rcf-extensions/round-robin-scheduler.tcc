@@ -49,12 +49,31 @@ RoundRobinScheduler<W>::~RoundRobinScheduler()
 }
 
 template <typename W>
+template <typename R>
+void RoundRobinScheduler<W>::bind_to_interface()
+{
+	m_server->bind<R>(*this);
+}
+
+template <typename W>
 bool RoundRobinScheduler<W>::start_server(std::chrono::seconds const& timeout)
 {
 	m_worker_thread->start();
 	m_server->start();
 	return m_idle_timeout->wait_until_idle_for(timeout);
 	// NOTE: Server needs to be destroyed to shutdown.
+}
+
+template <typename W>
+bool RoundRobinScheduler<W>::has_work_left() const
+{
+	return !m_input_queue->is_empty();
+}
+
+template <typename W>
+RCF::RcfServer& RoundRobinScheduler<W>::get_server()
+{
+	return *m_server;
 }
 
 template <typename W>
@@ -79,6 +98,36 @@ typename RoundRobinScheduler<W>::work_return_t RoundRobinScheduler<W>::submit_wo
 	m_worker_thread->notify();
 
 	return RoundRobinScheduler<W>::work_return_t(); // not passed to client
+}
+
+template <typename W>
+void RoundRobinScheduler<W>::set_release_interval(std::chrono::seconds const& s)
+{
+	m_worker_thread->set_release_interval(s);
+}
+
+template <typename W>
+std::chrono::seconds RoundRobinScheduler<W>::get_release_interval() const
+{
+	return m_worker_thread->get_release_interval();
+}
+
+template <typename W>
+void RoundRobinScheduler<W>::set_period_per_user(std::chrono::milliseconds period)
+{
+	m_input_queue->set_period_per_user(period);
+}
+
+template <typename W>
+std::chrono::milliseconds RoundRobinScheduler<W>::get_period_per_user() const
+{
+	return m_input_queue->get_period_per_user();
+}
+
+template <typename W>
+void RoundRobinScheduler<W>::reset_idle_timeout()
+{
+	m_worker_thread->reset_last_idle();
 }
 
 } // namespace rcf_extensions

@@ -40,6 +40,7 @@ public:
 	WorkerThreadReinit(WorkerThreadReinit&&) = delete;
 	virtual ~WorkerThreadReinit() override = default;
 
+#ifndef __GENPYBIND__
 protected:
 	using wtr_t = WorkerThreadReinit; // helper typedef to access protected members of WorkerThread
 
@@ -106,8 +107,11 @@ protected:
 	 * Perform a worker teardown.
 	 */
 	void perform_teardown();
+#endif // __GENPYBIND__
 };
 
 } // namespace rcf_extensions::detail::round_robin_scheduler
 
+#ifndef __GENPYBIND__
 #include "rcf-extensions/detail/round-robin-scheduler/worker-thread-reinit.tcc"
+#endif // __GENPYBIND__

@@ -17,12 +17,7 @@ class IdleTimeout
 public:
 	using worker_thread_t = WorkerThread;
 
-	IdleTimeout(worker_thread_t& worker_thread) :
-	    m_log(log4cxx::Logger::getLogger("lib-rcf.IdleTimeout")),
-	    m_stop_flag(false),
-	    m_worker_thread(worker_thread),
-	    m_timeout(0),
-	    m_num_threads_idling(0){};
+	IdleTimeout(worker_thread_t& worker_thread);
 	IdleTimeout(IdleTimeout&&) = delete;
 	IdleTimeout(IdleTimeout const&) = delete;
 
@@ -42,6 +37,7 @@ public:
 
 	bool is_timeout_reached();
 
+#ifndef __GENPYBIND__
 private:
 	mutable std::mutex m_mutex;
 	log4cxx::LoggerPtr m_log;
@@ -68,8 +64,11 @@ private:
 	{
 		return std::lock_guard<std::mutex>(m_mutex);
 	}
+#endif // __GENPYBIND__
 };
 
 } // namespace rcf_extensions::detail::round_robin_scheduler
 
+#ifndef __GENPYBIND__
 #include "rcf-extensions/detail/round-robin-scheduler/idle-timeout.tcc"
+#endif // __GENPYBIND__

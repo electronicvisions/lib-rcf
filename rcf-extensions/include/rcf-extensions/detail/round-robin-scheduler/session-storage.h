@@ -208,7 +208,7 @@ public:
 	    user_id_t const user_id,
 	    std::vector<std::string> const hw_id);
 
-
+#ifndef __GENPYBIND__
 private:
 	log4cxx::LoggerPtr m_log;
 
@@ -318,8 +318,11 @@ private:
 	void log_session_while_locked(session_id_t const& session_id);
 
 	std::size_t get_total_refcount_while_locked() const;
+#endif // __GENPYBIND__
 };
 
 } // namespace rcf_extensions::detail::round_robin_scheduler
 
+#ifndef __GENPYBIND__
 #include "rcf-extensions/detail/round-robin-scheduler/session-storage.tcc"
+#endif // __GENPYBIND__

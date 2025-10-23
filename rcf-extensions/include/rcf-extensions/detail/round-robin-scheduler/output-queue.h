@@ -43,6 +43,7 @@ public:
 
 	void push_back(work_context_t&& context);
 
+#ifndef __GENPYBIND__
 private:
 	log4cxx::LoggerPtr m_log;
 
@@ -69,8 +70,11 @@ private:
 	{
 		m_cv.notify_all();
 	}
+#endif // __GENPYBIND__
 };
 
 } // namespace rcf_extensions::detail::round_robin_scheduler
 
+#ifndef __GENPYBIND__
 #include "rcf-extensions/detail/round-robin-scheduler/output-queue.tcc"
+#endif // __GENPYBIND__

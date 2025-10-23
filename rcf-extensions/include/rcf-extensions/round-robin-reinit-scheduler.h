@@ -134,10 +134,7 @@ public:
 	 * care of it.
 	 */
 	template <typename RcfInterface>
-	void bind_to_interface()
-	{
-		m_server->bind<RcfInterface>(*this);
-	}
+	void bind_to_interface();
 
 	/**
 	 * Notify server about new reinit program.
@@ -173,15 +170,9 @@ public:
 	/**
 	 * Indicate whether scheduler has work left.
 	 */
-	bool has_work_left() const
-	{
-		return !m_input_queue->is_empty();
-	}
+	bool has_work_left() const;
 
-	RCF::RcfServer& get_server()
-	{
-		return *m_server;
-	}
+	RCF::RcfServer& get_server();
 
 	/**
 	 * Submit work to be executed on the worker.
@@ -213,37 +204,25 @@ public:
 	/**
 	 * Set interval after which the the worker has to be teared down at least once.
 	 */
-	void set_release_interval(std::chrono::seconds const& s)
-	{
-		m_worker_thread->set_release_interval(s);
-	}
+	void set_release_interval(std::chrono::seconds const& s);
 
 	/**
 	 * Manually reset idle timeout.
 	 */
-	void reset_idle_timeout()
-	{
-		m_worker_thread->reset_last_idle();
-	}
+	void reset_idle_timeout();
 
 	/**
 	 * Set the time period after which the current user is forcibly switched.
 	 *
 	 * @param period Time after which the user is forcibly switched.
 	 */
-	void set_period_per_user(std::chrono::milliseconds period)
-	{
-		m_input_queue->set_period_per_user(period);
-	}
+	void set_period_per_user(std::chrono::milliseconds period);
 
 	/**
 	 * Get the time period after which the user is forcibly switched even if
 	 * there are jobs remaining for the current user.
 	 */
-	std::chrono::milliseconds get_period_per_user() const
-	{
-		return m_input_queue->get_period_per_user();
-	}
+	std::chrono::milliseconds get_period_per_user() const;
 
 	/**
 	 * Enforce usage of a reinit program.
@@ -256,6 +235,7 @@ public:
 	 */
 	void reinit_enforce();
 
+#ifndef __GENPYBIND__
 protected:
 	/**
 	 * Apply const visitor to worker object.
@@ -317,11 +297,14 @@ private:
 	std::unique_ptr<idle_timeout_t> m_idle_timeout;
 
 	void handle_submission(SequenceNumber, bool);
+#endif // __GENPYBIND__
 };
 
 } // namespace rcf_extensions
 
+#ifndef __GENPYBIND__
 #include "rcf-extensions/round-robin-reinit-scheduler.tcc"
+#endif // __GENPYBIND__
 
 
 /**

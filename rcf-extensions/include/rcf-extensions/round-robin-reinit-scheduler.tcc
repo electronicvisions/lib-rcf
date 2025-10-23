@@ -67,6 +67,13 @@ RoundRobinReinitScheduler<W>::~RoundRobinReinitScheduler()
 }
 
 template <typename W>
+template <typename R>
+void RoundRobinReinitScheduler<W>::bind_to_interface()
+{
+	m_server->bind<R>(*this);
+}
+
+template <typename W>
 void RoundRobinReinitScheduler<W>::reinit_notify(std::size_t reinit_id)
 {
 	auto verified_user_session_id =
@@ -123,6 +130,18 @@ bool RoundRobinReinitScheduler<W>::start_server(std::chrono::seconds const& time
 }
 
 template <typename W>
+bool RoundRobinReinitScheduler<W>::has_work_left() const
+{
+	return !m_input_queue->is_empty();
+}
+
+template <typename W>
+RCF::RcfServer& RoundRobinReinitScheduler<W>::get_server()
+{
+	return *m_server;
+}
+
+template <typename W>
 typename RoundRobinReinitScheduler<W>::work_return_t RoundRobinReinitScheduler<W>::submit_work(
     work_argument_t work, SequenceNumber sequence_num)
 {
@@ -159,6 +178,30 @@ typename RoundRobinReinitScheduler<W>::work_return_t RoundRobinReinitScheduler<W
 	// notify the worker thread of work
 	m_worker_thread->notify();
 	return work_return_t{}; // result submitted to client asynchronously
+}
+
+template <typename W>
+void RoundRobinReinitScheduler<W>::set_release_interval(std::chrono::seconds const& s)
+{
+	m_worker_thread->set_release_interval(s);
+}
+
+template <typename W>
+void RoundRobinReinitScheduler<W>::reset_idle_timeout()
+{
+	m_worker_thread->reset_last_idle();
+}
+
+template <typename W>
+void RoundRobinReinitScheduler<W>::set_period_per_user(std::chrono::milliseconds period)
+{
+	m_input_queue->set_period_per_user(period);
+}
+
+template <typename W>
+std::chrono::milliseconds RoundRobinReinitScheduler<W>::get_period_per_user() const
+{
+	return m_input_queue->get_period_per_user();
 }
 
 template <typename W>

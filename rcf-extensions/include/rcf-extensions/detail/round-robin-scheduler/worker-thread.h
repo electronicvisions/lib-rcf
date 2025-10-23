@@ -49,44 +49,22 @@ public:
 	WorkerThread(WorkerThread const&) = delete;
 	virtual ~WorkerThread();
 
-	void set_release_interval(std::chrono::seconds const& s)
-	{
-		m_teardown_period = s;
-	}
+	void set_release_interval(std::chrono::seconds const& s);
 
-	bool is_set_up() const
-	{
-		return m_is_set_up;
-	}
+	bool is_set_up() const;
 
-	bool is_idle() const
-	{
-		return m_is_idle;
-	}
+	bool is_idle() const;
 
 	/**
 	 * Notify worker about new work to be performed.
 	 */
 	void notify();
 
-	auto get_last_idle() const
-	{
-		if (m_is_idle) {
-			return m_last_idle;
-		} else {
-			return std::chrono::system_clock::now();
-		}
-	}
+	auto get_last_idle() const;
 
-	auto get_last_release() const
-	{
-		return m_last_release;
-	}
+	auto get_last_release() const;
 
-	optional_verified_user_data_t verify_user(std::string const& data)
-	{
-		return m_worker.verify_user(data);
-	}
+	optional_verified_user_data_t verify_user(std::string const& data);
 
 	std::chrono::milliseconds get_time_till_next_teardown() const;
 
@@ -123,6 +101,7 @@ public:
 	template <typename VisitorT>
 	auto visit_set_up_const(VisitorT);
 
+#ifndef __GENPYBIND__
 protected:
 	log4cxx::LoggerPtr m_log;
 
@@ -189,8 +168,11 @@ protected:
 
 	void set_idle();
 	void set_busy();
+#endif // __GENPYBIND__
 };
 
 } // namespace rcf_extensions::detail::round_robin_scheduler
 
+#ifndef __GENPYBIND__
 #include "rcf-extensions/detail/round-robin-scheduler/worker-thread.tcc"
+#endif // __GENPYBIND__

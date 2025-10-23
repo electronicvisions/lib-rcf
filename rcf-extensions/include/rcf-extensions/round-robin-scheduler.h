@@ -122,10 +122,7 @@ public:
 	 * care of it.
 	 */
 	template <typename RcfInterface>
-	void bind_to_interface()
-	{
-		m_server->bind<RcfInterface>(*this);
-	}
+	void bind_to_interface();
 
 	/**
 	 * Start server and shut down server after a given timeout of being idle
@@ -138,15 +135,9 @@ public:
 	/**
 	 * Indicate whether scheduler has work left.
 	 */
-	bool has_work_left() const
-	{
-		return !m_input_queue->is_empty();
-	}
+	bool has_work_left() const;
 
-	RCF::RcfServer& get_server()
-	{
-		return *m_server;
-	}
+	RCF::RcfServer& get_server();
 
 	work_return_t submit_work(work_argument_t, SequenceNumber);
 
@@ -155,20 +146,14 @@ public:
 	 *
 	 * @param s Release interval.
 	 */
-	void set_release_interval(std::chrono::seconds const& s)
-	{
-		m_worker_thread->set_release_interval(s);
-	}
+	void set_release_interval(std::chrono::seconds const& s);
 
 	/**
 	 * Get interval after which the the worker has to be teared down at least once.
 	 *
 	 * @return Release interval.
 	 */
-	std::chrono::seconds get_release_interval() const
-	{
-		return m_worker_thread->get_release_interval();
-	}
+	std::chrono::seconds get_release_interval() const;
 
 	/**
 	 * Set time period after which the user is forcibly switched even if there
@@ -177,28 +162,20 @@ public:
 	 * @param period Time after which the user is forcibly switched. If it is
 	 * 0ms the user will not be switched.
 	 */
-	void set_period_per_user(std::chrono::milliseconds period)
-	{
-		m_input_queue->set_period_per_user(period);
-	}
+	void set_period_per_user(std::chrono::milliseconds period);
 
 	/**
 	 * Get the time period after which the user is forcibly switched even if
 	 * there are jobs remaining for the current user.
 	 */
-	std::chrono::milliseconds get_period_per_user() const
-	{
-		return m_input_queue->get_period_per_user();
-	}
+	std::chrono::milliseconds get_period_per_user() const;
 
 	/**
 	 * Reset the counter governing the idle timeout.
 	 */
-	void reset_idle_timeout()
-	{
-		m_worker_thread->reset_last_idle();
-	}
+	void reset_idle_timeout();
 
+#ifndef __GENPYBIND__
 protected:
 	/**
 	 * Apply const visitor to worker object.
@@ -246,11 +223,14 @@ private:
 	std::unique_ptr<idle_timeout_t> m_idle_timeout;
 
 	bool m_stop_flag;
+#endif // __GENPYBIND__
 };
 
 } // namespace rcf_extensions
 
+#ifndef __GENPYBIND__
 #include "rcf-extensions/round-robin-scheduler.tcc"
+#endif // __GENPYBIND__
 
 /**
  * The only symbols that should be used externally:

@@ -122,6 +122,7 @@ public:
 	 */
 	void update_function_create_client(f_create_client_shared_ptr_t&& func);
 
+#ifndef __GENPYBIND__
 private:
 	/**
 	 * Notify and - if needed - upload the given data to the server.
@@ -216,8 +217,11 @@ private:
 	static constexpr auto period_client_progress_callback = std::chrono::milliseconds(10);
 	// Delay to wait after an error occurs
 	static constexpr auto delay_after_error = std::chrono::milliseconds(1000);
+#endif // __GENPYBIND__
 };
 
 } // namespace rcf_extensions
 
+#ifndef __GENPYBIND__
 #include "rcf-extensions/on-demand-upload.tcc"
+#endif // __GENPYBIND__

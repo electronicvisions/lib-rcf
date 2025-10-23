@@ -35,6 +35,46 @@ WorkerThread<W>::~WorkerThread()
 }
 
 template <typename W>
+void WorkerThread<W>::set_release_interval(std::chrono::seconds const& s)
+{
+	m_teardown_period = s;
+}
+
+template <typename W>
+bool WorkerThread<W>::is_set_up() const
+{
+	return m_is_set_up;
+}
+
+template <typename W>
+bool WorkerThread<W>::is_idle() const
+{
+	return m_is_idle;
+}
+
+template <typename W>
+auto WorkerThread<W>::get_last_idle() const
+{
+	if (m_is_idle) {
+		return m_last_idle;
+	} else {
+		return std::chrono::system_clock::now();
+	}
+}
+
+template <typename W>
+auto WorkerThread<W>::get_last_release() const
+{
+	return m_last_release;
+}
+
+template <typename W>
+WorkerThread<W>::optional_verified_user_data_t WorkerThread<W>::verify_user(std::string const& data)
+{
+	return m_worker.verify_user(data);
+}
+
+template <typename W>
 void WorkerThread<W>::start()
 {
 	if (!m_running) {

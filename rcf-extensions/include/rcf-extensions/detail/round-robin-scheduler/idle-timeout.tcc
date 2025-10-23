@@ -3,6 +3,14 @@
 
 namespace rcf_extensions::detail::round_robin_scheduler {
 
+template <typename WorkerThread>
+IdleTimeout<WorkerThread>::IdleTimeout(worker_thread_t& worker_thread) :
+	m_log(log4cxx::Logger::getLogger("lib-rcf.IdleTimeout")),
+	m_stop_flag(false),
+	m_worker_thread(worker_thread),
+	m_timeout(0),
+	m_num_threads_idling(0){};
+
 template <typename W>
 IdleTimeout<W>::~IdleTimeout()
 {

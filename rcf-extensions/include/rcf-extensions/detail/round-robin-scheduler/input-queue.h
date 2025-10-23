@@ -85,19 +85,13 @@ public:
 	 * @param period Time after which the user is forcibly switched. If it is
 	 * 0ms the user will not be switched.
 	 */
-	void set_period_per_user(std::chrono::milliseconds period)
-	{
-		m_period_per_user = period;
-	}
+	void set_period_per_user(std::chrono::milliseconds period);
 
 	/**
 	 * Get the time period after which the user is forcibly switched even if
 	 * there are jobs remaining for the current user.
 	 */
-	std::chrono::milliseconds get_period_per_user() const
-	{
-		return m_period_per_user;
-	}
+	std::chrono::milliseconds get_period_per_user() const;
 
 	/**
 	 * Get the total amount of jobs stored in input queue.
@@ -113,6 +107,7 @@ public:
 	 */
 	void reset_timeout_user_switch();
 
+#ifndef __GENPYBIND__
 private:
 	mutable std::mutex m_mutex;
 
@@ -144,8 +139,11 @@ private:
 	void ensure_heap_while_locked(queue_t&, SorterT const&);
 
 	std::size_t get_total_job_count_while_locked() const;
+#endif // __GENPYBIND__
 };
 
 } // namespace rcf_extensions::detail::round_robin_scheduler
 
+#ifndef __GENPYBIND__
 #include "rcf-extensions/detail/round-robin-scheduler/input-queue.tcc"
+#endif // __GENPYBIND__

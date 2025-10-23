@@ -142,6 +142,18 @@ void InputQueue<W>::advance_user()
 }
 
 template <typename W>
+void InputQueue<W>::set_period_per_user(std::chrono::milliseconds period)
+{
+	m_period_per_user = period;
+}
+
+template <typename W>
+std::chrono::milliseconds InputQueue<W>::get_period_per_user() const
+{
+	return m_period_per_user;
+}
+
+template <typename W>
 void InputQueue<W>::advance_user_while_locked()
 {
 	auto const citer_previous_user = m_it_current_user++;
