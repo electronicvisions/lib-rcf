@@ -1,8 +1,8 @@
 #pragma once
 
 // Caution: Currently logging framework is not seperated into its own namespace!
-#include "logger.h"
-#include "logging_ctrl.h"
+#include "logger/log4cxx/logger.h"
+#include "logger/log4cxx/logging_ctrl.h"
 
 #if !defined(RCF_LOG_THRESHOLD) || RCF_LOG_THRESHOLD <= 0
 #define RCF_LOG_TRACE(logger, message) LOG4CXX_TRACE(logger, message)

@@ -148,7 +148,7 @@ def build(bld):
     bld(
         target = "rcf_extensions",
         export_includes = bld.env.INCLUDES_RCF_EXTENSIONS,
-        use = ["logger_obj", "hate_inc"])
+        use = ["logger", "hate_inc"])
 
     bld.recurse("playground/round-robin-scheduler")
     bld.recurse("playground/on-demand")

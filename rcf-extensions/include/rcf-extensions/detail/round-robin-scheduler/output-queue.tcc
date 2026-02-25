@@ -1,9 +1,7 @@
 
 #include "rcf-extensions/detail/round-robin-scheduler/output-queue.h"
 
-#include "logging_ctrl.h"
 #include "rcf-extensions/logging.h"
-
 #include <chrono>
 
 namespace rcf_extensions::detail::round_robin_scheduler {
