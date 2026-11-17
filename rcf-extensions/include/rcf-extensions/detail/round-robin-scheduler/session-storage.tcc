@@ -251,6 +251,43 @@ void SessionStorage<W>::reinit_set_done(session_id_t const& session_id)
 }
 
 template <typename W>
+std::optional<typename SessionStorage<W>::reinit_data_t> SessionStorage<W>::reinit_get_copy(
+    session_id_t const& session_id, std::optional<std::chrono::milliseconds> grace_period)
+{
+	std::shared_lock lk{m_mutex};
+	if (reinit_is_up_to_date_while_locked(session_id)) {
+		RCF_LOG_TRACE(m_log, "Getting reinit for session: " << session_id);
+		return hate::get(m_session_to_reinit_data, session_id);
+	} else if (reinit_is_pending_while_locked(session_id)) {
+		RCF_LOG_TRACE(m_log, "Reinit for session not up to date, requesting: " << session_id);
+		// If there is a pending request -> request it and move to next
+		lk.unlock();
+		reinit_request(session_id);
+		lk.lock();
+		// Wait a short amount of time for the reinit
+		if (!grace_period) {
+			while (!reinit_is_up_to_date_while_locked(session_id)) {
+				m_cv_new_reinit.wait(lk);
+			}
+			RCF_LOG_TRACE(m_log, "Getting reinit for session: " << session_id);
+			return hate::get(m_session_to_reinit_data, session_id);
+		} else {
+			m_cv_new_reinit.wait_for(lk, *grace_period);
+			if (reinit_is_up_to_date_while_locked(session_id)) {
+				RCF_LOG_TRACE(m_log, "Getting reinit for session: " << session_id);
+				return hate::get(m_session_to_reinit_data, session_id);
+			} else {
+				return std::nullopt;
+			}
+		}
+
+	} else {
+		return std::nullopt;
+	}
+}
+
+
+template <typename W>
 std::optional<typename SessionStorage<W>::reinit_data_cref_t> SessionStorage<W>::reinit_get(
     session_id_t const& session_id, std::optional<std::chrono::milliseconds> grace_period)
 {

@@ -306,7 +306,7 @@ bool WorkerThreadReinit<W>::perform_reinit(bool force)
 	// check if we need to perform reinit for the new session (i.e. it has a reinit program
 	// requested)
 	// Active wait in case we have no other work left (current use case: Synchronous PyNN)
-	auto reinit_data = m_session_storage.reinit_get_mutable(
+	auto reinit_data = m_session_storage.reinit_get_copy(
 	    *m_current_session_id,
 	    wtr_t::m_input.is_empty() ? std::make_optional(100ms) : std::nullopt);
 	if (reinit_data) {
@@ -329,7 +329,7 @@ bool WorkerThreadReinit<W>::perform_reinit_snapshot(bool const block)
 	// check if we need to perform reinit snapshot for the new session (i.e. it has a reinit program
 	// requested)
 	// Active wait in case we have no other work left, otherwise block
-	auto reinit_data = m_session_storage.reinit_get_mutable(
+	auto reinit_data = m_session_storage.reinit_get_copy(
 	    *m_current_session_id,
 	    (wtr_t::m_input.is_empty() && !block) ? std::make_optional(20ms) : std::nullopt);
 	if (reinit_data) {

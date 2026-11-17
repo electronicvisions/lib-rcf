@@ -108,6 +108,21 @@ public:
 	void reinit_set_done(session_id_t const& session_id);
 
 	/**
+	 * Get a reinit_data_t if available.
+	 *
+	 * The reint_data_t will be requested if it was not requested up until now.
+	 * Please note that this function returning nullopt does _not_ mean that no
+	 * reinit is needed, but merely that it is not available yet.
+	 *
+	 * @param session_id The session for which to get reinit
+	 * @param grace_period optional grace period to wait for reinit
+	 * @return optional indicating whether correct reinit data is available.
+	 */
+	std::optional<reinit_data_t> reinit_get_copy(
+	    session_id_t const& session_id,
+	    std::optional<std::chrono::milliseconds> grace_period = std::nullopt);
+
+	/**
 	 * Get a const reference to the given reinit_data_t if avairable.
 	 *
 	 * The reint_data_t will be requested if it was not requested up until now.
